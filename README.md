@@ -22,6 +22,7 @@ SKSE plugin for Skyrim Special Edition **1.5.97** and Anniversary Edition **1.6.
 - [SKSE64](https://skse.silverlock.org/) for your runtime
 - [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) (the SE or AE database to match)
 - [FLICK](https://www.nexusmods.com/skyrimspecialedition/mods/181603) by Fuzzles: the in-game UI framework the editor runs on. On AE, install FLICK's AE build.
+- [Show Player In Inventory](https://www.nexusmods.com/skyrimspecialedition/mods/178689) So you can actually see your character.
 - Optional: the Seamstone lore item (a small ESP, offered by the installer). Without it, open the editor by its hotkey.
 - Optional: **Favorite Misc Items**, so you can favorite the Seamstone and open Fitting Room from your favorites hotkey.
 
