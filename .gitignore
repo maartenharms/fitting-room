@@ -1,0 +1,11 @@
+build/
+install/
+.vs/
+out/
+compile_commands.json
+tools/*.log
+tools/__pycache__/
+release/
+
+# Internal development notes; kept local, not published to the public repo.
+docs/

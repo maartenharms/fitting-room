@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd">
+	<moduleName>Fitting Room</moduleName>
+	<moduleImage path="Images\fittingroom.png"/>
+
+	<!-- One DLL loads on both SE 1.5.97 and AE 1.6.1130+, so there is no SE/AE
+	     file choice. Game files ONLY in the install directives: the docs
+	     (LICENSE + README.txt) ship at the archive root, NOT installed to Data -
+	     flat docs at the Data root collide across mods and show as overwrite
+	     conflicts in MO2. -->
+	<requiredInstallFiles>
+		<folder source="core\SKSE" destination="SKSE" priority="0"/>
+		<folder source="core\Scripts" destination="Scripts" priority="0"/>
+		<folder source="core\Interface" destination="Interface" priority="0"/>
+	</requiredInstallFiles>
+
+	<installSteps order="Explicit">
+		<installStep name="Fitting Room">
+			<optionalFileGroups order="Explicit">
+				<group name="The Seamstone (lore item, optional)" type="SelectAny">
+					<plugins order="Explicit">
+						<plugin name="Add the Seamstone, a lore-friendly item that opens the Fitting Room">
+							<description>The Seamstone is a carryable Alteration focus, sold by Farengar Secret-Fire in Dragonsreach, that opens the Fitting Room editor out in the world. This installs one small plugin (FittingRoomLore.esp). Leave it unchecked to open the editor by its hotkey instead; the transmog works either way, with or without the item.
+
+Source, docs and issue tracker: https://github.com/maartenharms/fitting-room
+
+Thanks for installing, and if you enjoy it, a kind endorsement is always appreciated.</description>
+							<image path="Images\fittingroom.png"/>
+							<files>
+								<file source="optional\lore\FittingRoomLore.esp" destination="FittingRoomLore.esp" priority="0"/>
+							</files>
+							<typeDescriptor>
+								<type name="Recommended"/>
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
+	</installSteps>
+</config>

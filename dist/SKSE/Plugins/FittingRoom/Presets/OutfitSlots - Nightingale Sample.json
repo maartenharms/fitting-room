@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "Nightingale, Unhooded",
+  "author": "Outfit Slots",
+  "description": "Full Nightingale leathers with the hood down. Ships with Outfit Slots as a working example; the schema is documented in PRESETS.md. Delete this file freely.",
+  "requires": ["Skyrim.esm"],
+  "slots": [
+    { "slot": 31, "kind": "hide" },
+    { "slot": 32, "kind": "style", "mod": "Skyrim.esm", "id": "0x0FCC0F" },
+    { "slot": 33, "kind": "style", "mod": "Skyrim.esm", "id": "0x0FCC11" },
+    { "slot": 37, "kind": "style", "mod": "Skyrim.esm", "id": "0x0FCC0D" }
+  ]
+}
