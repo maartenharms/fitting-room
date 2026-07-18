@@ -30,8 +30,13 @@ import struct
 import sys
 import zlib
 
+import os
+
 ESM = r"C:\Games\Nolvus\Instances\Nolvus Awakening\STOCK GAME\Data\Skyrim.esm"
-OUT = r"C:\Studios\Mod Studio\Outfit Slots\dist\FittingRoomLore.esp"
+# dist/ of THIS repo, wherever it lives (the repo folder was renamed once
+# already - never hardcode it again).
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                   "dist", "optional", "FittingRoomLore.esp")
 
 REC_HDR = 24
 FLAG_COMPRESSED = 0x00040000
@@ -126,8 +131,19 @@ def _walk_region(buf, off, end, want_types):
 
 
 def find_donors(buf):
-    """One pass: grand-soul-gem model (the Seamstone body), note-model book."""
-    gem = note = None  # gem: (MODL, MODT, OBND, YNAM, ZNAM); note: (MODL, MODT, OBND, DATA)
+    """One pass: grand-soul-gem model (the Seamstone body), note-model book.
+
+    The note donor is copied to FULL VANILLA PARITY (BUG-1, 2026-07-17): every
+    one of the 259 note-model BOOKs in Skyrim.esm carries YNAM (pickup sound),
+    KSIZ/KWDA (VendorItemBook), INAM (inventory art - the high-poly STAT the
+    BookMenu displays while READING) and CNAM (item card description). Our
+    0.1.1 book shipped without INAM/CNAM and reading it CTD'd in the field -
+    the reading view resolves the book's inventory-art model. All formid
+    payloads (YNAM/KWDA/INAM) point into Skyrim.esm, valid by construction.
+    CNAM is NOT copyable (localized esm = lstring id); we write our own inline.
+    """
+    gem = note = None  # gem: (MODL, MODT, OBND, YNAM, ZNAM)
+    # note: dict of donor subrecords, verbatim payloads
 
     want = {b"MISC", b"BOOK"}
     for sig, formid, flags, off, dsize in walk_records(buf, want):
@@ -147,12 +163,12 @@ def find_donors(buf):
         elif sig == b"BOOK" and note is None:
             fields = {}
             for s, p in subrecords(data):
-                if s in (b"MODL", b"MODT", b"OBND", b"DATA"):
+                if s in (b"MODL", b"MODT", b"OBND", b"DATA", b"YNAM", b"ZNAM",
+                         b"KSIZ", b"KWDA", b"INAM"):
                     fields[s] = p
             modl = fields.get(b"MODL", b"")
             if b"note" in modl.lower():
-                note = (fields.get(b"MODL"), fields.get(b"MODT"), fields.get(b"OBND"),
-                        fields.get(b"DATA"))
+                note = fields
         if gem and note:
             break
     return gem, note
@@ -183,12 +199,16 @@ def main():
 
     if not gem or not gem[0]:
         sys.exit("no grand-soul-gem model donor found")
-    if not note or not note[0]:
+    if not note or not note.get(b"MODL"):
         sys.exit("no note-model donor found")
+    for req in (b"YNAM", b"KSIZ", b"KWDA", b"INAM"):
+        if not note.get(req):
+            sys.exit(f"note donor lacks {req.decode()} - parity copy impossible, "
+                     "pick a different donor")
 
     nul = b"\x00"
     print(f"seamstone model: {gem[0].rstrip(nul).decode('cp1252', 'replace')}")
-    print(f"note model:      {note[0].rstrip(nul).decode('cp1252', 'replace')}")
+    print(f"note model:      {note[b'MODL'].rstrip(nul).decode('cp1252', 'replace')}")
 
     BOOKID, STONEID = 0x01000801, 0x01000805
 
@@ -223,17 +243,31 @@ def main():
     misc = record(b"MISC", STONEID, 0, *misc_subs)
 
     # --- BOOK the note ---
+    # Subrecord ORDER mirrors the donor exactly: EDID,OBND,FULL,MODL,MODT,
+    # DESC,YNAM,(ZNAM,)KSIZ,KWDA,DATA,INAM,CNAM. INAM is the piece whose
+    # absence CTD'd reading in 0.1.1 (BUG-1) - the BookMenu resolves the
+    # inventory-art STAT (HighPolyNote02 for Note02-model notes) for the
+    # reading close-up. CNAM is ours, inline (non-localized plugin).
     book_subs = [sub(b"EDID", zstring("OS_OutwardArtNote"))]
-    if note[2]:
-        book_subs.append(sub(b"OBND", note[2]))
+    if note.get(b"OBND"):
+        book_subs.append(sub(b"OBND", note[b"OBND"]))
     book_subs.append(sub(b"FULL", zstring("On the Outward Art")))
-    book_subs.append(sub(b"MODL", note[0]))
-    if note[1]:
-        book_subs.append(sub(b"MODT", note[1]))
+    book_subs.append(sub(b"MODL", note[b"MODL"]))
+    if note.get(b"MODT"):
+        book_subs.append(sub(b"MODT", note[b"MODT"]))
     book_subs.append(sub(b"DESC", zstring(NOTE_TEXT)))
-    book_data = note[3] if note[3] and len(note[3]) == 16 else struct.pack(
+    book_subs.append(sub(b"YNAM", note[b"YNAM"]))          # ITMNoteUp
+    if note.get(b"ZNAM"):
+        book_subs.append(sub(b"ZNAM", note[b"ZNAM"]))
+    book_subs.append(sub(b"KSIZ", note[b"KSIZ"]))
+    book_subs.append(sub(b"KWDA", note[b"KWDA"]))          # VendorItemBook
+    donor_data = note.get(b"DATA")
+    book_data = donor_data if donor_data and len(donor_data) == 16 else struct.pack(
         "<BBHiIf", 0, 0, 0, -1, 5, 0.5)
     book_subs.append(sub(b"DATA", book_data))
+    book_subs.append(sub(b"INAM", note[b"INAM"]))          # HighPolyNote02
+    book_subs.append(sub(b"CNAM", zstring(
+        "A College treatise on the outward art of the seamstones.")))
     book = record(b"BOOK", BOOKID, 0, *book_subs)
 
     out = io.BytesIO()

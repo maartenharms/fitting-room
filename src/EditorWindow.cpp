@@ -40,6 +40,9 @@ namespace {
         const char* Title() const override { return "Fitting Room"; }
 
         bool IsOpen() const override { return open_.load(std::memory_order_relaxed); }
+        // Cached in Draw() for GetFlags's passthrough gate; also the camera
+        // drag's "did this click land on the world" test (InputListener).
+        bool CursorOverUI() const { return cursorOverUI_.load(std::memory_order_relaxed); }
 
         void SetOpen(bool a_open) override {
             const bool was = open_.exchange(a_open, std::memory_order_relaxed);
@@ -235,6 +238,29 @@ namespace {
                 FUCK::ForceCursor(true);
             }
 
+            // AE: the inventory's floating item-3D loads via an async
+            // NewInventoryMenuItemLoadTask, so the one-shot Clear3D on open can
+            // land BEFORE the model does and the item card pops back in over
+            // the editor (Ivy, 1.6.1170 field report; on SE the model is
+            // already loaded at open, so this stays a one-time no-op there).
+            // Re-clear whenever models are present. Draw runs on the render
+            // thread: the loadedModels-size read is a benign race, and the
+            // actual Clear3D is queued onto the main thread (engine UI state).
+            if (!openedFromSam_) {
+                if (auto* inv3d = RE::Inventory3DManager::GetSingleton();
+                    inv3d && !inv3d->GetRuntimeData().loadedModels.empty() &&
+                    !item3dClearQueued_.exchange(true, std::memory_order_relaxed)) {
+                    SKSE::GetTaskInterface()->AddTask([this]() {
+                        if (open_.load(std::memory_order_relaxed)) {
+                            if (auto* i3d = RE::Inventory3DManager::GetSingleton()) {
+                                i3d->Clear3D();
+                            }
+                        }
+                        item3dClearQueued_.store(false, std::memory_order_relaxed);
+                    });
+                }
+            }
+
             // Close on Start or Esc - kCloseOnEsc is dropped (see GetFlags) so B/Circle
             // stays free for FUCK's back-nav. RequestClose queues onto the main thread
             // (SetOpen touches RE::UI / the camera).
@@ -254,6 +280,7 @@ namespace {
         std::atomic<bool> forceLayout_{ false };  // OS-54: set on open; Draw re-applies GetDefaultSize/Pos on the first post-open frame
         std::atomic<bool> rStickActive_{ false }; // OS-53: right stick deflected => rotate passthrough (cached in Draw)
         std::atomic<bool> resetGeometry_{ false };// gear "Reset window position" => re-apply defaults next frame
+        std::atomic<bool> item3dClearQueued_{ false };  // AE async item-3D re-clear: one queued main-thread task at a time
         bool              wasFirstPerson_{ false };
         bool              openedFromSam_{ false };
     };
@@ -273,6 +300,8 @@ namespace OS::EditorWindow {
     bool IsOpen() { return g_editorWindow.IsOpen(); }
 
     bool WantsTextInput() { return FUCK::IsAnyItemActive(); }
+
+    bool CursorOverUI() { return g_editorWindow.CursorOverUI(); }
 
     void ResetGeometry() { g_editorWindow.RequestResetGeometry(); }
 

@@ -70,6 +70,11 @@ namespace OS {
         void OnOpen();
         void OnClose();
 
+        // (The camera drag lived here until 2026-07-18. This class was retired
+        // by ddb5c4a - the editor is a FUCK IWindow now - so it never ran, and
+        // its raw FreeCameraState offset was wrong besides. It lives in
+        // InputListener::ProcessEvent, byte-verified; see ApplyFreeCameraDrag.)
+
         using Present_t = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
         static HRESULT STDMETHODCALLTYPE PresentThunk(IDXGISwapChain*, UINT, UINT);
         static LRESULT CALLBACK          WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -88,6 +93,8 @@ namespace OS {
         float                mouseX_{ 0.0f };  // accumulated from MouseMoveEvent deltas
         float                mouseY_{ 0.0f };
         bool                 usingGamepad_{ false };  // last input source (gamepad vs mouse/kbd)
+        bool                 worldDrag_{ false };  // LMB held down over the world (camera drag)
+        bool                 forcedFreeRotation_{ false };  // we enabled TPS free-rotation; undo on close
     };
 
 }  // namespace OS

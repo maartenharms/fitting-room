@@ -4,10 +4,14 @@
 	<moduleImage path="Images\fittingroom.png"/>
 
 	<!-- One DLL loads on both SE 1.5.97 and AE 1.6.1130+, so there is no SE/AE
-	     file choice. Game files ONLY in the install directives: the docs
-	     (LICENSE + README.txt) ship at the archive root, NOT installed to Data -
-	     flat docs at the Data root collide across mods and show as overwrite
-	     conflicts in MO2. -->
+	     file choice. The only choice is the STARTING SETUP: Lore-friendly (the
+	     Seamstone ESP + its gold cost + the stone as the key) or Free-form (no
+	     plugin, no gold, hotkey only). Identical mod either way - the choice
+	     writes FittingRoom.ini and, for lore, adds the ESP; every key stays
+	     editable in the in-game panel. Game files ONLY in the install
+	     directives: the docs (LICENSE + README.txt) ship at the archive root,
+	     NOT installed to Data - flat docs at the Data root collide across mods
+	     and show as overwrite conflicts in MO2. -->
 	<requiredInstallFiles>
 		<folder source="core\SKSE" destination="SKSE" priority="0"/>
 		<folder source="core\Scripts" destination="Scripts" priority="0"/>
@@ -17,10 +21,12 @@
 	<installSteps order="Explicit">
 		<installStep name="Fitting Room">
 			<optionalFileGroups order="Explicit">
-				<group name="The Seamstone (lore item, optional)" type="SelectAny">
+				<group name="How should the Fitting Room open? (just settings - change any of it, any time)" type="SelectExactlyOne">
 					<plugins order="Explicit">
-						<plugin name="Add the Seamstone, a lore-friendly item that opens the Fitting Room">
-							<description>The Seamstone is a carryable Alteration focus, sold by Farengar Secret-Fire in Dragonsreach, that opens the Fitting Room editor out in the world. This installs one small plugin (FittingRoomLore.esp). Leave it unchecked to open the editor by its hotkey instead; the transmog works either way, with or without the item.
+						<plugin name="Lore-friendly">
+							<description>Dressing up costs you something. This adds the Seamstone, a carryable Alteration focus sold by Farengar Secret-Fire in Dragonsreach (one small plugin, FittingRoomLore.esp), and the book "On the Outward Art" turns up in your inventory to point you at him. Carry the stone to open the Fitting Room, and pay a little gold for each slot you change when you apply an outfit. Previewing is always free.
+
+This choice ONLY sets your starting settings. Both options install the same mod, and the gold cost and the Seamstone requirement are both switches in the in-game settings panel, so you can change your mind whenever you like. The transmog itself works exactly the same either way.
 
 Source, docs and issue tracker: https://github.com/maartenharms/fitting-room
 
@@ -28,9 +34,26 @@ Thanks for installing, and if you enjoy it, a kind endorsement is always appreci
 							<image path="Images\fittingroom.png"/>
 							<files>
 								<file source="optional\lore\FittingRoomLore.esp" destination="FittingRoomLore.esp" priority="0"/>
+								<file source="settings\lore\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="0"/>
 							</files>
 							<typeDescriptor>
 								<type name="Recommended"/>
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Free-form">
+							<description>Just the wardrobe. Your hotkey opens the Fitting Room in your inventory, changing an outfit is free, and no plugin is installed at all.
+
+This choice ONLY sets your starting settings. Both options install the same mod, and you can turn the gold cost back on at any time in the in-game settings panel. The Seamstone item itself is the one part that needs a plugin, so if you want it later, run this installer again and pick Lore-friendly.
+
+Source, docs and issue tracker: https://github.com/maartenharms/fitting-room
+
+Thanks for installing, and if you enjoy it, a kind endorsement is always appreciated.</description>
+							<image path="Images\fittingroom.png"/>
+							<files>
+								<file source="settings\freeform\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="0"/>
+							</files>
+							<typeDescriptor>
+								<type name="Optional"/>
 							</typeDescriptor>
 						</plugin>
 					</plugins>

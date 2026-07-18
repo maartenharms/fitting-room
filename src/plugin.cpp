@@ -25,7 +25,7 @@
 namespace {
     constexpr auto kLogName = "FittingRoom.log";
     // Keep in sync with project(... VERSION) in CMakeLists.txt and vcpkg.json; used only for the load log line.
-    constexpr auto kVersion = "0.1.0";
+    constexpr auto kVersion = "0.1.2";
 
     void SetupLog() {
         auto path = SKSE::log::log_directory();

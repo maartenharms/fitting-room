@@ -2,7 +2,7 @@
 <fomod>
 	<Name>Fitting Room</Name>
 	<Author>Mern</Author>
-	<Version>0.1.0</Version>
+	<Version>0.1.2</Version>
 	<Website>https://github.com/maartenharms/fitting-room</Website>
 	<Description>ESO-style transmog: wear your saved outfits as a pure appearance layer over your real gear, with stats, enchantments and weight untouched. One build for Skyrim SE 1.5.97 and AE 1.6.1130+.</Description>
 </fomod>

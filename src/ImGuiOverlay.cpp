@@ -511,6 +511,14 @@ namespace OS {
                 if (id <= 4) {  // left, right, middle, x1, x2
                     if (down || up) {
                         io.AddMouseButtonEvent(static_cast<int>(id), down);
+                        if (id == 0) {
+                            // Camera drag latch: LMB pressed while the cursor is
+                            // NOT over an editor panel (same criterion the
+                            // input-block hook uses; one frame of ImGui lag is
+                            // fine). Released on any LMB up.
+                            worldDrag_ = down && !io.WantCaptureMouse &&
+                                         Settings::GetSingleton().cameraDragWhileOpen;
+                        }
                     }
                 } else if (id == 8 && down) {  // wheel up
                     io.AddMouseWheelEvent(0.0f, 1.0f);
@@ -630,6 +638,8 @@ namespace OS {
         // the user clicks ("can't type no matter how many times I click").
         io.ClearInputKeys();
         g_keyArbiter.Clear();  // no stale held keys carried across an open (OS-46)
+        worldDrag_          = false;
+        forcedFreeRotation_ = false;
         io.MouseDrawCursor = true;
         // Seed the software cursor (every context - the OS cursor is never
         // valid); positions then accumulate from MouseMoveEvent deltas
@@ -682,6 +692,18 @@ namespace OS {
         if (auto* cm = RE::ControlMap::GetSingleton()) {
             cm->ToggleControls(BlockedControls(), true);
             cm->ignoreKeyboardMouse = false;
+        }
+        // Undo the free-rotation mode the camera drag may have enabled - but
+        // never disturb a mode the player/SAM had on before we opened.
+        worldDrag_ = false;
+        if (forcedFreeRotation_) {
+            forcedFreeRotation_ = false;
+            if (auto* cam = RE::PlayerCamera::GetSingleton();
+                cam && cam->currentState &&
+                cam->currentState->id == RE::CameraState::kThirdPerson) {
+                static_cast<RE::ThirdPersonState*>(cam->currentState.get())
+                    ->freeRotationEnabled = false;
+            }
         }
         // We only forced third person outside SAM context, so only restore there.
         if (auto* cam = RE::PlayerCamera::GetSingleton();

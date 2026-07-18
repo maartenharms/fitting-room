@@ -29,6 +29,13 @@ namespace OS {
         std::uint32_t editorKey_{ 0 };  // DIK; 0 = unbound
         std::uint32_t editorPad_{ 0 };  // gamepad IDCode; 0 = unbound
         std::uint32_t nextKey_{ 0 };    // DIK; 0 = unbound
+
+        // OS-73 camera drag: LMB is held and it went down OFF the editor's
+        // panels, so the gesture belongs to the world and not to a widget.
+        // Latched on the button edge (not sampled per move) so dragging ONTO a
+        // panel mid-gesture does not cut the drag, matching every other
+        // click-drag in the game.
+        bool worldDrag_{ false };
     };
 
 }  // namespace OS

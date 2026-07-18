@@ -1,11 +1,12 @@
 build/
 install/
+__pycache__/
+*.pyc
 .vs/
 out/
 compile_commands.json
-tools/*.log
-tools/__pycache__/
-release/
+tools/build.log
+tools/build_symbols.log
 
-# Internal development notes; kept local, not published to the public repo.
-docs/
+# release artifacts (zips are rebuilt by tools/make_fomod.sh)
+release/

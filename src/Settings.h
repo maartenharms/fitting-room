@@ -60,6 +60,14 @@ namespace OS {
         // input-dispatch hook. Off = the older behavior where input can leak to
         // other mods - a safety valve if the hook ever misbehaves.
         bool blockInputWhileOpen{ true };  // [Compat] bBlockInputWhileOpen
+
+        // [Compat] While the editor is open, dragging with the left button held
+        // over the WORLD (not over the editor panels) rotates the camera: the
+        // third-person orbit in the inventory context, the free camera in the
+        // Screen Archer Menu context. Needs bBlockInputWhileOpen (the modal
+        // input path is what sees the drag).
+        bool  cameraDragWhileOpen{ true };      // [Compat] bCameraDragWhileOpen
+        float cameraDragSensitivity{ 0.005f };  // [Compat] fCameraDragSensitivity (radians per count)
     };
 
 }  // namespace OS

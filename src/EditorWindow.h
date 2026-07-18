@@ -15,6 +15,11 @@ namespace OS::EditorWindow {
     // A FUCK text field is active - so the editor hotkey (a printable letter)
     // must not close the editor mid-type. Best-effort, one frame stale at most.
     [[nodiscard]] bool WantsTextInput();
+    // The cursor is over a FUCK window or an active widget, i.e. the panel owns
+    // this click rather than the world behind it. Cached on the render thread in
+    // Draw(); one frame stale at most, which is why the camera drag latches it
+    // on the button edge instead of sampling it per mouse-move.
+    [[nodiscard]] bool CursorOverUI();
 
     void Toggle();        // gated open/close, marshaled to the main thread
     // Open if a permitted context (inventory / SAM) is up - for the seamstone,

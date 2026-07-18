@@ -8,7 +8,72 @@
 #include "SamCompat.h"
 #include "Settings.h"
 
+#include <cmath>  // std::fmod - the free-camera angle wrap
+
 namespace OS {
+
+    namespace {
+
+        // OS-73. Drive the FREE camera (tfc - what Screen Archer Menu frames a
+        // shot with) directly from the drag, because nothing else will: over
+        // SAM the editor deliberately leaves the camera as SAM set it, alpha-
+        // hides SAM's own 2D so its camera controls are unreachable, and the
+        // engine does not route look input to the camera while a menu context
+        // owns it. That is exactly the user's report - "I cannot adjust the
+        // camera when our menu is open with SAM".
+        //
+        // ONLY the free camera. In third person the editor already hands the
+        // gesture to the game (kPassInputToGame in EditorWindow::GetFlags,
+        // granted for precisely this drag), and the vanilla menu rotates the
+        // character itself - writing the camera here as well would apply the
+        // drag twice, the SPIM double-rotation failure. The free camera does
+        // not double-apply for the same reason it needed this at all: the
+        // passed-through look never reaches it.
+        //
+        // FreeCameraState is absent from this CommonLib snapshot, so the layout
+        // is BYTE-VERIFIED off both shipped binaries rather than assumed - the
+        // previous (never-executed) version of this code had it wrong:
+        //   +0x30  NiPoint3 translation   (GetTranslation reads 0x30/0x34/0x38)
+        //   +0x3C  float    pitch         (GetRotation reads 0x3C, engine SUBTRACTS the vertical axis)
+        //   +0x40  float    yaw           (GetRotation reads 0x40, engine ADDS the horizontal axis)
+        // Identical on SE 1.5.97 (vtable 0x16A9F50) and AE 1.6.1170 (0x18EF2E8),
+        // read out of FreeCameraState's own GetRotation/GetTranslation and its
+        // update helper (SE 140848AA0 / AE 1408E0640). The old +0x2C would have
+        // written yaw into translation.x and teleported the camera.
+        //
+        // Signs and wrapping mirror that helper exactly, so a drag feels like
+        // ordinary free-camera look: the engine wraps BOTH fields into
+        // [0, 2pi) each frame and clamps neither (the free camera is meant to
+        // loop over the top), so we wrap too rather than inventing a pitch limit.
+        void ApplyFreeCameraDrag(float a_dx, float a_dy) {
+            auto* cam = RE::PlayerCamera::GetSingleton();
+            if (!cam || !cam->currentState) {
+                return;
+            }
+            auto* const state = cam->currentState.get();
+            if (state->id != RE::CameraState::kFree) {
+                return;
+            }
+            constexpr float kTwoPi = 6.2831853f;
+            const float     s      = Settings::GetSingleton().cameraDragSensitivity;
+            auto* const     rot =
+                reinterpret_cast<float*>(reinterpret_cast<std::uintptr_t>(state) + 0x3C);
+
+            float pitch = rot[0] - a_dy * s;
+            float yaw   = rot[1] + a_dx * s;
+            pitch       = std::fmod(pitch, kTwoPi);
+            yaw         = std::fmod(yaw, kTwoPi);
+            if (pitch < 0.0f) {
+                pitch += kTwoPi;
+            }
+            if (yaw < 0.0f) {
+                yaw += kTwoPi;
+            }
+            rot[0] = pitch;
+            rot[1] = yaw;
+        }
+
+    }  // namespace
 
     InputListener& InputListener::GetSingleton() {
         static InputListener instance;
@@ -106,6 +171,31 @@ namespace OS {
                     }
                     continue;
                 }
+            }
+
+            // OS-73 camera drag, editor-only. Latch on the LMB edges, apply on
+            // mouse move. This sink is the raw device feed, upstream of the
+            // menu control map, so it still sees both while a menu context owns
+            // input - which is the whole reason the free camera can be driven
+            // from here at all. Everything below is inert with the editor shut.
+            if (EditorWindow::IsOpen() && Settings::GetSingleton().cameraDragWhileOpen) {
+                if (btn && btn->GetDevice() == RE::INPUT_DEVICE::kMouse &&
+                    btn->GetIDCode() == 0) {
+                    if (btn->IsDown()) {
+                        worldDrag_ = !EditorWindow::CursorOverUI();
+                    } else if (btn->IsUp()) {
+                        worldDrag_ = false;
+                    }
+                } else if (worldDrag_ &&
+                           e->GetEventType() == RE::INPUT_EVENT_TYPE::kMouseMove) {
+                    if (const auto* move = static_cast<const RE::MouseMoveEvent*>(
+                            e->AsIDEvent())) {
+                        ApplyFreeCameraDrag(static_cast<float>(move->mouseInputX),
+                                            static_cast<float>(move->mouseInputY));
+                    }
+                }
+            } else {
+                worldDrag_ = false;  // never resume a drag across a close
             }
 
             if (overlay.IsOpen()) {

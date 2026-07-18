@@ -73,6 +73,10 @@ namespace OS {
         }
         blockInputWhileOpen =
             ini.GetBoolValue("Compat", "bBlockInputWhileOpen", blockInputWhileOpen);
+        cameraDragWhileOpen =
+            ini.GetBoolValue("Compat", "bCameraDragWhileOpen", cameraDragWhileOpen);
+        cameraDragSensitivity = static_cast<float>(ini.GetDoubleValue(
+            "Compat", "fCameraDragSensitivity", static_cast<double>(cameraDragSensitivity)));
 
         spdlog::info("Settings loaded (blocklist=0x{:X}, editor key=0x{:X}).",
                      slotBlocklist, editorKeyDIK);
@@ -128,6 +132,12 @@ namespace OS {
         ini.SetBoolValue("Compat", "bBlockInputWhileOpen", blockInputWhileOpen,
                          "; block all input (game + mods like SAM/Wheeler) while the "
                          "editor is open");
+        ini.SetBoolValue("Compat", "bCameraDragWhileOpen", cameraDragWhileOpen,
+                         "; left-drag over the world (not the editor panels) rotates "
+                         "the camera while the editor is open");
+        ini.SetDoubleValue("Compat", "fCameraDragSensitivity",
+                           static_cast<double>(cameraDragSensitivity),
+                           "; camera drag speed, radians per mouse count");
         std::error_code ec;
         std::filesystem::create_directories("Data/SKSE/Plugins", ec);
         ini.SaveFile(IniPath());

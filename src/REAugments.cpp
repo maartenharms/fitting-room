@@ -67,12 +67,11 @@ namespace OS::REAug {
 
     // Mirrors RE::Actor::GetSkin() (Actor.h:530) deliberately: actor override
     // skin (TESNPC::skin) first, then race->skin. Consumed only as an identity
-    // filter ("is this ARMO the naked body", Task 3.1). WARNING: the engine's
+    // filter ("is this ARMO the naked body"). WARNING: the engine's
     // cleared-slot base body is applied as ApplyArmorAddon(race->skin) inside
     // func 15499 - race->skin specifically. So if the Hide-body-slot fallback
-    // (docs/superpowers/research/hide-mechanism-final.md, Fallback #1) is ever
-    // built, it must re-apply race->skin, NOT this base-then-race result: a
-    // custom-race/body mod that sets TESNPC::skin would diverge.
+    // is ever built, it must re-apply race->skin, NOT this base-then-race
+    // result: a custom-race/body mod that sets TESNPC::skin would diverge.
     RE::TESObjectARMO* GetActorSkin(RE::Actor* a_actor) {
         if (!a_actor) {
             return nullptr;

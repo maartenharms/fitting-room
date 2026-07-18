@@ -8,7 +8,7 @@ if errorlevel 1 goto :fail
 set "VCPKG_ROOT=C:\Users\Maarten\vcpkg"
 set "PATH=C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 set "CM=C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-cd /d "C:\Studios\Mod Studio\Outfit Slots"
+cd /d "C:\Studios\Mod Studio\Fitting Room"
 echo === CONFIGURE START ===
 "%CM%" --preset release
 if errorlevel 1 goto :fail

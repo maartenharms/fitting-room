@@ -1,7 +1,7 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
     "name": "outfit-slots",
-    "version-string": "0.1.0",
+    "version-string": "0.1.2",
     "builtin-baseline": "fab1c6dc7a944372a90a1e19ab5e8e32cd658fc2",
     "dependencies": [
         "commonlibsse-ng",

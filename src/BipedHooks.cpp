@@ -3,6 +3,7 @@
 #include "BipedPost.h"
 #include "OutfitSession.h"
 #include "REAugments.h"
+#include "SlotMask.h"
 
 namespace OS {
 
@@ -27,6 +28,43 @@ namespace OS {
             return r;
         }
 
+        // ---- Helmet Toggle 2 interop (mirrors Apparel Preview's guard) ----
+        // HT2 hides worn headgear through a Dynamic Armor Variants slot swap
+        // (replaceBySlot 30/31/42/44 -> invisible ARMA) inside the SAME worn
+        // rebuild we style in. Our post-pass injection is last-wins, so a
+        // head-slot style would DEFEAT the hide (helmet stays visible although
+        // Helmet Toggle says hidden) - and when DAV's swap wins instead it
+        // swallows our geometry (bald head, AP field-proven). DAV has no
+        // query/suspend API and Papyrus does not run in paused menus, so the
+        // honest move is to follow HT2's own state global: while it hides
+        // headgear, skip styles that overlap the hidden WORN head slots (re-
+        // evaluated every pass, so the toggle stays live) and drop those bits
+        // from the mask shim so hair regrows. 0 = shown, 1 = hidden.
+        constexpr auto          kHT2Plugin    = "Helmet Toggle 2.esp";
+        constexpr RE::FormID    kHT2StateID   = 0x804;  // GLOB 'HT_HelmetState'
+        constexpr std::uint32_t kHT2HeadSlots =
+            (1u << 0) | (1u << 1) | (1u << 12) | (1u << 14);  // biped 30/31/42/44
+
+        RE::TESGlobal* HT2StateGlobal() noexcept {
+            // Resolved once on first use; both thunks run on the game thread.
+            static RE::TESGlobal* global = []() -> RE::TESGlobal* {
+                auto* dh = RE::TESDataHandler::GetSingleton();
+                auto* g  = dh ? dh->LookupForm<RE::TESGlobal>(kHT2StateID, kHT2Plugin)
+                              : nullptr;
+                if (g) {
+                    spdlog::info("Helmet Toggle 2 detected: head-slot styles will follow "
+                                 "its hide state (HT_HelmetState).");
+                }
+                return g;
+            }();
+            return global;
+        }
+
+        bool HT2HidesHeadgear() noexcept {
+            auto* g = HT2StateGlobal();
+            return g && g->value > 0.0f;
+        }
+
         // ---- engine worn-pass visitor identity (Cause-B fix support) ----
         // 24231 builds its visitor on its own stack frame
         // (re_verify/disasm_24231_prologue.txt):
@@ -47,6 +85,81 @@ namespace OS {
                 return nullptr;  // foreign/wrapped visitor - cannot identify the pass
             }
             return *reinterpret_cast<RE::BipedAnim**>(base + 0x18);
+        }
+
+        // ---- BUG-2: the 1st-person worn pass ----
+        // The 1P arms model is built from GetBiped1(true), which the 3P-only
+        // injection below never touches - so styled hands kept showing the
+        // REAL gauntlets in first person. During the pass that stages the 1P
+        // biped, inject styles whose coverage includes a slot the 1P model
+        // renders (body 32 / hands 33 / forearms 34 - the visible arms belong
+        // to the BODY piece's armor addon; shield is kNeverTouch, head slots
+        // have no 1P geometry). STYLE ONLY by design: hide/cull on the 1P
+        // biped is unexplored territory, and the 3P pass owns every
+        // gameplay-visible hide behavior (worn-mask shim included).
+        void StyleFirstPersonPass(RE::BipedAnim* a_passBiped, RE::Actor* a_player,
+                                  const RealWorn& a_real) {
+            const auto&    holder1p = a_player->GetBiped1(true);
+            RE::BipedAnim* biped1p  = holder1p.get();
+            if (!biped1p || a_passBiped != biped1p) {
+                spdlog::debug("wornpass: pass biped matches neither holder; skipped.");
+                return;
+            }
+
+            constexpr auto k1PStyleSlots = MaskForEditorSlot(32) |
+                                           MaskForEditorSlot(33) |
+                                           MaskForEditorSlot(34);
+
+            auto*       base      = a_player->GetActorBase();
+            auto*       race      = a_player->GetRace();
+            const bool  isFemale  = base && base->IsFemale();
+            auto* const nakedSkin = REAug::GetActorSkin(a_player);
+            auto* const awm       = reinterpret_cast<REAug::ActorWeightModel*>(
+                const_cast<RE::BSTSmartPointer<RE::BipedAnim>*>(&holder1p));
+
+            // Helmet Toggle 2 parity with the 3P pass: a piece suppressed there
+            // (overlapping a hidden worn head slot) must not sneak in here, or
+            // the two views would disagree about the same style.
+            std::uint32_t ht2Suppressed = 0;
+            if (HT2HidesHeadgear()) {
+                for (auto* wornArmo : a_real.armo) {
+                    if (wornArmo) {
+                        ht2Suppressed |=
+                            static_cast<std::uint32_t>(wornArmo->GetSlotMask()) &
+                            kHT2HeadSlots;
+                    }
+                }
+            }
+
+            std::uint32_t styled = 0;
+            OutfitSession::GetSingleton().VisitStyles(
+                [&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
+                    auto coverage = static_cast<std::uint32_t>(a_armo->GetSlotMask());
+                    for (auto* arma : a_armo->armorAddons) {
+                        if (arma) {
+                            coverage |= static_cast<std::uint32_t>(arma->GetSlotMask());
+                        }
+                    }
+                    if ((coverage & k1PStyleSlots) == 0) {
+                        return;  // nothing the 1P model renders
+                    }
+                    if (ht2Suppressed && (coverage & ht2Suppressed)) {
+                        spdlog::debug("  1p style bit {} '{}' skipped: Helmet Toggle hides this slot.",
+                                      a_bit, a_armo->GetName());
+                        return;
+                    }
+                    const bool ok = REAug::ApplyArmorAddon(a_armo, race, awm, isFemale);
+                    styled |= coverage;
+                    spdlog::debug("  1p style bit {} inject '{}' -> {}", a_bit,
+                                  a_armo->GetName(), ok);
+                });
+
+            // Same honesty restore as the 3P pass: staged slots point .item
+            // back at the real gear (or the skin) so XP/conflict readers stay
+            // honest on this biped too.
+            if (styled) {
+                BipedPost::RestoreRealItems(biped1p, styled, a_real.armo, nakedSkin);
+            }
         }
 
         // Chain-safe by construction (the Cause-B fix,
@@ -115,12 +228,15 @@ namespace OS {
                 }
 
                 // (3) Pass gate: 24231 runs once per biped (3rd- and 1st-person
-                //     for the player); only the 3rd-person pass is ours. If the
-                //     visitor is foreign we cannot discriminate - act anyway:
-                //     the work is idempotent and at worst duplicated, and it
-                //     always targets the actor-derived holder, never a guess.
+                //     for the player). The 3rd-person pass gets the full
+                //     treatment below; the 1st-person pass gets style-only
+                //     injection (BUG-2 - styled hands showed real gauntlets in
+                //     first person because GetBiped1(true) was never staged).
+                //     If the visitor is foreign we cannot discriminate - run
+                //     the 3P work anyway (idempotent, at worst duplicated),
+                //     matching the pre-BUG-2 behavior.
                 if (auto* passBiped = EnginePassBiped(a_visitor); passBiped && passBiped != biped) {
-                    spdlog::debug("wornpass: non-3rd-person pass; skipped.");
+                    StyleFirstPersonPass(passBiped, player, real);
                     return;
                 }
 
@@ -179,8 +295,30 @@ namespace OS {
                 //     slot coverage: a multi-slot style ARMO (e.g. body armor
                 //     that also claims slot 46) stages .item into every covered
                 //     slot, and each one needs the honesty restore.
+                // Helmet Toggle 2: while it hides worn headgear, suppress styles
+                // that overlap the hidden WORN head slots (intersection keeps
+                // unrelated headwear styled - a circlet style in 42 survives a
+                // hidden hood covering 30/31). DAV's invisible variant then wins
+                // the slot and the hide actually hides.
+                std::uint32_t ht2Suppressed = 0;
+                if (HT2HidesHeadgear()) {
+                    for (auto* wornArmo : real.armo) {
+                        if (wornArmo) {
+                            ht2Suppressed |=
+                                static_cast<std::uint32_t>(wornArmo->GetSlotMask()) &
+                                kHT2HeadSlots;
+                        }
+                    }
+                }
+
                 std::uint32_t styledCoverage = 0;
                 session.VisitStyles([&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
+                    if (ht2Suppressed &&
+                        (static_cast<std::uint32_t>(a_armo->GetSlotMask()) & ht2Suppressed)) {
+                        spdlog::debug("  style bit {} '{}' skipped: Helmet Toggle hides this slot.",
+                                      a_bit, a_armo->GetName());
+                        return;
+                    }
                     const bool ok = REAug::ApplyArmorAddon(a_armo, race, awm, isFemale);
                     styledCoverage |= static_cast<std::uint32_t>(a_armo->GetSlotMask());
                     for (auto* arma : a_armo->armorAddons) {
@@ -249,8 +387,16 @@ namespace OS {
                 if (!session.IsActive() || !a_changes || !player || a_changes->owner != player) {
                     return real;
                 }
-                const auto d       = session.Display();
-                const auto shimmed = (real | d.styleMask) & ~d.hiddenHeadPartMask;
+                const auto d = session.Display();
+                // Helmet Toggle 2: hidden worn head slots contribute no style
+                // bits - the styled piece is suppressed in the pass above, and
+                // keeping the bit here would leave the character bald-with-
+                // hidden-hair (hair must regrow exactly as HT2 expects).
+                auto styleMask = d.styleMask;
+                if (HT2HidesHeadgear()) {
+                    styleMask &= ~(kHT2HeadSlots & real);
+                }
+                const auto shimmed = (real | styleMask) & ~d.hiddenHeadPartMask;
                 spdlog::debug("wornmask real={:08X} -> {:08X} (style={:04X} hideHead={:04X})",
                               real, shimmed, d.styleMask, d.hiddenHeadPartMask);
                 return shimmed;
@@ -262,9 +408,23 @@ namespace OS {
     }
 
     void BipedHooks::InstallInjection() {
-        const REL::Relocation<std::uintptr_t> site{ REL::RelocationID(24231, 24735), 0x81 };
+        // SE: the worn skinning exec (15856) is called from the small wrapper
+        // 24231 at +0x81, and 24221 (the rebuild parent) is that wrapper's ONLY
+        // caller (whole-exe xref, 2026-07-15). AE: the compiler INLINED the
+        // wrapper into the rebuild parent 24725 - 24735 still exists in the
+        // binary (its +0x81 call intact, which is why the old byte check
+        // passed) but has ZERO callers, so a hook there never fires (Ivy's
+        // 1.6.1170 diag log: mask shim ran, "wornpass ran 0x"). The live AE
+        // site is the inlined call to 16096 at 24725+0x1EF; same displaced-
+        // call ABI (rcx = InventoryChanges*, rdx = visitor&), and the inlined
+        // visitor carries the same vtable (id 195851, byte-verified: lea at
+        // +0x19E loads 0x17E5488 on 1.6.1170) so the pass gate below works
+        // unchanged. The sibling inline call at 24725+0xFC is a different
+        // visitor (0x17E54C0, a checker) - do not hook that one.
+        const REL::Relocation<std::uintptr_t> site{ REL::RelocationID(24231, 24725),
+                                                    REL::VariantOffset(0x81, 0x1EF, 0x81) };
         if (*reinterpret_cast<std::uint8_t*>(site.address()) != 0xE8) {
-            spdlog::error("BipedHooks: expected E8 at the worn-pass call site (24231/24735 +0x81), found {:02X}; injection NOT installed.",
+            spdlog::error("BipedHooks: expected E8 at the worn-pass call site (SE 24231+0x81 / AE 24725+0x1EF), found {:02X}; injection NOT installed.",
                           *reinterpret_cast<std::uint8_t*>(site.address()));
             return;
         }
@@ -279,7 +439,7 @@ namespace OS {
         g_origVisitWorn = reinterpret_cast<VisitWorn_t>(
             SKSE::GetTrampoline().write_call<5>(site.address(), HandleWornPass));
         injectionOk_ = true;
-        spdlog::info("BipedHooks: injection hook installed at 24231/24735 +0x81 (register-free thunk).");
+        spdlog::info("BipedHooks: injection hook installed at SE 24231+0x81 / AE 24725+0x1EF (register-free thunk).");
     }
 
     void BipedHooks::InstallWornMaskShim() {

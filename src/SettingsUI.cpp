@@ -4,6 +4,7 @@
 
 #include "EditorGate.h"
 #include "InputListener.h"
+#include "LoreModule.h"
 #include "Settings.h"
 
 #include <SimpleIni.h>  // CSimpleIniA, referenced by FUCK_API.h's INI callback typedefs
@@ -29,8 +30,30 @@ namespace {
     void DrawPanel() {
         auto& cfg   = OS::Settings::GetSingleton();
         bool  dirty = false;
+        const ImVec4 kWarn{ 0.95f, 0.75f, 0.25f, 1.0f };
 
-        FUCK::SeparatorText("$FR_Set_Gameplay"_T);
+        // The same two setups the installer offers, one click each - so the
+        // lore levers are reachable as a single decision instead of three
+        // scattered switches. Settings only: the buttons assign exactly what
+        // the Lore section below shows, and the note says so out loud. The
+        // ESP itself is the one thing only the installer can add.
+        FUCK::SeparatorText("$FR_Set_Playstyle"_T);
+        if (FUCK::Button("$FR_Set_PlaystyleLore"_T)) {
+            cfg.useGold          = true;
+            cfg.requireSeamstone = true;
+            dirty                = true;
+        }
+        Tip("$FR_Set_PlaystyleLoreTip"_T);
+        FUCK::SameLine(0.0f, 8.0f);
+        if (FUCK::Button("$FR_Set_PlaystyleFree"_T)) {
+            cfg.useGold          = false;
+            cfg.requireSeamstone = false;
+            dirty                = true;
+        }
+        Tip("$FR_Set_PlaystyleFreeTip"_T);
+        FUCK::TextDisabled("%s", "$FR_Set_PlaystyleNote"_T);
+
+        FUCK::SeparatorText("$FR_Set_Lore"_T);
         dirty |= FUCK::Checkbox("$FR_Set_ChargeGold"_T, &cfg.useGold, false, false);
         Tip("$FR_Set_ChargeGoldTip"_T);
         if (cfg.useGold) {
@@ -43,6 +66,12 @@ namespace {
         dirty |= FUCK::Checkbox("$FR_Set_RequireSeamstone"_T,
                                 &cfg.requireSeamstone, false, false);
         Tip("$FR_Set_RequireSeamstoneTip"_T);
+        // The requirement is AND-ed with the ESP being loaded, so without it
+        // this switch silently does nothing - say so rather than let someone
+        // wonder why their hotkey still opens the editor.
+        if (cfg.requireSeamstone && !OS::LoreModule::Available()) {
+            FUCK::TextColored(kWarn, "%s", "$FR_Set_SeamstoneMissing"_T);
+        }
 
         FUCK::SeparatorText("$FR_Set_Editor"_T);
         dirty |= FUCK::Checkbox("$FR_Set_CollectedOnly"_T, &cfg.collectionOnly, false, false);
