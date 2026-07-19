@@ -9,12 +9,14 @@
 
 namespace OS {
 
-    // The player's appearance collection: every ARMO that has ever passed
-    // through their inventory (WoW-transmog style "you must own the look").
+    // The player's appearance collection: every style form (ARMO, and since the
+    // weapon dimension landed WEAP/AMMO) that has ever passed through their
+    // inventory (WoW-transmog style "you must own the look").
     // Seeded from the current inventory on each game load (covers saves that
     // predate the feature), then kept current by the container-changed event.
     // The style browser filters to this set by default ([General]
     // bCollectionOnly); applied outfits are NEVER invalidated by the filter.
+    // One map for every dimension - the StyleRefKey shape is identical.
     class Collection : public RE::BSTEventSink<RE::TESContainerChangedEvent> {
     public:
         static Collection& GetSingleton();
@@ -22,7 +24,8 @@ namespace OS {
         void Register();                 // event sink; call at kDataLoaded
         void SeedFromPlayerInventory();  // kPostLoadGame / kNewGame
 
-        void               Add(RE::TESObjectARMO* a_armo);
+        // Learn a look. Silently ignores forms that are not style forms.
+        void               Add(RE::TESBoundObject* a_form);
         [[nodiscard]] bool Knows(RE::FormID a_id) const;
         [[nodiscard]] std::size_t Size() const;
 

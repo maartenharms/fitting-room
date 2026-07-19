@@ -50,6 +50,14 @@ namespace OS {
         }
     }
 
+    namespace {
+        // The form types a look can be.
+        bool IsStyleForm(const RE::TESForm* a_form) {
+            return a_form && (a_form->Is(RE::FormType::Armor) || a_form->Is(RE::FormType::Weapon) ||
+                              a_form->Is(RE::FormType::Ammo));
+        }
+    }
+
     void Collection::SeedFromPlayerInventory() {
         auto* player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
@@ -57,30 +65,26 @@ namespace OS {
         }
         std::size_t added = 0;
         for (const auto& [obj, data] : player->GetInventory()) {
-            if (!obj || !obj->Is(RE::FormType::Armor) || data.first <= 0) {
-                continue;
-            }
-            auto* armo = obj->As<RE::TESObjectARMO>();
-            if (!armo) {
+            if (!IsStyleForm(obj) || data.first <= 0) {
                 continue;
             }
             const auto before = Size();
-            Add(armo);
+            Add(obj);
             added += Size() - before;
         }
         spdlog::info("Collection: inventory seed added {} looks ({} total known).", added, Size());
     }
 
-    void Collection::Add(RE::TESObjectARMO* a_armo) {
-        if (!a_armo) {
+    void Collection::Add(RE::TESBoundObject* a_form) {
+        if (!IsStyleForm(a_form)) {
             return;
         }
         StyleRefKey key;
-        if (!StyleRef::Make(a_armo, key)) {
+        if (!StyleRef::Make(a_form, key)) {
             return;
         }
         std::scoped_lock l(lock_);
-        known_.try_emplace(a_armo->GetFormID(), std::move(key));
+        known_.try_emplace(a_form->GetFormID(), std::move(key));
     }
 
     bool Collection::Knows(RE::FormID a_id) const {
@@ -121,8 +125,11 @@ namespace OS {
             if (!ReadString(a_bytes, key.modName) || !ReadU32(a_bytes, key.localFormID)) {
                 return false;  // truncated - refuse the whole record
             }
-            if (auto* armo = StyleRef::Resolve(key)) {
-                loaded.try_emplace(armo->GetFormID(), std::move(key));
+            // ResolveAny, not Resolve: the map holds every dimension, so
+            // resolving ARMO-only would silently drop each saved weapon look
+            // on load and the collection filter would hide weapons forever.
+            if (auto* form = StyleRef::ResolveAny(key)) {
+                loaded.try_emplace(form->GetFormID(), std::move(key));
             } else {
                 ++unresolved;  // plugin removed: drop silently, look re-earns on re-own
             }
@@ -151,13 +158,13 @@ namespace OS {
         if (!player || a_event->newContainer != player->GetFormID()) {
             return RE::BSEventNotifyControl::kContinue;
         }
-        if (auto* form = RE::TESForm::LookupByID(a_event->baseObj)) {
-            if (auto* armo = form->As<RE::TESObjectARMO>()) {
+        if (auto* form = RE::TESForm::LookupByID(a_event->baseObj); IsStyleForm(form)) {
+            if (auto* obj = form->As<RE::TESBoundObject>()) {
                 const auto before = Size();
-                Add(armo);
+                Add(obj);
                 if (Size() != before) {
-                    spdlog::debug("Collection: learned look '{}' ({:08X}).", armo->GetName(),
-                                  armo->GetFormID());
+                    spdlog::debug("Collection: learned look '{}' ({:08X}).", obj->GetName(),
+                                  obj->GetFormID());
                 }
             }
         }

@@ -54,7 +54,7 @@ namespace {
         FUCK::TextDisabled("%s", "$FR_Set_PlaystyleNote"_T);
 
         FUCK::SeparatorText("$FR_Set_Lore"_T);
-        dirty |= FUCK::Checkbox("$FR_Set_ChargeGold"_T, &cfg.useGold, false, false);
+        dirty |= FUCK::Checkbox("$FR_Set_ChargeGold"_T, &cfg.useGold);
         Tip("$FR_Set_ChargeGoldTip"_T);
         if (cfg.useGold) {
             int gold = static_cast<int>(cfg.goldPerSlot);
@@ -64,7 +64,7 @@ namespace {
             }
         }
         dirty |= FUCK::Checkbox("$FR_Set_RequireSeamstone"_T,
-                                &cfg.requireSeamstone, false, false);
+                                &cfg.requireSeamstone);
         Tip("$FR_Set_RequireSeamstoneTip"_T);
         // The requirement is AND-ed with the ESP being loaded, so without it
         // this switch silently does nothing - say so rather than let someone
@@ -74,16 +74,16 @@ namespace {
         }
 
         FUCK::SeparatorText("$FR_Set_Editor"_T);
-        dirty |= FUCK::Checkbox("$FR_Set_CollectedOnly"_T, &cfg.collectionOnly, false, false);
-        dirty |= FUCK::Checkbox("$FR_Set_HoverPreview"_T, &cfg.hoverPreview, false, false);
-        dirty |= FUCK::Checkbox("$FR_Set_EverySlot"_T, &cfg.advancedSlots, false, false);
+        dirty |= FUCK::Checkbox("$FR_Set_CollectedOnly"_T, &cfg.collectionOnly);
+        dirty |= FUCK::Checkbox("$FR_Set_HoverPreview"_T, &cfg.hoverPreview);
+        dirty |= FUCK::Checkbox("$FR_Set_EverySlot"_T, &cfg.advancedSlots);
         if (FUCK::SliderFloat("$FR_Set_UiScale"_T, &cfg.uiScale, 0.8f, 1.6f, "%.2f")) {
             dirty = true;
         }
 
         FUCK::SeparatorText("$FR_Set_Compatibility"_T);
         dirty |= FUCK::Checkbox("$FR_Set_SuspendScenes"_T,
-                                &cfg.sceneCompat, false, false);
+                                &cfg.sceneCompat);
 
         FUCK::SeparatorText("$FR_Set_Controls"_T);
         {

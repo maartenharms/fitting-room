@@ -33,9 +33,13 @@ namespace OS::BipedPost {
     // §Fallbacks #1, promoted to primary after the visitor proxy crashed IED):
     // set NiAVObject::kHidden on objects[slot].partClone. CullNodes acts
     // immediately on the given biped (clones 15500 made synchronously on this
-    // stack); QueueNodeCull re-runs it deferred against the CURRENT player
-    // biped, catching clones the BSTaskPool attaches late (uncached models).
+    // stack); QueueNodeCull re-runs it deferred against the actor the handle
+    // resolves to (its CURRENT biped), catching clones the BSTaskPool attaches
+    // late (uncached models) and tolerating the actor unloading before the queue
+    // drains. Player callers pass the player's handle; the NPC attachment-hide
+    // path passes the NPC's handle - so a follower's deferred cull re-resolves
+    // the follower, never the player.
     void CullNodes(RE::BipedAnim* a_biped, std::uint32_t a_hiddenAttachmentMask);
-    void QueueNodeCull(std::uint32_t a_hiddenAttachmentMask);
+    void QueueNodeCull(RE::ActorHandle a_actor, std::uint32_t a_hiddenAttachmentMask);
 
 }  // namespace OS::BipedPost

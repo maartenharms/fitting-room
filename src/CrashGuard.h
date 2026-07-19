@@ -24,9 +24,12 @@ namespace OS::CrashGuard {
     void SetPreviewing(const StyleRefKey& a_key);
     void ClearPreviewing();
 
-    // REAug::RefreshPlayer brackets the biped rebuild that skins the meshes:
-    // BeginKick writes the pending marker (if a preview key is set), EndKick
-    // deletes it (the rebuild survived). A crash between them leaves the marker.
+    // REAug::RefreshActor's player path brackets the biped rebuild that skins
+    // the meshes: BeginKick writes the pending marker (if a preview key is
+    // set), EndKick deletes it (the rebuild survived). A crash between them
+    // leaves the marker. NPC refreshes are never bracketed (the marker is one
+    // global key, not actor-scoped - it can only ever blame the player's live
+    // preview).
     void BeginKick();
     void EndKick();
 

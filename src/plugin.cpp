@@ -16,31 +16,78 @@
 #include "OutfitSession.h"
 #include "Persistence.h"
 #include "PresetStore.h"
+#include "RaceSwitchSink.h"
 #include "RecentMods.h"
 #include "SceneGuard.h"
 #include "Settings.h"
 #include "SettingsUI.h"
 #include "StyleCatalog.h"
+#include "WeaponHooks.h"
 
 namespace {
     constexpr auto kLogName = "FittingRoom.log";
     // Keep in sync with project(... VERSION) in CMakeLists.txt and vcpkg.json; used only for the load log line.
-    constexpr auto kVersion = "0.1.2";
+    constexpr auto kVersion = "0.2.0";
 
+    // Resolve where the log goes, and never fail silently.
+    //
+    // The old version asked CommonLib for the SKSE log directory and simply
+    // RETURNED if it got nothing back - the mod then ran with no log at all and
+    // no way to tell. That is what happened on AE 1.6.1170 under MO2 on
+    // 2026-07-18: skse64.log recorded "plugin FittingRoom.dll (... 00020000)
+    // loaded correctly" while no FittingRoom.log was written anywhere on disk,
+    // which cost a debugging session and blocked the field test.
+    //
+    // Two things in SKSE::log::log_directory() can produce that: the Documents
+    // known-folder lookup can fail outright (-> nullopt), and it distinguishes a
+    // Steam install from a GOG one by probing for "steam_api64.dll" with a
+    // RELATIVE path - i.e. against the process working directory, not the game
+    // folder - so any launcher whose CWD is elsewhere silently redirects us to a
+    // "Skyrim Special Edition GOG" path. A diagnostic you cannot rely on is
+    // worse than no diagnostic, so try each candidate in turn, create the
+    // directory first (a missing one must not throw), never let a throwing sink
+    // escape, and state which candidate won on the first line.
+    //
+    // The fallback is Data/SKSE/Plugins next to the DLL: MO2 maps that to
+    // Overwrite, and several mods in a normal load order already log there, so
+    // it is proven writable in exactly the setup where the primary path failed.
     void SetupLog() {
-        auto path = SKSE::log::log_directory();
-        if (!path) {
-            return;
+        struct Candidate {
+            std::filesystem::path dir;
+            const char*           what;
+        };
+
+        std::vector<Candidate> candidates;
+        if (auto dir = SKSE::log::log_directory()) {
+            candidates.push_back({ *dir, "SKSE log directory" });
         }
-        *path /= kLogName;
+        std::error_code ec;
+        if (auto cwd = std::filesystem::current_path(ec); !ec) {
+            candidates.push_back({ cwd / "Data" / "SKSE" / "Plugins", "Data/SKSE/Plugins fallback" });
+        }
 
-        auto sink   = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
-        auto logger = std::make_shared<spdlog::logger>("global", std::move(sink));
-        logger->set_level(spdlog::level::debug);
-        logger->flush_on(spdlog::level::debug);
+        for (const auto& candidate : candidates) {
+            std::error_code mkdirEc;
+            std::filesystem::create_directories(candidate.dir, mkdirEc);  // best effort; the open decides
+            try {
+                auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
+                    (candidate.dir / kLogName).string(), true);
+                auto logger = std::make_shared<spdlog::logger>("global", std::move(sink));
+                logger->set_level(spdlog::level::debug);
+                logger->flush_on(spdlog::level::debug);
 
-        spdlog::set_default_logger(std::move(logger));
-        spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+                spdlog::set_default_logger(std::move(logger));
+                spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+                // First line, every run: names the directory that won and how we
+                // got there, so "the log is missing" is one glance from an answer.
+                spdlog::info("log: writing to '{}' ({}).", candidate.dir.string(), candidate.what);
+                return;
+            } catch (const std::exception&) {
+                // Try the next candidate. Nothing else in the plugin needs a
+                // sink, so exhausting them leaves spdlog's default logger and
+                // the mod still loads - quietly, but it loads.
+            }
+        }
     }
 
     void OnMessage(SKSE::MessagingInterface::Message* a_msg) {
@@ -77,6 +124,9 @@ namespace {
                 // Scene coexistence (OStim etc.) - listens for scene mod-events
                 // to suspend transmog; reads its config from Settings::Load above.
                 OS::SceneGuard::Init();
+                // Race-switch suspension (vampire lord, werewolf, etc.) - the
+                // player path (OS-65 audit gap) and the per-actor NPC path.
+                OS::RaceSwitchSink::Register();
                 // In-game config panel (FUCK sidebar tool, soft dependency).
                 OS::SettingsUI::Register();
                 // The editor as a FUCK IWindow (Phase 3). Must follow
@@ -131,6 +181,11 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
 
     // Install the two biped-rebuild hooks. Trampoline must be allocated first.
     OS::BipedHooks::Install();
+
+    // The weapon/quiver override's three part-3D call-site hooks. Independent
+    // of the armor hooks above in both directions: these can all fail their
+    // byte checks and armor transmog still works, and vice versa.
+    OS::WeaponHooks::Install();
 
     // Co-save (de)serialization must be registered before kDataLoaded.
     OS::Persistence::Register();

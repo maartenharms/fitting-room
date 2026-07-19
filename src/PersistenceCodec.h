@@ -9,7 +9,13 @@
 
 namespace OS {
 
-    inline constexpr std::uint32_t kCodecVersion = 1;
+    inline constexpr std::uint32_t kCodecVersion = 2;
+    // v1 -> v2: appended a per-outfit weapon block (weapon + quiver
+    // transmog) after the existing armor slot block. CRITICAL: the co-save
+    // 'LIBR' record is every save's own outfit library, so Decode MUST keep
+    // accepting v1 bytes forever - if it ever stopped, every save written
+    // before this version would silently lose its whole library on load.
+    // See the v1-branch below and the v1-decode test in test_persistence.cpp.
 
     // Guard against absurd allocations from corrupt data.
     inline constexpr std::uint32_t kMaxStringLen = 512;
@@ -101,6 +107,28 @@ namespace OS {
                 PutStr(out, e.style.modName);
                 PutU32(out, e.style.localFormID);
             }
+
+            // Weapon dimension (v2), same non-passthrough-only shape as the
+            // armor slot block above, indexed by WeaponClass instead of an
+            // editor-slot bit.
+            std::uint32_t weaponCount = 0;
+            for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+                if (o.WeaponEntryFor(static_cast<WeaponClass>(c)).kind != SlotEntry::Kind::kPassthrough) {
+                    ++weaponCount;
+                }
+            }
+            PutU32(out, weaponCount);
+            for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+                const auto  wc = static_cast<WeaponClass>(c);
+                const auto& e  = o.WeaponEntryFor(wc);
+                if (e.kind == SlotEntry::Kind::kPassthrough) {
+                    continue;
+                }
+                PutU8(out, static_cast<std::uint8_t>(c));
+                PutU8(out, static_cast<std::uint8_t>(e.kind));
+                PutStr(out, e.style.modName);
+                PutU32(out, e.style.localFormID);
+            }
         }
         return out;
     }
@@ -110,7 +138,7 @@ namespace OS {
     inline bool Decode(std::span<const std::byte> a_bytes, std::uint32_t a_version,
                        OutfitLibrary& a_lib) {
         using namespace detail;
-        if (a_version != kCodecVersion) {
+        if (a_version != 1 && a_version != 2) {
             return false;
         }
         Reader r{ a_bytes };
@@ -132,7 +160,8 @@ namespace OS {
             if (idx < 0) {
                 return false;
             }
-            tmp.At(static_cast<std::size_t>(idx))->favorite = fav != 0;
+            auto* o    = tmp.At(static_cast<std::size_t>(idx));
+            o->favorite = fav != 0;
 
             const auto slots = r.U32();
             if (!r.ok || slots > kBitCount) {
@@ -146,11 +175,45 @@ namespace OS {
                 if (!r.ok || bit >= kBitCount || kind > static_cast<std::uint8_t>(SlotEntry::Kind::kHide)) {
                     return false;
                 }
-                auto* o = tmp.At(static_cast<std::size_t>(idx));
                 if (kind == static_cast<std::uint8_t>(SlotEntry::Kind::kStyle)) {
                     o->SetStyle(bit, StyleRefKey{ mod, fid });
                 } else if (kind == static_cast<std::uint8_t>(SlotEntry::Kind::kHide)) {
                     o->SetHide(bit);
+                }
+            }
+
+            if (a_version == 1) {
+                continue;  // v1 bytes stop here - no weapon block; leave it all-passthrough
+            }
+
+            // Cap at what the wire can express (the class index is a u8, so a
+            // same-version writer can never emit more than 256 entries), NOT at
+            // this build's kWeaponClassCount - a future writer with appended
+            // classes must still decode here, with its unknown entries skipped
+            // per-entry below. Absurd counts from corruption die on the
+            // r.ok / kMaxStringLen guards (and the record itself is capped at
+            // kMaxRecordBytes before Decode ever sees it).
+            const auto weaponCount = r.U32();
+            if (!r.ok || weaponCount > 256) {
+                return false;
+            }
+            for (std::uint32_t w = 0; w < weaponCount; ++w) {
+                const auto classIdx = r.U8();
+                const auto kind     = r.U8();
+                const auto mod      = r.Str();
+                const auto fid      = r.U32();
+                if (!r.ok) {
+                    return false;
+                }
+                if (classIdx >= kWeaponClassCount ||
+                    kind > static_cast<std::uint8_t>(SlotEntry::Kind::kHide)) {
+                    continue;  // forward-tolerant: unknown class/kind, consumed and skipped
+                }
+                const auto wc = static_cast<WeaponClass>(classIdx);
+                if (kind == static_cast<std::uint8_t>(SlotEntry::Kind::kStyle)) {
+                    o->SetWeaponStyle(wc, StyleRefKey{ mod, fid });
+                } else if (kind == static_cast<std::uint8_t>(SlotEntry::Kind::kHide)) {
+                    o->SetWeaponHide(wc);
                 }
             }
         }

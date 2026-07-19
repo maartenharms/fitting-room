@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SlotMask.h"
+#include "WeaponSlots.h"
 
 #include <array>
 #include <cstdint>
@@ -65,6 +66,33 @@ namespace OS {
             }
         }
 
+        // Weapon dimension (weapon + quiver transmog, stage 1). Parallel to
+        // the armor entries_ above - same SlotEntry kind, a separate array
+        // indexed by WeaponClass instead of an editor-slot bit (see
+        // WeaponSlots.h for the class<->BipedAnim-slot mapping). Additive:
+        // an outfit that never touches weapons leaves weaponEntries_
+        // all-passthrough, so ChangedSlotCount/EditHistory below are unaffected.
+        void SetWeaponStyle(WeaponClass a_class, StyleRefKey a_key) {
+            weaponEntries_[Idx(a_class)] = { SlotEntry::Kind::kStyle, std::move(a_key) };
+        }
+        void SetWeaponHide(WeaponClass a_class) {
+            weaponEntries_[Idx(a_class)] = { SlotEntry::Kind::kHide, {} };
+        }
+        void SetWeaponPassthrough(WeaponClass a_class) { weaponEntries_[Idx(a_class)] = {}; }
+
+        [[nodiscard]] const SlotEntry& WeaponEntryFor(WeaponClass a_class) const {
+            return weaponEntries_[Idx(a_class)];
+        }
+
+        template <class F>
+        void ForEachWeaponStyle(F&& a_fn) const {
+            for (std::size_t i = 0; i < kWeaponClassCount; ++i) {
+                if (weaponEntries_[i].kind == SlotEntry::Kind::kStyle) {
+                    a_fn(static_cast<WeaponClass>(i), weaponEntries_[i].style);
+                }
+            }
+        }
+
     private:
         [[nodiscard]] std::uint32_t MaskOf(SlotEntry::Kind a_kind) const {
             std::uint32_t m = 0;
@@ -76,7 +104,12 @@ namespace OS {
             return m;
         }
 
-        std::array<SlotEntry, kBitCount> entries_{};
+        static constexpr std::size_t Idx(WeaponClass a_class) {
+            return static_cast<std::size_t>(a_class);
+        }
+
+        std::array<SlotEntry, kBitCount>         entries_{};
+        std::array<SlotEntry, kWeaponClassCount> weaponEntries_{};
     };
 
     // What the render override must do this pass. Pure function of the outfit
@@ -102,6 +135,19 @@ namespace OS {
         return d;
     }
 
+    // True when the outfit styles or hides ANY weapon class - hiding counts.
+    // The predicate behind OutfitSession's weapon fast-path flag; it lives here,
+    // pure, so the part deciding whether the feature runs at all is unit-tested.
+    [[nodiscard]] inline bool AnyWeaponEntry(const Outfit& a_outfit) {
+        for (std::size_t i = 0; i < kWeaponClassCount; ++i) {
+            if (a_outfit.WeaponEntryFor(static_cast<WeaponClass>(i)).kind !=
+                SlotEntry::Kind::kPassthrough) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // True when the two slot entries render differently (drives the Apply
     // cost: a slot that returns to its baseline value costs nothing).
     [[nodiscard]] inline bool SlotDiffers(const SlotEntry& a, const SlotEntry& b) {
@@ -109,7 +155,8 @@ namespace OS {
                (a.kind == SlotEntry::Kind::kStyle && !(a.style == b.style));
     }
 
-    // How many slots the staged outfit changes vs. the committed baseline.
+    // How many slots the staged outfit changes vs. the committed baseline -
+    // armor bits then weapon classes, same SlotDiffers predicate for both.
     // The lore-mode Apply charges per changed slot, so this must return to 0
     // whenever the staged outfit is edited back to its baseline.
     [[nodiscard]] inline std::uint32_t ChangedSlotCount(const Outfit& a_base,
@@ -117,6 +164,12 @@ namespace OS {
         std::uint32_t n = 0;
         for (std::uint32_t b = 0; b < kBitCount; ++b) {
             if (SlotDiffers(a_base.EntryFor(b), a_staged.EntryFor(b))) {
+                ++n;
+            }
+        }
+        for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+            const auto wc = static_cast<WeaponClass>(c);
+            if (SlotDiffers(a_base.WeaponEntryFor(wc), a_staged.WeaponEntryFor(wc))) {
                 ++n;
             }
         }
@@ -210,15 +263,11 @@ namespace OS {
         [[nodiscard]] std::size_t Size() const { return states_.size(); }
 
     private:
-        // Two outfits differ as edits iff any slot renders differently - the
-        // same predicate ChangedSlotCount uses, so history and Apply-cost agree.
+        // Two outfits differ as edits iff any slot (armor bit or weapon
+        // class) renders differently - structurally the same predicate
+        // ChangedSlotCount uses, so history and Apply-cost agree.
         static bool SlotsDiffer(const Outfit& a, const Outfit& b) {
-            for (std::uint32_t bit = 0; bit < kBitCount; ++bit) {
-                if (SlotDiffers(a.EntryFor(bit), b.EntryFor(bit))) {
-                    return true;
-                }
-            }
-            return false;
+            return ChangedSlotCount(a, b) != 0;
         }
 
         std::vector<Outfit> states_;

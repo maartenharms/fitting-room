@@ -214,7 +214,27 @@ namespace OS {
                     // panel - that's where the list-scroll-to-SAM-FOV leak was.
                     // When the mouse is over the 3D character, fall through so the
                     // inventory/SAM can rotate the preview (ImGui was already fed).
-                    if (overlay.WantsCaptureMouse()) {
+                    const bool capture = overlay.WantsCaptureMouse();
+                    // OS-80. This gate and the drag's own arm gate read DIFFERENT
+                    // signals - ImGui's WantCaptureMouse here, FUCK::IsWindowHovered
+                    // in EditorWindow - so they can disagree, and when they do the
+                    // click dies here with nothing downstream to show for it. Log
+                    // the decision on every CHANGE (never per event) so a "camera
+                    // will not move" report can be pinned to this hook or cleared
+                    // of it: PASSING here plus no 'camera drag: LMB down' line
+                    // means the sink never got the click for some other reason.
+                    {
+                        static bool s_logged{ false };
+                        static bool s_last{ false };
+                        if (!s_logged || capture != s_last) {
+                            s_logged = true;
+                            s_last   = capture;
+                            spdlog::info("input hook: editor open, WantCaptureMouse={} -> {}"
+                                         " downstream.",
+                                         capture, capture ? "BLOCKING" : "passing");
+                        }
+                    }
+                    if (capture) {
                         RE::InputEvent* const empty[1] = { nullptr };
                         func(a_dispatcher, empty);
                         return;

@@ -87,17 +87,25 @@ namespace OS::BipedPost {
         }
     }
 
-    void QueueNodeCull(std::uint32_t a_hiddenAttachmentMask) {
+    void QueueNodeCull(RE::ActorHandle a_actor, std::uint32_t a_hiddenAttachmentMask) {
         auto* task = SKSE::GetTaskInterface();
         if (!task || !a_hiddenAttachmentMask) {
             return;
         }
-        const auto mask = a_hiddenAttachmentMask;
-        task->AddTask([mask] {
-            // Re-resolve the biped at run time: the pass's biped may have been
-            // torn down before the task queue drains, and a fresh clone from an
-            // async model load needs the cull re-applied.
-            CullNodes(CurrentPlayerBiped(), mask);
+        const auto mask   = a_hiddenAttachmentMask;
+        const auto handle = a_actor;
+        task->AddTask([handle, mask] {
+            // Re-resolve the biped at run time against the CAPTURED actor (not
+            // the player): the pass's biped may have been torn down before the
+            // task queue drains, and a fresh clone from an async model load
+            // needs the cull re-applied. Skip silently if the actor has unloaded
+            // between queue and drain - a stale handle resolves to null.
+            auto       ptr   = handle.get();
+            RE::Actor* actor = ptr.get();
+            if (!actor) {
+                return;
+            }
+            CullNodes(actor->GetCurrentBiped().get(), mask);
         });
     }
 

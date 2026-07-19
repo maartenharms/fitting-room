@@ -4,6 +4,7 @@
 
 #include "Collection.h"
 #include "JsonCodec.h"
+#include "NpcAssignments.h"
 #include "OutfitSession.h"
 #include "PersistenceCodec.h"
 
@@ -20,6 +21,7 @@ namespace OS::Persistence {
         constexpr std::uint32_t kRecord   = 'LIBR';   // per-save outfit library (collections): this save's OWN outfits
         constexpr std::uint32_t kRecordKnown  = 'KNWN';  // appearance collection
         constexpr std::uint32_t kRecordActive = 'ACTV';  // active outfit NAME (per save)
+        constexpr std::uint32_t kRecordNpc    = 'NPCO';  // per-save NPC/follower outfit assignments
         constexpr std::uint32_t kCollectionVersion = 1;
         constexpr std::uint32_t kActiveVersion     = 1;
         constexpr std::uint32_t kMaxRecordBytes = 1u << 20;  // save and load must agree
@@ -162,6 +164,18 @@ namespace OS::Persistence {
             if (WriteRecord(a_intf, kRecordKnown, kCollectionVersion, known, "collection")) {
                 spdlog::info("Persistence: saved {} bytes (appearance collection).", known.size());
             }
+            // NPC/follower assignments: per-save co-save state, never routed through
+            // WithLibrary/outfits.json (see OutfitSession::UpsertNpcLibrary). Skip the
+            // record entirely when empty, matching the "no empty record" convention -
+            // an old save with no NPCO record decodes as zero assignments regardless.
+            const auto npcMap = OutfitSession::GetSingleton().SnapshotNpcAssignments();
+            if (!npcMap.empty()) {
+                const auto npcBytes = EncodeNpcAssignments(npcMap);
+                if (WriteRecord(a_intf, kRecordNpc, kNpcRecordVersion, npcBytes,
+                                "NPC assignments")) {
+                    spdlog::info("Persistence: saved {} NPC assignment(s).", npcMap.size());
+                }
+            }
         }
 
         void LoadCallback(SKSE::SerializationInterface* a_intf) {
@@ -174,7 +188,8 @@ namespace OS::Persistence {
 
             std::uint32_t type = 0, version = 0, length = 0;
             while (a_intf->GetNextRecordInfo(type, version, length)) {
-                if (type != kRecord && type != kRecordKnown && type != kRecordActive) {
+                if (type != kRecord && type != kRecordKnown && type != kRecordActive &&
+                    type != kRecordNpc) {
                     continue;
                 }
                 std::uint32_t len = 0;
@@ -201,6 +216,26 @@ namespace OS::Persistence {
                     }
                     continue;
                 }
+                if (type == kRecordNpc) {
+                    // Per-save NPC/follower assignments. A decode failure (bad version,
+                    // truncated outer structure) is logged and skipped, never abort the
+                    // load - RevertCallback already left npcAssignments_ empty, so a
+                    // skip here is equivalent to "no assignments this save", same
+                    // tolerance as a refused LIBR/KNWN record above. A single corrupt
+                    // ENTRY inside an otherwise-valid record is handled one level down
+                    // by DecodeNpcAssignments itself (per-entry tolerance).
+                    NpcAssignmentMap npcMap;
+                    if (DecodeNpcAssignments(bytes, version, npcMap)) {
+                        spdlog::info("Persistence: loaded {} NPC assignment(s) from the save.",
+                                     npcMap.size());
+                        OutfitSession::GetSingleton().OnNpcLoad(std::move(npcMap));
+                    } else {
+                        spdlog::warn(
+                            "Persistence: refused NPC assignment record (version {}, {} bytes).",
+                            version, len);
+                    }
+                    continue;
+                }
                 // 'LIBR' - this save's OWN outfit library (collections). Authoritative:
                 // it REPLACES the global default loaded above, so the save keeps its
                 // outfits no matter what other saves did to the shared file. Encode
@@ -216,11 +251,50 @@ namespace OS::Persistence {
                              lib.All().size());
                 OutfitSession::GetSingleton().OnLoad(std::move(lib));
             }
+
+            // Deferred NPC refresh (spec §6): an assigned actor that already rendered
+            // its biped BEFORE this LoadCallback ran (already high-process at the point
+            // the save finished loading) needs an explicit kick; a not-yet-loaded actor
+            // restyles naturally on its own next rebuild regardless. RenderSnapshot()
+            // is a cheap atomic load safe from any thread - it is only CAPTURED here,
+            // not walked; the actual ForEachHighActor walk runs inside the queued task,
+            // on the MAIN thread, per BSTArray-mutation-on-process-transition safety
+            // (see the ForEachReferenceInRange AE pitfall this deliberately avoids by
+            // using ProcessLists instead of a cell/ref scan).
+            const auto npcSnapshot = OutfitSession::GetSingleton().RenderSnapshot();
+            if (npcSnapshot && !npcSnapshot->empty()) {
+                if (auto* task = SKSE::GetTaskInterface()) {
+                    task->AddTask([npcSnapshot] {
+                        try {
+                            auto* processLists = RE::ProcessLists::GetSingleton();
+                            if (!processLists) {
+                                return;
+                            }
+                            processLists->ForEachHighActor(
+                                [&](RE::Actor& a_actor) -> RE::BSContainer::ForEachResult {
+                                    if (const auto* base = a_actor.GetActorBase();
+                                        base && npcSnapshot->contains(base->GetFormID())) {
+                                        OutfitSession::RequestRefreshActor(a_actor.GetHandle());
+                                    }
+                                    return RE::BSContainer::ForEachResult::kContinue;
+                                });
+                        } catch (const std::exception& e) {
+                            spdlog::error("Persistence: deferred NPC refresh walk threw: {}",
+                                          e.what());
+                        } catch (...) {
+                            spdlog::error(
+                                "Persistence: deferred NPC refresh walk threw a non-standard "
+                                "exception.");
+                        }
+                    });
+                }
+            }
         }
 
         void RevertCallback(SKSE::SerializationInterface*) {
             // The library is GLOBAL - keep it. Only per-save state resets.
             OutfitSession::GetSingleton().OnRevert();
+            OutfitSession::GetSingleton().OnNpcRevert();
             Collection::GetSingleton().Revert();
         }
     }

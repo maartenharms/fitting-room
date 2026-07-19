@@ -31,6 +31,35 @@ namespace OS::JsonCodec {
             slots.append(std::move(s));
         }
         o["slots"] = std::move(slots);
+
+        // Weapon dimension (weapon + quiver transmog), same shape as the
+        // slots array above but keyed by weapon-class name instead of an
+        // editor slot number. Omitted entirely when every weapon entry is
+        // passthrough, so an armor-only outfit serializes byte-identically
+        // to a pre-weapons-array (0.1.1-era) file.
+        Json::Value weapons(Json::arrayValue);
+        for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+            const auto  wc    = static_cast<WeaponClass>(c);
+            const auto& entry = a_outfit.WeaponEntryFor(wc);
+            if (entry.kind == SlotEntry::Kind::kPassthrough) {
+                continue;
+            }
+            Json::Value w;
+            w["class"] = ClassJsonName(wc);
+            if (entry.kind == SlotEntry::Kind::kHide) {
+                w["kind"] = "hide";
+            } else {
+                w["kind"] = "style";
+                w["mod"]  = entry.style.modName;
+                char hex[16];
+                std::snprintf(hex, sizeof(hex), "0x%06X", entry.style.localFormID);
+                w["id"] = hex;
+            }
+            weapons.append(std::move(w));
+        }
+        if (!weapons.empty()) {
+            o["weapons"] = std::move(weapons);
+        }
         return o;
     }
 
@@ -59,6 +88,28 @@ namespace OS::JsonCodec {
                     std::strtoul(s.get("id", "0").asString().c_str(), nullptr, 16));
                 if (!key.Empty()) {
                     a_out.SetStyle(bit, std::move(key));
+                }
+            }
+        }
+        for (const auto& w : a_json["weapons"]) {
+            if (!w.isObject()) {
+                continue;
+            }
+            const auto classOpt = ClassFromJsonName(w.get("class", "").asString());
+            if (!classOpt) {
+                continue;
+            }
+            const auto wc   = *classOpt;
+            const auto kind = w.get("kind", "").asString();
+            if (kind == "hide") {
+                a_out.SetWeaponHide(wc);
+            } else if (kind == "style") {
+                StyleRefKey key;
+                key.modName     = w.get("mod", "").asString();
+                key.localFormID = static_cast<std::uint32_t>(
+                    std::strtoul(w.get("id", "0").asString().c_str(), nullptr, 16));
+                if (!key.Empty()) {
+                    a_out.SetWeaponStyle(wc, std::move(key));
                 }
             }
         }
@@ -101,10 +152,13 @@ namespace OS::JsonCodec {
         }
 
         a_out.outfit = Outfit{};
-        JsonToOutfit(a_root, a_out.outfit);  // same object: name + slots
-        if ((a_out.outfit.StyleMask() | a_out.outfit.HideMask()) == 0) {
-            a_error = "no usable \"slots\" entries (a preset must style or hide "
-                      "at least one slot 30-61)";
+        JsonToOutfit(a_root, a_out.outfit);  // same object: name + slots + weapons
+        // Usable-content gate: any non-passthrough armor slot OR weapon entry
+        // counts (ChangedSlotCount vs a default outfit covers both dimensions)
+        // - a weapons-only preset is a perfectly good preset.
+        if (ChangedSlotCount(Outfit{}, a_out.outfit) == 0) {
+            a_error = "no usable \"slots\" or \"weapons\" entries (a preset must "
+                      "style or hide at least one armor slot 30-61 or weapon class)";
             return false;
         }
         return true;

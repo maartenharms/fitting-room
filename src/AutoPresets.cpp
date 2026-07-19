@@ -70,6 +70,11 @@ namespace OS {
         std::vector<SetDetector::DetectStyle> styles;
         styles.reserve(items.size());
         for (const auto& it : items) {
+            // Set detection clusters on slot bits and armor classes, neither of
+            // which a weapon has - without this every sword joins a set at bit 0.
+            if (it.IsWeapon()) {
+                continue;
+            }
             if (it.fitReason == FitReason::kCrashed || it.fitReason == FitReason::kNoSex) {
                 continue;
             }

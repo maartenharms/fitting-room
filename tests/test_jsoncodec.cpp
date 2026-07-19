@@ -157,6 +157,141 @@ int main() {
         CHECK(p.outfit.favorite == false);
     }
 
+    {  // outfit with weapons -> JSON -> outfit round-trip: a mix of weapon
+       // style/hide/passthrough entries across several classes survives
+       // alongside the existing armor slots, and the JSON shape mirrors the
+       // slots array exactly (same kind strings, same hex id format).
+        Outfit o;
+        o.name = "Duelist";
+        o.SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
+        o.SetWeaponStyle(WeaponClass::Sword, StyleRefKey{ "Weapons.esp", 0x10A });
+        o.SetWeaponStyle(WeaponClass::Bolts, StyleRefKey{ "Ammo.esp", 0x55 });
+        o.SetWeaponHide(WeaponClass::Bow);
+        // Dagger, WarAxe, Mace, ... stay passthrough - the mix this test is for.
+
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json.isMember("weapons"));
+        CHECK(json["weapons"].isArray());
+        CHECK(json["weapons"].size() == 3);
+
+        bool sawSwordStyle = false, sawBowHide = false;
+        for (const auto& w : json["weapons"]) {
+            if (w["class"].asString() == "sword") {
+                sawSwordStyle = w["kind"].asString() == "style" &&
+                                w["mod"].asString() == "Weapons.esp" &&
+                                w["id"].asString() == "0x00010A";
+            }
+            if (w["class"].asString() == "bow") {
+                sawBowHide =
+                    w["kind"].asString() == "hide" && !w.isMember("mod") && !w.isMember("id");
+            }
+        }
+        CHECK(sawSwordStyle);
+        CHECK(sawBowHide);
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.EntryFor(kBitBody).style.modName == "Armors.esp");
+        CHECK(back.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kStyle);
+        CHECK(back.WeaponEntryFor(WeaponClass::Sword).style.modName == "Weapons.esp");
+        CHECK(back.WeaponEntryFor(WeaponClass::Sword).style.localFormID == 0x10A);
+        CHECK(back.WeaponEntryFor(WeaponClass::Bolts).kind == SlotEntry::Kind::kStyle);
+        CHECK(back.WeaponEntryFor(WeaponClass::Bolts).style.modName == "Ammo.esp");
+        CHECK(back.WeaponEntryFor(WeaponClass::Bolts).style.localFormID == 0x55);
+        CHECK(back.WeaponEntryFor(WeaponClass::Bow).kind == SlotEntry::Kind::kHide);
+        CHECK(back.WeaponEntryFor(WeaponClass::Dagger).kind == SlotEntry::Kind::kPassthrough);
+    }
+
+    {  // JSON without a "weapons" key at all: every weapon entry stays
+       // passthrough - this is exactly what every 0.1.1-era outfits.json
+       // outfit object looks like.
+        const auto root = Parse(R"({
+            "name": "No Weapons Key",
+            "slots": [ { "slot": 32, "kind": "style", "mod": "Armors.esp", "id": "0x801" } ]
+        })");
+        Outfit o;
+        CHECK(JsonCodec::JsonToOutfit(root, o));
+        CHECK(o.name == "No Weapons Key");
+        CHECK(o.EntryFor(kBitBody).kind == SlotEntry::Kind::kStyle);
+        for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+            CHECK(o.WeaponEntryFor(static_cast<WeaponClass>(c)).kind ==
+                  SlotEntry::Kind::kPassthrough);
+        }
+    }
+
+    {  // tolerance: bad class, bad kind, empty style key and non-objects are
+       // skipped, not fatal - the rest of the outfit (armor slots and other
+       // weapon entries) still parses fine. Mirrors the armor slots
+       // tolerance block above.
+        const auto root = Parse(R"({
+            "name": "Tolerant Weapons",
+            "slots": [ { "slot": 32, "kind": "hide" } ],
+            "weapons": [
+                { "class": "shield", "kind": "style", "mod": "X.esp", "id": "0x1" },
+                { "class": "mace", "kind": "invisible" },
+                { "class": "bow", "kind": "style", "mod": "", "id": "0x0" },
+                { "class": "sword", "kind": "style", "mod": "Weapons.esp", "id": "0x10A" },
+                "not-an-object"
+            ]
+        })");
+        Outfit o;
+        CHECK(JsonCodec::JsonToOutfit(root, o));
+        CHECK(o.name == "Tolerant Weapons");
+        CHECK(o.EntryFor(kBitBody).kind == SlotEntry::Kind::kHide);
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kStyle);
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).style.modName == "Weapons.esp");
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).style.localFormID == 0x10A);
+        // "shield" is not a weapon class name in this build - ignored;
+        // unknown kind string and empty style key are ignored too
+        CHECK(o.WeaponEntryFor(WeaponClass::Mace).kind == SlotEntry::Kind::kPassthrough);
+        CHECK(o.WeaponEntryFor(WeaponClass::Bow).kind == SlotEntry::Kind::kPassthrough);
+        for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+            const auto wc = static_cast<WeaponClass>(c);
+            if (wc != WeaponClass::Sword) {
+                CHECK(o.WeaponEntryFor(wc).kind == SlotEntry::Kind::kPassthrough);
+            }
+        }
+    }
+
+    {  // an armor-only outfit (all weapon entries passthrough) serializes
+       // WITHOUT a "weapons" key at all - keeps 0.1.1-era files byte-stable.
+        Outfit o;
+        o.name = "Armor Only";
+        o.SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
+        o.SetHide(kBitHair);
+
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(!json.isMember("weapons"));
+    }
+
+    {  // a weapons-only preset is a valid preset: the usable-content gate
+       // accepts weapon entries, not just armor slots (the editor's Export
+       // can produce exactly such files).
+        const auto root = Parse(R"({
+            "version": 1,
+            "name": "Blades Loadout",
+            "weapons": [
+                { "class": "sword", "kind": "style", "mod": "Blades.esp", "id": "0x10A" },
+                { "class": "arrows", "kind": "hide" }
+            ]
+        })");
+        JsonCodec::Preset p;
+        std::string       err;
+        CHECK(JsonCodec::ParsePreset(root, p, err));
+        CHECK(err.empty());
+        CHECK(p.outfit.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kStyle);
+        CHECK(p.outfit.WeaponEntryFor(WeaponClass::Sword).style.modName == "Blades.esp");
+        CHECK(p.outfit.WeaponEntryFor(WeaponClass::Arrows).kind == SlotEntry::Kind::kHide);
+
+        // ...but a preset with NO usable content of either dimension still
+        // fails, and the reason now names both arrays.
+        const auto empty = Parse(R"({ "version": 1, "name": "X",
+                                      "slots": [], "weapons": [] })");
+        CHECK(!JsonCodec::ParsePreset(empty, p, err));
+        CHECK(err.find("slots") != std::string::npos);
+        CHECK(err.find("weapons") != std::string::npos);
+    }
+
     if (g_failures == 0) {
         std::printf("JsonCodecTests: all passed\n");
         return 0;

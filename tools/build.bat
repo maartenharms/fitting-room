@@ -8,7 +8,7 @@ if errorlevel 1 goto :fail
 set "VCPKG_ROOT=C:\Users\Maarten\vcpkg"
 set "PATH=C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 set "CM=C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-cd /d "C:\Studios\Mod Studio\Fitting Room"
+cd /d "%~dp0.."
 echo === CONFIGURE START ===
 "%CM%" --preset release
 if errorlevel 1 goto :fail
@@ -27,6 +27,10 @@ if errorlevel 1 goto :fail
 build\release\EditorGateTests.exe
 if errorlevel 1 goto :fail
 build\release\KeyboardArbiterTests.exe
+if errorlevel 1 goto :fail
+build\release\WeaponSlotsTests.exe
+if errorlevel 1 goto :fail
+build\release\NpcSessionTests.exe
 if errorlevel 1 goto :fail
 echo === ALL_DONE ===
 exit /b 0

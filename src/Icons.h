@@ -53,10 +53,30 @@ namespace OS::Icons {
     inline constexpr std::uint16_t kTrash    = 0xf1f8;  // trash - delete the whole outfit
     inline constexpr std::uint16_t kCoins    = 0xf51e;  // stack of coins - the Apply gold cost
 
+    // --- Weapons accordion (Task 8, weapon+quiver transmog) ----------------
+    // FA5 Free Solid has no dedicated icon for most melee weapon classes
+    // (sword/dagger/axe/mace/greatsword are Pro-only or simply absent from
+    // the free set) - per the OS-35/OS-62 lesson, shipping a guessed
+    // codepoint that isn't actually in the bundled font renders as tofu
+    // ("?"), so those rows REUSE already-audited glyphs above instead of a
+    // new one (see the kWeaponIcon table in EditorUI.cpp for which class
+    // reuses which, and why). The five below are NEW codepoints, picked for
+    // classes with a strong, well-known free-solid match - UNLIKE the 30
+    // above they have NOT been screenshot-verified against the bundled
+    // 5.15.4 atlas yet; that is the pending verification pass the design
+    // spec calls out (Task 8 §7, [USER-CHECK]: "veto by screenshot"). If one
+    // renders as tofu, swap it for a reuse like its melee siblings.
+    inline constexpr std::uint16_t kBolt          = 0xf0e7;  // bolt - Bolts (literal pun; very common icon)
+    inline constexpr std::uint16_t kBullseye      = 0xf140;  // bullseye - Bow (archery-target pun)
+    inline constexpr std::uint16_t kCrosshairs    = 0xf05b;  // crosshairs - Crossbow (precision-aim pun)
+    inline constexpr std::uint16_t kLocationArrow = 0xf124;  // location-arrow - Arrows (arrow-shape pun)
+    inline constexpr std::uint16_t kHammer        = 0xf6e3;  // hammer - Battleaxe/Warhammer (name match)
+
     inline constexpr std::uint16_t kAll[] = {
         kGear, kMask, kHelmet, kBody, kMitten, kHand, kGem, kRing, kShoe, kSocks, kFeather, kUser,
         kCrown, kEar, kSmile, kVest, kBack, kSkull, kSkullX, kMagic, kCube, kRealGear, kDice,
         kStar, kUndo, kRedo, kSearch, kTimes, kTrash, kCoins,
+        kBolt, kBullseye, kCrosshairs, kLocationArrow, kHammer,
     };
 
     // UTF-8 encode a BMP codepoint (FA glyphs are all 3-byte 0x800-0xFFFF).

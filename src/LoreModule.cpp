@@ -272,13 +272,27 @@ namespace OS::LoreModule {
         if (!Available()) {
             return;
         }
-        // Deliver the note once per save (re-delivered only if it left the
-        // player's possession entirely).
-        if (g_note && !PlayerHas(g_note)) {
+        // The note is RETIRED for now (user, 2026-07-18). It used to be handed
+        // to the player on every load, but the book does nothing yet - reading
+        // it is a later feature - so an item with no purpose was landing in
+        // every inventory. Stop delivering it, AND take back the copies the
+        // older builds already pushed, so nobody is left carrying dead weight
+        // they cannot get rid of sensibly.
+        //
+        // The FORM STAYS in the ESP and 0x801 is NOT retired: existing saves
+        // reference it, so the id must keep resolving, and the whole thing
+        // comes back the moment the book is implemented properly.
+        if (g_note) {
             if (auto* player = RE::PlayerCharacter::GetSingleton()) {
-                player->AddObjectToContainer(g_note, nullptr, 1, nullptr);
-                RE::DebugNotification("Added 'On the Outward Art' to your inventory.");
-                spdlog::info("Lore module: note delivered.");
+                const auto inv = player->GetInventory(
+                    [](RE::TESBoundObject& a_o) { return &a_o == g_note; });
+                if (const auto it = inv.find(g_note);
+                    it != inv.end() && it->second.first > 0) {
+                    player->RemoveItem(g_note, it->second.first,
+                                       RE::ITEM_REMOVE_REASON::kRemove, nullptr, nullptr);
+                    spdlog::info("Lore module: retired note reclaimed ({} copy/copies).",
+                                 it->second.first);
+                }
             }
         }
         StockFarengar();

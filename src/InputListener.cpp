@@ -14,13 +14,24 @@ namespace OS {
 
     namespace {
 
-        // OS-73. Drive the FREE camera (tfc - what Screen Archer Menu frames a
-        // shot with) directly from the drag, because nothing else will: over
-        // SAM the editor deliberately leaves the camera as SAM set it, alpha-
-        // hides SAM's own 2D so its camera controls are unreachable, and the
-        // engine does not route look input to the camera while a menu context
-        // owns it. That is exactly the user's report - "I cannot adjust the
-        // camera when our menu is open with SAM".
+        // OS-73. Drive the FREE camera (tfc) directly from the drag, because in
+        // the NO-SAM case nothing else will: the engine does not route look
+        // input to the camera while a menu context owns it, so with the editor
+        // open over the inventory this is the only camera control there is.
+        //
+        // OS-80c, 2026-07-19: NOT under SAM. This path is now gated off whenever
+        // EditorWindow::OpenedFromSam(), because SAM is an orbit+pan+FOV camera
+        // and this is free-look - a different interaction that CANNOT be tuned
+        // into feeling like SAM by adjusting sensitivity or signs. Worse, SAM
+        // orbits by writing translation and rotation on the same FreeCameraState
+        // instance, so both writers race the two floats below. The gate lives at
+        // the LMB arm in ProcessEvent; see the note there for the field evidence.
+        //
+        // Correcting an over-claim in the previous version of this comment: alpha-
+        // hiding SAM's 2D does NOT make SAM's camera controls unreachable. They are
+        // raw mouse gestures, not menu buttons, and kPassInputToGame delivers them.
+        // The user reaching SAM's camera at all through the passthrough is what
+        // proved it.
         //
         // ONLY the free camera. In third person the editor already hands the
         // gesture to the game (kPassInputToGame in EditorWindow::GetFlags,
@@ -45,14 +56,38 @@ namespace OS {
         // ordinary free-camera look: the engine wraps BOTH fields into
         // [0, 2pi) each frame and clamps neither (the free camera is meant to
         // loop over the top), so we wrap too rather than inventing a pitch limit.
+        // OS-80 diagnostics. Every gate in this path used to decline SILENTLY,
+        // so a field report of "the camera will not move with SAM" could not say
+        // WHICH gate refused - and the three candidates need opposite fixes. One
+        // line per gesture (reset on the LMB edge, never per mouse-move) names
+        // the reason. Reads as noise in a log only until it saves a round trip.
+        bool g_dragDiagDone{ false };
+
         void ApplyFreeCameraDrag(float a_dx, float a_dy) {
             auto* cam = RE::PlayerCamera::GetSingleton();
             if (!cam || !cam->currentState) {
+                if (!g_dragDiagDone) {
+                    g_dragDiagDone = true;
+                    spdlog::info("camera drag: no PlayerCamera/currentState - drag ignored.");
+                }
                 return;
             }
             auto* const state = cam->currentState.get();
             if (state->id != RE::CameraState::kFree) {
+                if (!g_dragDiagDone) {
+                    g_dragDiagDone = true;
+                    spdlog::info(
+                        "camera drag: camera state is {}, not kFree(3) - drag ignored. "
+                        "If SAM framed this shot, that number IS SAM's camera, and this "
+                        "path's free-camera-only scope is why nothing moves.",
+                        static_cast<int>(state->id));
+                }
                 return;
+            }
+            if (!g_dragDiagDone) {
+                g_dragDiagDone = true;
+                spdlog::info("camera drag: driving the free camera (state 3) - "
+                             "gates passed, writing pitch/yaw.");
             }
             constexpr float kTwoPi = 6.2831853f;
             const float     s      = Settings::GetSingleton().cameraDragSensitivity;
@@ -74,6 +109,19 @@ namespace OS {
         }
 
     }  // namespace
+
+    // OS-80 ROOT CAUSE. The editor runs as a FLICK IWindow, and FLICK owns the
+    // mouse while its window is up, so the BSInputEvent sink further down never
+    // receives the click that used to drive this. The drag was architecturally
+    // stranded when the editor moved off Fitting Room's own ImGuiOverlay - the
+    // sink code is intact and correct and simply never runs, which is why the
+    // field symptom was total silence rather than a wrong rotation.
+    //
+    // EditorWindow::Draw calls this instead, from inside FLICK's own frame where
+    // the mouse delta is real (FUCK::GetMouseDelta, FLICK's ImGui context - NOT
+    // ImGui::GetIO(), which is a different context in this process). The camera
+    // work itself is unchanged and still uses the byte-verified offsets.
+    void ApplyEditorCameraDrag(float a_dx, float a_dy) { ApplyFreeCameraDrag(a_dx, a_dy); }
 
     InputListener& InputListener::GetSingleton() {
         static InputListener instance;
@@ -182,7 +230,29 @@ namespace OS {
                 if (btn && btn->GetDevice() == RE::INPUT_DEVICE::kMouse &&
                     btn->GetIDCode() == 0) {
                     if (btn->IsDown()) {
-                        worldDrag_ = !EditorWindow::CursorOverUI();
+                        // OS-80c: when SAM framed the shot it OWNS the camera.
+                        // SAM orbits by writing translation AND rotation on the
+                        // very FreeCameraState object this drag writes pitch/yaw
+                        // into, so arming here is a second writer racing SAM on
+                        // +0x3C/+0x40 every mouse-move. That is field-proven, not
+                        // theory: the 2026-07-19 02:46 log shows every gate PASSED
+                        // and the write happening, and the shot still felt "not at
+                        // all like SAM". Decline instead; kPassInputToGame already
+                        // hands the gesture to SAM, now uncontested.
+                        const bool samOwnsCamera = EditorWindow::OpenedFromSam();
+                        const bool overUI        = EditorWindow::CursorOverUI();
+                        worldDrag_               = !overUI && !samOwnsCamera;
+                        // OS-80: a fresh gesture, so let the camera path speak
+                        // once more. This line also proves the sink SEES the
+                        // click at all - if it is ABSENT from a failing session
+                        // then the input-block hook consumed the event upstream
+                        // and every camera gate below is innocent.
+                        g_dragDiagDone = false;
+                        spdlog::info("camera drag: LMB down, cursorOverUI={} -> {}.",
+                                     overUI,
+                                     worldDrag_      ? "ARMED"
+                                     : samOwnsCamera ? "declined (SAM owns the camera)"
+                                                     : "declined (click was over a panel)");
                     } else if (btn->IsUp()) {
                         worldDrag_ = false;
                     }

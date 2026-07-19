@@ -3,6 +3,14 @@
 
 namespace OS {
 
+    // OS-80: drive the free camera (tfc / SAM) from a mouse delta. Called by
+    // EditorWindow::Draw, because FLICK owns the mouse while the editor window
+    // is up and the BSInputEvent sink never sees the click. Deltas are raw
+    // ImGui mouse deltas; the sensitivity scale and the byte-verified
+    // FreeCameraState offsets live with the implementation. No-op unless the
+    // camera is genuinely in the free state.
+    void ApplyEditorCameraDrag(float a_dx, float a_dy);
+
     // Input bindings:
     //  - editor key / gamepad button (INI [Input]) toggles the ImGui editor;
     //  - "next outfit" key cycles the active outfit (quick-switch).

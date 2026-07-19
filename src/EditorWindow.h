@@ -20,6 +20,13 @@ namespace OS::EditorWindow {
     // Draw(); one frame stale at most, which is why the camera drag latches it
     // on the button edge instead of sampling it per mouse-move.
     [[nodiscard]] bool CursorOverUI();
+    // The editor was opened over Screen Archer Menu, so SAM framed this shot and
+    // owns the camera (OS-80c). Gates the camera drag OFF - SAM orbits by writing
+    // the same FreeCameraState fields our free-look drag writes, so driving it
+    // here is a second writer racing SAM - and gates the wheel passthrough ON, so
+    // SAM's FOV zoom can reach it. Latched at open; SAM's menu is up at that point
+    // in the shooting workflow.
+    [[nodiscard]] bool OpenedFromSam();
 
     void Toggle();        // gated open/close, marshaled to the main thread
     // Open if a permitted context (inventory / SAM) is up - for the seamstone,

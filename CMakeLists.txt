@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # "Fitting Room" (formerly Outfit Slots) - ESO-style transmog with saved outfit slots.
 # Skyrim SE 1.5.97 only. DLL name = FittingRoom.dll (project name drives it).
-project(FittingRoom VERSION 0.1.2 LANGUAGES CXX)
+project(FittingRoom VERSION 0.2.0 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 # jsoncpp's exported config predates CMake 3.5's policy floor.
@@ -39,6 +39,8 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/Diagnostics.cpp
         src/SceneGuard.h
         src/SceneGuard.cpp
+        src/RaceSwitchSink.h
+        src/RaceSwitchSink.cpp
         src/Migration.h
         src/OutfitSession.h
         src/OutfitSession.cpp
@@ -46,6 +48,9 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/BipedHooks.cpp
         src/BipedPost.h
         src/BipedPost.cpp
+        src/WeaponSlots.h
+        src/WeaponHooks.h
+        src/WeaponHooks.cpp
         src/InputListener.h
         src/InputListener.cpp
         src/MenuButton.h
@@ -113,6 +118,17 @@ target_include_directories(EditorGateTests PRIVATE src)
 add_executable(KeyboardArbiterTests tests/test_keyboardarbiter.cpp)
 target_compile_features(KeyboardArbiterTests PRIVATE cxx_std_23)
 target_include_directories(KeyboardArbiterTests PRIVATE src)
+
+# Pure-logic weapon-class mapping tests (weapon + quiver transmog, stage 1).
+add_executable(WeaponSlotsTests tests/test_weaponslots.cpp)
+target_compile_features(WeaponSlotsTests PRIVATE cxx_std_23)
+target_include_directories(WeaponSlotsTests PRIVATE src)
+
+# Pure-logic NPC render-decision tests (worn-required rule, snapshot source
+# precedence - the pure core of the OutfitSession actor dimension).
+add_executable(NpcSessionTests tests/test_npcsession.cpp)
+target_compile_features(NpcSessionTests PRIVATE cxx_std_23)
+target_include_directories(NpcSessionTests PRIVATE src)
 
 if(NOT DEFINED OUTPUT_FOLDER)
     set(OUTPUT_FOLDER "C:/Games/Nolvus/Instances/Nolvus Awakening/MODS/mods/Fitting Room")

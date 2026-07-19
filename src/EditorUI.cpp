@@ -3,17 +3,20 @@
 #include "AutoPresets.h"
 #include "Collection.h"
 #include "CrashGuard.h"
+#include "EditTargetLabel.h"
 #include "EditorStyle.h"
 #include "Favorites.h"
 #include "Icons.h"
 #include "EditorWindow.h"
 #include "LoreModule.h"
+#include "NpcAssignments.h"
 #include "OutfitSession.h"
 #include "PresetStore.h"
 #include "Settings.h"
 #include "SlotMask.h"
 #include "StyleCatalog.h"
 #include "StyleRef.h"
+#include "WeaponSlots.h"
 
 #include "FuckCompat.h"  // FUCK:: wrapper + OS::ui:: bridges for the ImGui deltas
 
@@ -22,9 +25,14 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstring>
 #include <map>
+#include <memory>
+#include <optional>
+#include <unordered_set>
+#include <vector>
 
 // Thread contract: Draw runs on the Present-hook (render) thread. Every library
 // read goes through a SnapshotLibrary() copy taken this frame; every mutation
@@ -93,6 +101,14 @@ namespace OS::EditorUI {
         // (through Push), never on transient hover-preview.
         EditHistory   g_history;
         std::uint32_t g_selectedBit   = kBitBody;
+        // The weapon-dimension counterpart to g_selectedBit (Task 8). The two
+        // are MUTUALLY EXCLUSIVE: selecting a weapon row sets this without
+        // touching g_selectedBit, selecting an armor row clears this back to
+        // nullopt. Every browser consumer (Query, Random, click, hover-
+        // preview, row highlight) checks this FIRST and only falls back to
+        // g_selectedBit when it is empty - a weapon selection takes
+        // precedence, per the spec.
+        std::optional<WeaponClass> g_selectedWeapon;
         bool          g_focusStyleList = false;  // controller: jump nav to the style panel after a slot pick (user)
         char          g_search[128]   = {};
         bool          g_dirty         = false;
@@ -114,8 +130,60 @@ namespace OS::EditorUI {
         int           g_lastMatchArmorType = -1;
         bool          g_lastMatchFavorites = false;
         int           g_forceSelect        = -1;  // tab index to force-select for one frame
+        // The name field is being typed in RIGHT NOW. The tab label is the
+        // outfit name, so every keystroke changes the tab's ImGui id and the bar
+        // would lose its selection (and fire the tab-switch side effect on some
+        // other index) mid-rename. While this is set the bar pins the active tab
+        // and ignores switches. See the tab loop.
+        bool          g_renaming           = false;
         bool          g_justOpened         = false;  // suppress tab-activate on the open frame
         std::uint64_t g_gold               = 0;   // player gold at open (input is modal)
+
+        // ---- "Editing:" target dimension (Task 8) --------------------------
+        // Who the editor is dressing. The default (npc == nullopt) is the
+        // PLAYER, and a player-only session never touches the dropdown, so the
+        // whole editor behaves EXACTLY as before. An NPC target threads through
+        // staging (BeginStaging(handle)), the per-target fit cache
+        // (RefreshFitFor), the worn-mask snapshot (target actor's GetWornArmor)
+        // and Apply (UpsertNpcLibrary + RequestRefreshActor). `loaded == false`
+        // is an "(away)" persisted assignee - selectable READ-ONLY (view / clear
+        // the assignment), since an unloaded actor can't be previewed or kicked.
+        struct EditTarget {
+            std::optional<NpcKey> npc;                       // nullopt == the player
+            RE::ActorHandle       handle;                    // player / NPC handle; empty for "(away)"
+            std::string           label;                     // dropdown display text (may carry " (away)")
+            std::string           displayName;               // name only, no "(away)" suffix (footer hints)
+            bool                  loaded{ true };            // false == "(away)" (not currently high-process)
+            RE::TESRace*          race{ nullptr };           // for RefreshFitFor on switch
+            int                   sexIdx{ RE::SEXES::kMale };// for RefreshFitFor on switch
+            std::uint32_t         baseFormID{ 0 };
+        };
+
+        EditTarget g_target;         // current target (default = player)
+        int        g_targetIndex = 0;  // index into g_targetList of g_target
+
+        // The NPC target's OWN working library (the player's lives in
+        // OutfitSession). Loaded on switch from SnapshotNpcAssignments; the tab
+        // bar / rename / add / delete operate on THIS while an NPC is targeted,
+        // and Apply upserts the whole thing. Unused while targeting the player.
+        OutfitLibrary g_targetLibrary;
+
+        // The dropdown roster, built on the MAIN thread at open (ForEachHighActor
+        // must not run on the FUCK present thread). Immutable once published;
+        // Draw (render thread) atomic-loads it and never mutates it - so a
+        // consumer holding the shared_ptr for a frame is race-free. Editor input
+        // is modal, so the at-open roster stays complete for the session (no new
+        // follower can be recruited while the menu is up).
+        std::atomic<std::shared_ptr<const std::vector<EditTarget>>> g_targetList;
+
+        // The per-target fit cache (StyleCatalog::fitsBody) is re-evaluated on
+        // the MAIN thread when the target switches - it MUST finish before the
+        // render thread draws catalog rows again (the same fitsBody-unsynced
+        // contract EnsureFitCurrent documents). While false, Draw skips the
+        // style browser (the only fitsBody reader) and shows a brief "Loading"
+        // placeholder, so no row is ever drawn against a half-rebuilt cache.
+        // True at open (SetOpen already ran EnsureFitCurrent for the player).
+        std::atomic<bool> g_fitReady{ true };
 
         // Showcases (read-only preset browser). While the tab is open the
         // staging channel shows the clicked preset; g_staged (the edit
@@ -224,6 +292,64 @@ namespace OS::EditorUI {
                     }
                 }
             });
+        }
+
+        // ---- target routing (Task 8) ---------------------------------------
+        // The editor's whole tab/rename/add/delete/footer machinery reads and
+        // writes "the current target's library". For the player that IS the
+        // session library (persisted to outfits.json); for an NPC it is the
+        // editor-held g_targetLibrary (per-save co-save state, upserted on Apply
+        // and on structural edits). These three routers keep one draw path for
+        // both, so the player-only session is byte-for-byte the old behavior.
+
+        [[nodiscard]] bool TargetIsPlayer() { return !g_target.npc.has_value(); }
+
+        // A consistent copy of the current target's library for this frame's draw.
+        [[nodiscard]] OutfitLibrary CurrentLibrarySnapshot(OutfitSession& a_session) {
+            return TargetIsPlayer() ? a_session.SnapshotLibrary() : g_targetLibrary;
+        }
+
+        // Mutate the current target's library. Player: through the session's
+        // locked WithLibrary (which also queues the outfits.json save). NPC:
+        // directly on g_targetLibrary (render-thread-owned) then upsert the whole
+        // library into the session's co-save map - NEVER WithLibrary (hard rule:
+        // assignment mutations must not write outfits.json). UpsertNpcLibrary
+        // rebuilds the render snapshot; it deliberately does NOT kick a visual
+        // refresh (structural edits like a rename don't change the look, and the
+        // live look is driven by staging until Apply).
+        template <class Fn>
+        void WithCurrentLibrary(OutfitSession& a_session, Fn&& a_fn) {
+            if (TargetIsPlayer()) {
+                a_session.WithLibrary(std::forward<Fn>(a_fn));
+            } else {
+                std::forward<Fn>(a_fn)(g_targetLibrary);
+                if (g_target.npc) {
+                    a_session.UpsertNpcLibrary(*g_target.npc, g_targetLibrary);
+                }
+            }
+        }
+
+        // Begin staging on the current target: the player channel, or the NPC's
+        // base (an NPC-target stage overrides ONLY that base's snapshot entry -
+        // a live follower preview - and never the player).
+        void BeginStagingCurrent(OutfitSession& a_session, const Outfit& a_from) {
+            if (TargetIsPlayer()) {
+                a_session.BeginStaging(a_from);
+            } else {
+                a_session.BeginStaging(g_target.handle, a_from);
+            }
+        }
+
+        // NPC counterpart to EnsureActiveOutfit: make sure g_targetLibrary has
+        // an active outfit before an NPC Apply writes the staged buffer into it.
+        void EnsureActiveOutfitNpc() {
+            if (g_targetLibrary.ActiveIndex() < 0) {
+                const int idx = g_targetLibrary.Create(g_staged.name.empty() ? "Outfit 1"
+                                                                             : g_staged.name);
+                if (idx >= 0) {
+                    g_targetLibrary.Activate(static_cast<std::size_t>(idx));
+                }
+            }
         }
 
         // Transient footer note (export path, etc.) - shown in both footer
@@ -361,7 +487,7 @@ namespace OS::EditorUI {
                                       g_showcaseSel == static_cast<int>(i))) {
                     g_showcaseSel = static_cast<int>(i);
                     CrashGuard::ClearPreviewing();  // whole preset - no single style to blame
-                    a_session.BeginStaging(p.outfit);  // try it on, live
+                    BeginStagingCurrent(a_session, p.outfit);  // try it on, live (player or follower)
                     EditorStyle::PlayUISound("UIMenuOK");
                 }
                 if (FUCK::IsItemHovered()) {
@@ -414,8 +540,14 @@ namespace OS::EditorUI {
                     if (entry.kind == SlotEntry::Kind::kHide) {
                         FUCK::Text("$FR_PieceHidden"_T, label);
                     } else if (auto* armo = StyleRef::Resolve(entry.style)) {
-                        // Same fit flag as the style browser (OS-3): race + sex.
-                        if (const auto reason = StyleCatalog::EvaluateFit(armo);
+                        // Same fit flag as the style browser (OS-3), judged
+                        // against the CURRENT target's race + sex (Task 8): a
+                        // preset piece that fits the player may not fit a
+                        // custom-race follower and vice versa, and the tooltip
+                        // wording (FitReasonText) already reflects whichever
+                        // target RefreshFitFor last cached on the switch.
+                        if (const auto reason =
+                                StyleCatalog::EvaluateFitFor(armo, g_target.race, g_target.sexIdx);
                             reason != FitReason::kFits) {
                             ++unfitPieces;
                             FUCK::TextColored(kUnfitText, "%s: %s", label,
@@ -462,8 +594,249 @@ namespace OS::EditorUI {
         }
     }
 
+    // Build the "Editing:" roster on the MAIN thread (OnOpen runs there, via
+    // SetOpen's SKSE task): Player first, then live teammates, then persisted
+    // "(away)" assignees whose base is not currently loaded. ForEachHighActor
+    // MUST NOT run on the FUCK present thread (BSTArray mutation on process
+    // transition), which is why this is an at-open, main-thread build; editor
+    // input is modal, so the roster stays complete for the session. Publishes
+    // an immutable vector the render thread atomic-loads race-free.
+    void BuildTargetList() {
+        auto& session = OutfitSession::GetSingleton();
+        auto  list    = std::make_shared<std::vector<EditTarget>>();
+
+        auto* player = RE::PlayerCharacter::GetSingleton();
+
+        // 1) Player - always first, always the default.
+        {
+            EditTarget pl;
+            pl.npc         = std::nullopt;
+            pl.loaded      = true;
+            pl.label       = "$FR_Target_Player"_T;
+            pl.displayName = pl.label;
+            if (player) {
+                pl.handle = player->GetHandle();
+                pl.race   = player->GetRace();
+                pl.sexIdx = StyleCatalog::SexIdxOf(player->GetActorBase());
+                if (auto* base = player->GetActorBase()) {
+                    pl.baseFormID = base->GetFormID();
+                }
+            }
+            list->push_back(std::move(pl));
+        }
+
+        // 2) Live teammates: IsPlayerTeammate && !IsDead && has a non-dynamic
+        //    base. Dynamic/FF actors are excluded (spec: no persistent identity
+        //    to key an assignment on). Names are disambiguated by plugin only on
+        //    collision (BuildDisambiguatedLabels).
+        std::vector<EditTarget>        teammates;
+        std::vector<TargetLabelInput>  labelInputs;
+        std::unordered_set<std::uint32_t> loadedBases;
+        if (auto* processLists = RE::ProcessLists::GetSingleton()) {
+            processLists->ForEachHighActor(
+                [&](RE::Actor& a_actor) -> RE::BSContainer::ForEachResult {
+                    if (!a_actor.IsPlayerTeammate() || a_actor.IsDead()) {
+                        return RE::BSContainer::ForEachResult::kContinue;
+                    }
+                    auto* base = a_actor.GetActorBase();
+                    if (!base || base->IsDynamicForm()) {
+                        return RE::BSContainer::ForEachResult::kContinue;
+                    }
+                    EditTarget t;
+                    t.handle     = a_actor.GetHandle();
+                    t.race       = a_actor.GetRace();
+                    t.sexIdx     = StyleCatalog::SexIdxOf(base);
+                    t.baseFormID = base->GetFormID();
+                    t.loaded     = true;
+                    NpcKey key;
+                    if (auto* file = base->GetFile(0)) {
+                        key.modName = std::string{ file->GetFilename() };
+                    }
+                    key.localFormID = base->GetLocalFormID();
+                    t.npc           = key;
+
+                    const char* nm = base->GetName();
+                    labelInputs.push_back({ nm ? nm : "", key.modName });
+                    teammates.push_back(std::move(t));
+                    loadedBases.insert(base->GetFormID());
+                    return RE::BSContainer::ForEachResult::kContinue;
+                });
+        }
+
+        // 3) "(away)" assignees: persisted assignments whose base isn't loaded.
+        //    Resolvable base -> real name + race/sex from the base record;
+        //    unresolved plugin -> a plugin-derived placeholder (kept verbatim,
+        //    still selectable so the user can clear it). Add them to the same
+        //    disambiguation pool as the teammates before the "(away)" suffix.
+        auto* dh = RE::TESDataHandler::GetSingleton();
+        for (const auto& [key, rec] : session.SnapshotNpcAssignments()) {
+            RE::TESNPC* base =
+                (dh && !key.modName.empty())
+                    ? dh->LookupForm<RE::TESNPC>(key.localFormID, key.modName)
+                    : nullptr;
+            if (base && loadedBases.contains(base->GetFormID())) {
+                continue;  // currently loaded -> already listed as a teammate
+            }
+            EditTarget t;
+            t.npc    = key;
+            t.loaded = false;  // (away)
+            // handle stays empty: an unloaded actor can't be previewed/kicked.
+            std::string name;
+            if (base) {
+                t.race       = base->GetRace();
+                t.sexIdx     = StyleCatalog::SexIdxOf(base);
+                t.baseFormID = base->GetFormID();
+                if (const char* nm = base->GetName()) {
+                    name = nm;
+                }
+            }
+            if (name.empty()) {
+                name = key.modName.empty() ? std::string{ "?" } : key.modName;
+            }
+            labelInputs.push_back({ name, key.modName });
+            teammates.push_back(std::move(t));  // "(away)" suffix applied below
+        }
+
+        // Disambiguate the whole non-player pool, then tag "(away)" entries.
+        const auto labels = BuildDisambiguatedLabels(labelInputs);
+        for (std::size_t i = 0; i < teammates.size(); ++i) {
+            teammates[i].displayName = labels[i];
+            teammates[i].label       = labels[i];
+            if (!teammates[i].loaded) {
+                teammates[i].label += "$FR_Target_Away"_T;  // suffix on the dropdown label only
+            }
+            list->push_back(std::move(teammates[i]));
+        }
+
+        g_targetList.store(std::move(list), std::memory_order_release);
+    }
+
+    // Switch the whole editor context to a new target. Runs on the render
+    // thread (called from the dropdown handler in Draw), so it owns the
+    // render-thread editor state (g_staged / g_history / g_targetLibrary /
+    // g_target) directly; only the fit re-cache + worn snapshot - which touch
+    // engine state and the global fit cache - are marshaled to the main thread,
+    // gated by g_fitReady so the browser never draws mid-rebuild. Mirrors the
+    // outfit-tab-switch discipline: discard staging, clear the preview, load the
+    // target's library, reset history, begin staging on the new target.
+    void SwitchTarget(OutfitSession& a_session, int a_newIndex) {
+        const auto list = g_targetList.load(std::memory_order_acquire);
+        if (!list || a_newIndex < 0 || a_newIndex >= static_cast<int>(list->size()) ||
+            a_newIndex == g_targetIndex) {
+            return;
+        }
+        const EditTarget t = (*list)[static_cast<std::size_t>(a_newIndex)];
+
+        CrashGuard::ClearPreviewing();
+        a_session.DiscardStaging();
+        g_hoverKey       = StyleRefKey{};
+        g_hoverPending   = StyleRefKey{};
+        g_selectedWeapon = std::nullopt;  // armor is the default dimension per target
+
+        if (!t.npc) {
+            // Player: same as OnOpen's player path. Never touch g_targetLibrary.
+            if (a_session.SnapshotLibrary().Count() == 0) {
+                a_session.WithLibrary([](OutfitLibrary& a_lib) {
+                    const int idx = a_lib.Create("Outfit 1");
+                    if (idx >= 0) {
+                        a_lib.Activate(static_cast<std::size_t>(idx));
+                    }
+                });
+            }
+            const auto snap = a_session.SnapshotLibrary();
+            if (const auto* active = snap.Active()) {
+                g_staged = *active;
+            } else {
+                g_staged      = Outfit{};
+                g_staged.name = "Outfit 1";
+            }
+            g_targetLibrary = OutfitLibrary{};
+            g_forceSelect   = snap.ActiveIndex();
+        } else {
+            // NPC / (away): load the base's saved library, or a fresh one.
+            const auto assignments = a_session.SnapshotNpcAssignments();
+            if (const auto it = assignments.find(*t.npc); it != assignments.end()) {
+                g_targetLibrary = it->second.library;
+            } else {
+                g_targetLibrary = OutfitLibrary{};
+            }
+            if (g_targetLibrary.Count() == 0) {
+                const int idx = g_targetLibrary.Create("Outfit 1");
+                if (idx >= 0) {
+                    g_targetLibrary.Activate(static_cast<std::size_t>(idx));
+                }
+            }
+            if (const auto* active = g_targetLibrary.Active()) {
+                g_staged = *active;
+            } else {
+                g_staged      = Outfit{};
+                g_staged.name = "Outfit 1";
+            }
+            g_forceSelect = g_targetLibrary.ActiveIndex();
+        }
+
+        g_dirty      = false;
+        g_history.Reset(g_staged);
+        g_justOpened = true;  // mute the tab-activate for the switch frame (as at open)
+        g_target     = t;
+        g_targetIndex = a_newIndex;
+
+        BeginStagingCurrent(a_session, g_staged);
+
+        // Marshal the per-target fit re-cache + worn-mask snapshot to the main
+        // thread; flip g_fitReady only once both complete so the render thread
+        // never draws catalog rows against a half-rebuilt fitsBody cache.
+        g_fitReady.store(false, std::memory_order_release);
+        const bool            isPlayer = !t.npc.has_value();
+        RE::TESRace* const    race     = t.race;
+        const int             sexIdx   = t.sexIdx;
+        const RE::ActorHandle handle   = t.handle;
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([isPlayer, race, sexIdx, handle] {
+                try {
+                    if (isPlayer) {
+                        StyleCatalog::GetSingleton().RefreshFit();
+                    } else {
+                        StyleCatalog::GetSingleton().RefreshFitFor(race, sexIdx);
+                    }
+                    // Worn-at-open mask from the TARGET actor (player or a loaded
+                    // follower); an "(away)" target has no live actor -> 0.
+                    std::uint32_t worn  = 0;
+                    RE::Actor*    actor = nullptr;
+                    if (isPlayer) {
+                        actor = RE::PlayerCharacter::GetSingleton();
+                    } else {
+                        auto ptr = handle.get();
+                        actor    = ptr.get();
+                    }
+                    if (actor) {
+                        using Slot = RE::BGSBipedObjectForm::BipedObjectSlot;
+                        for (std::uint32_t bit = 0; bit < 32; ++bit) {
+                            if (actor->GetWornArmor(static_cast<Slot>(1u << bit))) {
+                                worn |= 1u << bit;
+                            }
+                        }
+                    }
+                    g_wornMask = worn;
+                } catch (const std::exception& e) {
+                    spdlog::error("EditorUI: target-switch fit re-cache threw: {}", e.what());
+                } catch (...) {
+                    spdlog::error("EditorUI: target-switch fit re-cache threw (non-standard).");
+                }
+                g_fitReady.store(true, std::memory_order_release);
+            });
+        } else {
+            g_fitReady.store(true, std::memory_order_release);
+        }
+    }
+
     void OnOpen() {
         auto& session   = OutfitSession::GetSingleton();
+        // The name field cannot still be live across an open, and a stale true
+        // would pin the tab bar and swallow tab clicks for the whole session -
+        // the name row that clears it does not draw while Presets are open or
+        // while the library is empty.
+        g_renaming = false;
 
         // Re-sync the known-looks collection with the player's current inventory.
         // The live container-changed sink misses some acquisition paths (crafting
@@ -482,6 +855,7 @@ namespace OS::EditorUI {
         g_hoverKey      = StyleRefKey{};
         g_hoverPending  = StyleRefKey{};
         g_armorType     = -1;   // "All types" each open
+        g_selectedWeapon = std::nullopt;  // armor is the default browser dimension each open (Task 8)
         g_favoritesOnly = false;  // "Favorites" filter is session-local, off each open
         g_hideUnfit     = true;   // hide body-unfit (red) rows by default each open (best UX per user)
         g_matchMask     = 0;
@@ -493,6 +867,22 @@ namespace OS::EditorUI {
         g_showcaseSel   = -1;
         g_pendingDelete = -1;
         g_footNote.clear();
+
+        // Reset the "Editing:" target to the PLAYER and (re)build the roster on
+        // this main thread (SetOpen runs OnOpen via the SKSE task queue, so
+        // ForEachHighActor is safe here and not on the FUCK present thread).
+        // Every open starts on the player, so a session that never opens the
+        // dropdown is byte-for-byte the old behavior. The player's fit cache is
+        // already current - SetOpen called EnsureFitCurrent before this.
+        g_targetLibrary = OutfitLibrary{};
+        g_fitReady.store(true, std::memory_order_release);
+        BuildTargetList();
+        if (const auto list = g_targetList.load(std::memory_order_acquire); list && !list->empty()) {
+            g_target = (*list)[0];  // the player entry
+        } else {
+            g_target = EditTarget{};
+        }
+        g_targetIndex = 0;
 
         // Fresh library: create a ready "Outfit 1" so the editor never opens
         // onto an empty tab bar.
@@ -552,16 +942,38 @@ namespace OS::EditorUI {
 
     void OnClose() {
         // Closing without Apply reverts: nothing is committed until the button.
+        g_renaming = false;  // see OnOpen
         CrashGuard::ClearPreviewing();
         g_hoverKey     = StyleRefKey{};
         g_hoverPending = StyleRefKey{};
         OutfitSession::GetSingleton().DiscardStaging();
         g_dirty = false;
+
+        // Restore the PLAYER's fit cache: the editor may have switched it to an
+        // NPC target via RefreshFitFor (Task 8). Guard on a live player: with no
+        // player, RefreshFit() funnels through RefreshFitFor(nullptr, ...), whose
+        // "is this the player" test latches fitSubjectIsPlayer_ = false - which
+        // would then stop EnsureFitCurrent from ever self-healing the player's
+        // cache (Task 7). Skipping the restore when there is no player is
+        // harmless (nothing to restore to; the next open re-runs EnsureFitCurrent).
+        if (RE::PlayerCharacter::GetSingleton()) {
+            StyleCatalog::GetSingleton().RefreshFit();
+        }
+        // Next open starts on the player (OnOpen rebuilds the roster anyway; this
+        // keeps any stray Draw between close and the next open on the player).
+        g_target      = EditTarget{};
+        g_targetIndex = 0;
+        g_fitReady.store(true, std::memory_order_release);
     }
 
     void Draw() {
-        auto&      session = OutfitSession::GetSingleton();
-        const auto snap    = session.SnapshotLibrary();
+        auto& session = OutfitSession::GetSingleton();
+        // The current target's library: the player's (session) or the NPC's
+        // editor-held working copy (Task 8). Every tab / rename / add / delete /
+        // footer read below goes through this one snapshot, so the player-only
+        // path is unchanged and an NPC target transparently edits its own library.
+        const auto snap = CurrentLibrarySnapshot(session);
+        const bool away = g_target.npc.has_value() && !g_target.loaded;
 
         // The editor draws as a FUCK IWindow: FUCK owns the window chrome, size,
         // position and Present, so we draw content only. The game UI is hidden
@@ -613,7 +1025,7 @@ namespace OS::EditorUI {
                     // Back to the outfits: re-assert the edit buffer.
                     g_showcasesOpen = false;
                     g_showcaseSel   = -1;
-                    session.BeginStaging(g_staged);
+                    BeginStagingCurrent(session, g_staged);
                 } else {
                     g_showcasesOpen = true;
                     g_showcaseSel   = -1;  // staging keeps the edit buffer until a click
@@ -646,7 +1058,7 @@ namespace OS::EditorUI {
             if (FUCK::IsItemDeactivatedAfterEdit()) {
                 Settings::GetSingleton().Save();  // persist on release
             }
-            if (FUCK::Checkbox("$FR_PreviewOnHover"_T, &g_hoverPreview, false, false)) {
+            if (FUCK::Checkbox("$FR_PreviewOnHover"_T, &g_hoverPreview)) {
                 Settings::GetSingleton().hoverPreview = g_hoverPreview;
                 Settings::GetSingleton().Save();
                 if (!g_hoverPreview && !g_hoverKey.Empty()) {  // turning it off drops any preview
@@ -662,10 +1074,10 @@ namespace OS::EditorUI {
             // browser - one settings home. Name is always shown.
             FUCK::Separator();
             FUCK::TextDisabled("%s", "$FR_StyleColumns"_T);
-            FUCK::Checkbox("$FR_ColClass"_T, &g_showClass, false, false);
-            FUCK::Checkbox("$FR_ColPlugin"_T, &g_showSource, false, false);
+            FUCK::Checkbox("$FR_ColClass"_T, &g_showClass);
+            FUCK::Checkbox("$FR_ColPlugin"_T, &g_showSource);
             FUCK::Separator();
-            if (FUCK::Checkbox("$FR_LockWindow"_T, &Settings::GetSingleton().lockLayout, false, false)) {
+            if (FUCK::Checkbox("$FR_LockWindow"_T, &Settings::GetSingleton().lockLayout)) {
                 Settings::GetSingleton().Save();
             }
             if (FUCK::IsItemHovered()) {
@@ -682,31 +1094,139 @@ namespace OS::EditorUI {
         }
         FUCK::Spacing();
 
+        // ---- "Editing:" target selector (Task 8) ----------------------------
+        // A compact combo above the outfit tabs (NOT a second tab bar): Player
+        // (default), live teammates, then persisted "(away)" assignees. Picking
+        // a new entry swaps the ENTIRE editor context through SwitchTarget
+        // (discard staging, load that target's library, re-cache fit + worn on
+        // the main thread, begin staging on the target). Drawn only in the
+        // outfit editor view; hidden while browsing Presets, like the tabs.
+        // A player-only session never opens this, so nothing below it changes.
+        if (!g_showcasesOpen) {
+            if (const auto list = g_targetList.load(std::memory_order_acquire);
+                list && list->size() > 1) {  // only worth showing when a follower exists
+                std::vector<std::string> labels;
+                labels.reserve(list->size());
+                for (const auto& t : *list) {
+                    labels.push_back(t.label);
+                }
+                FUCK::AlignTextToFramePadding();
+                FUCK::TextUnformatted("$FR_Editing"_T);
+                FUCK::SameLine();
+                int cur = (g_targetIndex >= 0 && g_targetIndex < static_cast<int>(labels.size()))
+                              ? g_targetIndex
+                              : 0;
+                FUCK::SetNextItemWidth(OS::ui::FontSize() * 14.0f);
+                if (FUCK::Combo("##editing_target", &cur, labels) && cur != g_targetIndex) {
+                    SwitchTarget(session, cur);
+                }
+                if (FUCK::IsItemHovered()) {
+                    FUCK::SetTooltip("$FR_EditingTip"_T);
+                }
+                FUCK::Spacing();
+            }
+        }
+
         // ---- outfit tabs (hidden while browsing Presets) --------------------
         bool requestDeletePopup = false;  // tab-X sets this; OpenPopup runs at window scope below
         if (!g_showcasesOpen &&
             FUCK::BeginTabBar("outfits", ImGuiTabBarFlags_FittingPolicyScroll)) {
+            // TAB PADDING (field 2026-07-18, second pass). The first attempt
+            // padded every label out to the WIDEST name in the library. That
+            // was a misread of the report: Feet of Skyrim's bar - the reference
+            // it was made against - is evenly PADDED, not equal width;
+            // "General" is visibly wider than "Feet" there. Equalising made
+            // four outfits fill the whole bar with no way to scroll sideways.
+            //
+            // So: natural per-label width, one uniform inset. Getting there took
+            // three field rounds, and they pinned down two facts about FLICK's
+            // tab item that are NOT standard ImGui behaviour. Both are recorded
+            // because everything here follows from them:
+            //
+            //  1. IT IGNORES FramePadding. Round three drew the label with no
+            //     spaces and a 10px FramePadding push, and the text came out
+            //     flush against the tab border. So the style stack is not a
+            //     lever here at all - the push was dead code and is gone.
+            //  2. IT MEASURES THE "###" ID SUFFIX AS VISIBLE WIDTH. Round two
+            //     used "###outfit" (9 chars) and produced a large gap on the
+            //     RIGHT ONLY; round three shortened it to "###o" (4 chars) and
+            //     the gap shrank in proportion. A suffix is invisible but still
+            //     counted, so it lands as dead space after the name.
+            //
+            // Together those mean the inset can only come from spaces, and no
+            // amount of space juggling can balance a tab that carries a hidden
+            // suffix on one side: matching ~28px of dead right-hand width would
+            // need ~28px of leading spaces, i.e. the "way too large" tabs the
+            // first round was reported for. So the suffix is gone entirely and
+            // the padding is symmetric spaces.
+            //
+            // Dropping "###" costs the id pinning it provided - the label is the
+            // identity again, so a rename changes it mid-type. That is handled
+            // where it belongs, in the tab loop, via g_renaming (PushID(i) still
+            // keeps two outfits with the SAME name from colliding).
+            // ROUND FIVE (2026-07-18): BOTH facts above are WRONG. Settled by
+            // disassembling FLICK rather than by a sixth field guess - FUCK.dll
+            // ships a PDB beside it, and ImGui::TabItemCalcSize (RVA 0x12bc40 in
+            // FUCK 1.6) reads:
+            //
+            //     call  ...                 ; CalcTextSize(label, NULL, r9b=1)
+            //     movss xmm1, [rdi+0xcc4]   ; style.FramePadding.x
+            //     addss xmm3, [rsp+0x40]    ; + label_size.x
+            //
+            //  -> r9b=1 IS hide_text_after_double_hash, so it DOES strip "###".
+            //     Fact 2 was a misdiagnosis.
+            //  -> it reads FramePadding.x and applies it twice (+1). Tabs size
+            //     exactly like stock ImGui. Fact 1 was a misdiagnosis too.
+            //
+            // Round three's "FramePadding does nothing" was a UNIT bug, not an
+            // API limit: it pushed a RAW 10.0f for x while passing the SCALED
+            // OS::ui::FramePadding().y for y. FLICK scales its style, so a raw
+            // 10 is small - the tabs came out tight, which read as "ignored".
+            //
+            // So the never-tested combination is the obvious one: NO spaces and
+            // NO override - tabs inset by the same FramePadding as every other
+            // widget in the panel, which is what "regular" means and what ImGui
+            // does by default. The spaces were a workaround for a bug that was
+            // never there, and each round of tuning them fought the real cause.
+            constexpr int kTabPadSpaces = 0;
+            // One-shot evidence so a sixth round is arithmetic, not eyeballing:
+            // the live FramePadding, the scales behind it, and a measured label.
+            {
+                static bool s_loggedTabMetrics = false;
+                if (!s_loggedTabMetrics) {
+                    s_loggedTabMetrics      = true;
+                    const ImVec2 fp         = OS::ui::FramePadding();
+                    const ImVec2 sampleSize = FUCK::CalcTextSize("Abyss");
+                    spdlog::debug(
+                        "EditorUI tab metrics: FramePadding=({:.2f},{:.2f}) res={:.3f} "
+                        "global={:.3f} user={:.3f} textW(\"Abyss\")={:.2f} -> expected tab "
+                        "width {:.2f}",
+                        fp.x, fp.y, FUCK::GetResolutionScale(), FUCK::GetGlobalScale(),
+                        FUCK::GetUserScale(), sampleSize.x, sampleSize.x + fp.x * 2.0f + 1.0f);
+                }
+            }
             for (std::size_t i = 0; i < snap.Count(); ++i) {
                 const auto* o = snap.At(i);
                 FUCK::PushID(static_cast<int>(i));  // duplicate names must not collide
-                // "###" pins the tab's ImGui identity to the INDEX, not the
-                // visible name - renaming used to change the tab's ID, which
-                // dropped the tab-bar selection back to the first tab (the
-                // reported reorder-on-rename / wrong-rename behavior).
-                // Spaces pad the label off the tab's left/right border (FUCK draws the
-                // tab text flush to the edge); "###" keeps the id pinned to the index.
-                const std::string tabLabel = " " + o->name + " ###outfit";
-                const ImGuiTabItemFlags flags =
-                    g_forceSelect == static_cast<int>(i) ? ImGuiTabItemFlags_SetSelected : 0;
+                // Padding is spaces and nothing else - see the block above.
+                const std::string tabLabel =
+                    std::string(kTabPadSpaces, ' ') + o->name + std::string(kTabPadSpaces, ' ');
+                // Pin the active tab while the name field is live: without the
+                // "###" id the label IS the identity, so a keystroke would
+                // otherwise drop the selection (and fire the switch below on
+                // whichever index inherited it).
+                const bool pin = g_renaming ? (snap.ActiveIndex() == static_cast<int>(i))
+                                            : (g_forceSelect == static_cast<int>(i));
+                const ImGuiTabItemFlags flags = pin ? ImGuiTabItemFlags_SetSelected : 0;
                 // The tab's own X is the delete control (never on the last
                 // outfit - the library is never empty).
                 // FUCK tab items have no built-in close X; outfit deletion is
                 // the Delete button in the name row (OS-40).
                 if (FUCK::BeginTabItem(tabLabel.c_str(), flags)) {
-                    if (snap.ActiveIndex() != static_cast<int>(i) && !g_justOpened) {
-                        session.WithLibrary([&](OutfitLibrary& lib) { lib.Activate(i); });
+                    if (snap.ActiveIndex() != static_cast<int>(i) && !g_justOpened && !g_renaming) {
+                        WithCurrentLibrary(session, [&](OutfitLibrary& lib) { lib.Activate(i); });
                         g_staged = *o;  // from this frame's snapshot copy
-                        session.BeginStaging(g_staged);
+                        BeginStagingCurrent(session, g_staged);
                         g_dirty = false;
                         g_history.Reset(g_staged);  // undo is per-outfit - fresh timeline
                         EditorStyle::PlayUISound("UIMenuFocus");
@@ -724,14 +1244,14 @@ namespace OS::EditorUI {
                 if (FUCK::Button("+")) {
                     Outfit fresh;
                     fresh.name = "Outfit " + std::to_string(snap.Count() + 1);
-                    session.WithLibrary([&](OutfitLibrary& lib) {
+                    WithCurrentLibrary(session, [&](OutfitLibrary& lib) {
                         const int idx = lib.Create(fresh.name);
                         if (idx >= 0) {
                             lib.Activate(static_cast<std::size_t>(idx));
                         }
                     });
                     g_staged = fresh;
-                    session.BeginStaging(g_staged);
+                    BeginStagingCurrent(session, g_staged);
                     g_dirty       = false;
                     g_history.Reset(g_staged);
                     g_forceSelect = static_cast<int>(snap.Count());  // the new tab
@@ -763,7 +1283,7 @@ namespace OS::EditorUI {
             if (FUCK::Button("$FR_Delete"_T)) {
                 const int del       = g_pendingDelete;
                 int       newActive = -1;
-                session.WithLibrary([&](OutfitLibrary& lib) {
+                WithCurrentLibrary(session, [&](OutfitLibrary& lib) {
                     if (del < 0 || del >= static_cast<int>(lib.Count())) {
                         return;
                     }
@@ -780,11 +1300,11 @@ namespace OS::EditorUI {
                         lib.Activate(static_cast<std::size_t>(newActive));
                     }
                 });
-                const auto s2 = session.SnapshotLibrary();
+                const auto s2 = CurrentLibrarySnapshot(session);
                 if (const auto* a2 = s2.Active()) {
                     g_staged = *a2;
                 }
-                session.BeginStaging(g_staged);
+                BeginStagingCurrent(session, g_staged);
                 g_dirty         = false;
                 g_history.Reset(g_staged);
                 g_forceSelect   = newActive;
@@ -837,12 +1357,17 @@ namespace OS::EditorUI {
             // non-blank edit, and if the field is left blank restore the last
             // good name (or a default) when it loses focus.
             if (FUCK::InputText("##Name", &g_staged.name) && !isBlank(g_staged.name)) {
-                session.WithLibrary([&](OutfitLibrary& lib) {
+                WithCurrentLibrary(session, [&](OutfitLibrary& lib) {
                     if (lib.ActiveIndex() >= 0) {
                         lib.Rename(static_cast<std::size_t>(lib.ActiveIndex()), g_staged.name);
                     }
                 });
             }
+            // The tab bar draws EARLIER in the frame than this row, so it reads
+            // last frame's value - which is exactly right: the keystroke that
+            // renamed the tab is the one whose next frame must not lose it.
+            // Read immediately after the field so it is THIS item's state.
+            g_renaming = FUCK::IsItemActive();
             if (FUCK::IsItemDeactivatedAfterEdit() && isBlank(g_staged.name)) {
                 if (const auto* a = snap.At(static_cast<std::size_t>(snap.ActiveIndex()))) {
                     g_staged.name = a->name;  // last committed (non-blank) name
@@ -850,7 +1375,7 @@ namespace OS::EditorUI {
                 if (isBlank(g_staged.name)) {
                     g_staged.name = "Outfit";
                 }
-                session.WithLibrary([&](OutfitLibrary& lib) {
+                WithCurrentLibrary(session, [&](OutfitLibrary& lib) {
                     if (lib.ActiveIndex() >= 0) {
                         lib.Rename(static_cast<std::size_t>(lib.ActiveIndex()), g_staged.name);
                     }
@@ -913,6 +1438,12 @@ namespace OS::EditorUI {
                 // and discarded staging, leaving g_staged untouched - so the
                 // slots kept their styles and re-selecting the tab brought them
                 // back: it never actually cleared the outfit.
+                // Task 8 note: g_staged = Outfit{} also zeroes weaponEntries_ -
+                // this is INCIDENTAL to the whole-outfit replace, not a
+                // deliberate extension of Reset to weapons (Reset/Hide All are
+                // documented armor-only this stage). It reads correctly either
+                // way: "Reset" means back to real gear across the whole
+                // outfit, weapons included.
                 CrashGuard::ClearPreviewing();
                 const std::string keepName = g_staged.name;
                 g_staged      = Outfit{};
@@ -930,6 +1461,9 @@ namespace OS::EditorUI {
                 // reads Show All and clears them back to equipped gear. Skips the
                 // never-touch slots (shield) + the INI blocklist so the Apply
                 // cost counts only real changes. Staged + undoable.
+                // Armor-only by construction (loops kSlots, an armor-bit
+                // table) - weapons have no hide affordance to bulk-toggle
+                // (spec §3a) and are deliberately not extended here.
                 CrashGuard::ClearPreviewing();
                 for (const auto& row : kSlots) {
                     if ((forbidden >> row.bit) & 1u) {
@@ -990,7 +1524,7 @@ namespace OS::EditorUI {
             if (FUCK::Button("$FR_SaveToOutfits"_T)) {
                 const auto& p      = presets[static_cast<std::size_t>(g_showcaseSel)];
                 int         newIdx = -1;
-                session.WithLibrary([&](OutfitLibrary& lib) {
+                WithCurrentLibrary(session, [&](OutfitLibrary& lib) {
                     newIdx = lib.Create(p.name);
                     if (newIdx >= 0) {
                         *lib.At(static_cast<std::size_t>(newIdx)) = p.outfit;
@@ -1005,7 +1539,7 @@ namespace OS::EditorUI {
                     g_staged        = p.outfit;
                     g_dirty         = false;
                     g_forceSelect   = newIdx;
-                    session.BeginStaging(g_staged);
+                    BeginStagingCurrent(session, g_staged);
                     g_history.Reset(g_staged);
                     EditorStyle::PlayUISound("UIMenuOK");
                 }
@@ -1071,6 +1605,11 @@ namespace OS::EditorUI {
         }
 
         const float slotsW = OS::ui::FontSize() * 13.0f;
+        // An "(away)" assignee is read-only (Task 8 / spec §5): grey out the whole
+        // edit surface (slots + style browser) so its saved outfit can be VIEWED
+        // but not changed; only the footer's Remove assignment stays live. A
+        // no-op (BeginDisabled(false)) for the player and loaded followers.
+        FUCK::BeginDisabled(away);
         // NavFlattened: fold this child's gamepad/keyboard nav into the parent
         // so the D-pad crosses freely between the slot panel, the style browser,
         // the header and the footer - otherwise nav is trapped inside one child
@@ -1122,6 +1661,19 @@ namespace OS::EditorUI {
         const float slotRowH  = FUCK::GetFrameHeight();
         const float slotIconW = OS::ui::FontSize() * 1.6f;  // uniform bookend box (OS-31/37)
 
+        // Draw one glyph centered in the fixed bookend box whose top-left is p0.
+        // The single source of the icon-box centering math, shared by the
+        // interactive glyphButton and the decorative glyphIcon so the two bookend
+        // shapes can never drift.
+        const auto drawCenteredGlyph = [&](const ImVec2& a_p0, std::uint16_t a_glyph,
+                                           const ImVec4& a_col) {
+            const std::string g   = Icons::Utf8(a_glyph);
+            const ImVec2       gsz = FUCK::CalcTextSize(g.c_str());
+            OS::ui::TextAt(ImVec2(a_p0.x + (slotIconW - gsz.x) * 0.5f,
+                                  a_p0.y + (slotRowH - OS::ui::FontSize()) * 0.5f),
+                           OS::ui::Col(a_col), g.c_str(), g.c_str() + g.size());
+        };
+
         // Frameless fixed-width glyph button: centered glyph + hover fill,
         // excluded from nav (mouse-only). Returns true on click. Shared by the
         // leading slot icon and the trailing clear-X so both look identical.
@@ -1136,13 +1688,57 @@ namespace OS::EditorUI {
                 OS::ui::RectFilled(p0, ImVec2(p0.x + slotIconW, p0.y + slotRowH),
                                    OS::ui::Col(ImGuiCol_ButtonHovered), OS::ui::FrameRounding());
             }
-            const std::string g   = Icons::Utf8(a_glyph);
-            const ImVec2       gsz = FUCK::CalcTextSize(g.c_str());
-            OS::ui::TextAt(ImVec2(p0.x + (slotIconW - gsz.x) * 0.5f,
-                                  p0.y + (slotRowH - OS::ui::FontSize()) * 0.5f),
-                           OS::ui::Col(a_col), g.c_str(), g.c_str() + g.size());
+            drawCenteredGlyph(p0, a_glyph, a_col);
             return clicked;
         };
+
+        // Same fixed bookend box and centered-glyph visual as glyphButton, but
+        // with no InvisibleButton underneath - weapon rows have nothing to
+        // toggle (hide is deferred to v2, spec §3a), so the leading icon is
+        // decorative only. FUCK::Dummy reserves the layout box (so a following
+        // SameLine still lines the label up with drawSlotRow's rows) without
+        // registering a clickable/hoverable/focusable item - and, submitting
+        // with id 0, is never a nav target, so no kNoNav guard is needed here.
+        const auto glyphIcon = [&](std::uint16_t a_glyph, const ImVec4& a_col) {
+            const ImVec2 p0 = FUCK::GetCursorScreenPos();
+            FUCK::Dummy(ImVec2(slotIconW, slotRowH));
+            drawCenteredGlyph(p0, a_glyph, a_col);
+        };
+
+        // Weapons-accordion leading icon per class, indexed by WeaponClass
+        // (WeaponSlots.h enum order == the required UI row order, Sword..
+        // Bolts). Melee classes with no distinct free-solid glyph REUSE an
+        // already-audited icon above instead of risking an unverified
+        // codepoint rendering as tofu (OS-35/OS-62 lesson; see Icons.h for
+        // which of the five new codepoints are still pending the screenshot
+        // pass called out in the design spec).
+        static constexpr std::uint16_t kWeaponIcon[kWeaponClassCount] = {
+            Icons::kSkullX,          // Sword - reused: no free-solid blade glyph; closest is
+                                     // the "lethal weapon" association of skull-crossbones
+            Icons::kHand,            // Dagger - reused: closest is the "hand weapon"/fist glyph
+            Icons::kSkull,           // WarAxe - reused: beheading association (echoes the
+                                     // existing Decapitate slot's use of the sibling glyph)
+            Icons::kCube,            // Mace - reused: no thematic glyph; the documented
+                                     // generic fallback
+            Icons::kCube,            // Greatsword - reused: same, no thematic glyph available
+            Icons::kHammer,          // BattleaxeWarhammer - NEW: literal "warhammer" match
+            Icons::kBullseye,        // Bow - NEW: archery-target pun
+            Icons::kCrosshairs,      // Crossbow - NEW: precision-aim pun
+            Icons::kMagic,           // Staff - reused: a magic staff, ideal existing fit
+            Icons::kLocationArrow,   // Arrows - NEW: arrow-shape pun
+            Icons::kBolt,            // Bolts - NEW: literal wordplay, ubiquitous free-solid icon
+        };
+        // Completeness guard: the array is sized to the enum, so a new WeaponClass
+        // would zero-fill its slot (glyph 0 = tofu) instead of failing to compile.
+        // Reject a missing entry at build time - add its icon above.
+        static_assert([] {
+            for (auto glyph : kWeaponIcon) {
+                if (glyph == 0) {
+                    return false;
+                }
+            }
+            return true;
+        }(), "kWeaponIcon is missing a glyph for a WeaponClass");
 
         const auto drawSlotRow = [&](const SlotRow& row) {
             const auto& entry    = g_staged.EntryFor(row.bit);
@@ -1200,9 +1796,13 @@ namespace OS::EditorUI {
                 FUCK::PushStyleColor(ImGuiCol_Text, FUCK::GetStyleColorVec4(ImGuiCol_TextDisabled));
                 ++pushed;
             }
-            if (FUCK::Selectable(caption.c_str(), g_selectedBit == row.bit, 0,
+            // Only glow "selected" when armor is the active browser dimension -
+            // a weapon selection takes precedence (g_selectedWeapon set), so no
+            // armor row should read as selected while browsing weapon styles.
+            if (FUCK::Selectable(caption.c_str(), !g_selectedWeapon && g_selectedBit == row.bit, 0,
                                   ImVec2(labelW > 0.0f ? labelW : 0.0f, slotRowH))) {
-                g_selectedBit = row.bit;
+                g_selectedBit    = row.bit;
+                g_selectedWeapon = std::nullopt;  // armor selection takes back precedence
                 // Controller UX (user): picking a slot on a gamepad jumps nav focus to the
                 // style panel so you can choose a style straight away. Mouse users click
                 // the style directly and don't want the jump, so gate on the gamepad.
@@ -1241,6 +1841,93 @@ namespace OS::EditorUI {
             FUCK::PopID();
         };
 
+        // Weapon class row (Task 8): [class icon (decorative)] [label: style
+        // name or equipped] [X]. A PARALLEL row idiom to drawSlotRow, not an
+        // overload - the shapes differ enough (no hide affordance per §3a, a
+        // different Outfit accessor, no armor slot bit) that sharing one
+        // lambda would need more branching than duplication costs.
+        const auto drawWeaponRow = [&](WeaponClass a_class) {
+            const auto& entry    = g_staged.WeaponEntryFor(a_class);
+            const bool  hasEntry = entry.kind != SlotEntry::Kind::kPassthrough;
+
+            const char* label   = FUCK::Translate(ClassLabelKey(a_class));
+            std::string caption = std::string(label) + ": ";
+            if (entry.kind == SlotEntry::Kind::kStyle) {
+                // Arrows/Bolts resolve through the ammo dimension, every other
+                // class through the weapon one (mirrors the render hook's own
+                // class-based routing). A resolve failure (plugin gone) shows
+                // MissingShort; a resolved form with no name shows "" - same
+                // two-case split as the armor caption above, mirrored exactly.
+                const bool  isAmmo   = a_class == WeaponClass::Arrows || a_class == WeaponClass::Bolts;
+                bool        resolved = false;
+                const char* nm       = nullptr;
+                if (isAmmo) {
+                    if (auto* ammo = StyleRef::ResolveAmmo(entry.style)) {
+                        resolved = true;
+                        nm       = ammo->GetName();
+                    }
+                } else if (auto* weap = StyleRef::ResolveWeapon(entry.style)) {
+                    resolved = true;
+                    nm       = weap->GetName();
+                }
+                caption += resolved ? (nm ? nm : "") : "$FR_MissingShort"_T;  // nm null guard: std::string + null is UB
+            } else {
+                // kPassthrough - and, forward-compat, a kHide entry loaded from
+                // a hand-edited or forward-dated outfit: hide is deferred to
+                // v2 and falls through to vanilla at render (spec §3a), so
+                // both read the same here. NEVER "$FR_StateHidden" - a weapon
+                // row has no hide affordance and must not claim one is active.
+                caption += "$FR_StateEquipped"_T;
+            }
+
+            const auto clearEntry = [&] {
+                CrashGuard::ClearPreviewing();
+                g_staged.SetWeaponPassthrough(a_class);
+                Push();
+                EditorStyle::PlayUISound("UIMenuCancel");
+            };
+
+            FUCK::PushID(static_cast<int>(a_class));
+
+            // --- leading glyph: decorative class icon, no toggle (spec §3a) ---
+            glyphIcon(kWeaponIcon[static_cast<std::size_t>(a_class)],
+                      FUCK::GetStyleColorVec4(ImGuiCol_Text));
+
+            // --- label: the row's single nav stop; click/A selects the class ---
+            FUCK::SameLine(0, OS::ui::ItemSpacing().x);
+            const float labelW = FUCK::GetContentRegionAvail().x -
+                                 (hasEntry ? slotIconW + OS::ui::ItemSpacing().x : 0.0f);
+            if (FUCK::Selectable(caption.c_str(), g_selectedWeapon == a_class, 0,
+                                  ImVec2(labelW > 0.0f ? labelW : 0.0f, slotRowH))) {
+                g_selectedWeapon = a_class;  // takes precedence over the armor selection
+                if (FUCK::GetInputDevice() == FUCK::InputDevice::kGamepad) {
+                    g_focusStyleList = true;
+                }
+            }
+            const bool rowFocused = FUCK::IsItemFocused();
+            if (FUCK::IsItemHovered()) {
+                OS::ui::SetTooltipF("$FR_WSlotTip"_T, label, BipedSlotForClass(a_class));
+            }
+
+            // Gamepad: Y = clear only - X (hide/show) does not apply to weapon
+            // rows, there is nothing to toggle (spec §3a; deliberately left
+            // unbound, unlike drawSlotRow's X-face-button handler above).
+            if (rowFocused && hasEntry && FUCK::IsKeyPressed(ImGuiKey_GamepadFaceUp, false)) {
+                clearEntry();
+            }
+
+            // --- X: clear back to the real weapon (mouse) ---
+            if (hasEntry) {
+                FUCK::SameLine(0, OS::ui::ItemSpacing().x);
+                if (glyphButton("##clr", Icons::kTimes,
+                                FUCK::GetStyleColorVec4(ImGuiCol_Text),
+                                "Clear to your real weapon")) {
+                    clearEntry();
+                }
+            }
+            FUCK::PopID();
+        };
+
         // Two accordions replace the old "All slots" toggle: the common set is
         // open by default; the rest live under "Extra Slots" (auto-opened when
         // the outfit already uses one, so an active slot is never buried).
@@ -1267,6 +1954,23 @@ namespace OS::EditorUI {
                 }
             }
         }
+        // Weapons accordion (Task 8): one row per WeaponClass, in enum/UI
+        // order (Sword..Bolts - WeaponSlots.h). Default OPEN, unlike Extra
+        // Slots' active-only default: this is a brand-new feature and an
+        // outfit almost never has a weapon entry yet on a fresh install, so
+        // gating on "already in use" would leave it permanently collapsed
+        // and undiscoverable for most players.
+        // PushID("weapons") scopes the whole accordion so each row's
+        // PushID(int(class)) (0..10) can't collide with an armor row's
+        // PushID(bit) (also 0..31) in the SAME "slots" child - they are
+        // sibling ID scopes without this wrapper.
+        if (FUCK::CollapsingHeader("$FR_Sec_Weapons"_T, ImGuiTreeNodeFlags_DefaultOpen)) {
+            FUCK::PushID("weapons");
+            for (std::size_t i = 0; i < kWeaponClassCount; ++i) {
+                drawWeaponRow(static_cast<WeaponClass>(i));
+            }
+            FUCK::PopID();
+        }
         // The last row's clear-X glyph-button leaves the layout cursor moved by
         // OS::ui::TextAt(restore=true) with no item after it; when every slot has a
         // clear-X (e.g. after "Hide All") that dangling SetCursorPos is the last op
@@ -1290,8 +1994,25 @@ namespace OS::EditorUI {
         if (styleFont) {
             FUCK::PushFont(styleFont, OS::ui::FontSize() * g_uiScale);
         }
+        // Target-switch fit gate (Task 8): the browser reads item->fitsBody /
+        // fitReason, which the main-thread re-cache (RefreshFitFor) rewrites on
+        // a target switch. Draw NO rows until that finishes (g_fitReady), so the
+        // render thread never reads a half-rebuilt fit cache - the same
+        // fitsBody-unsynchronized contract EnsureFitCurrent documents. True at
+        // open and for a player-only session, so the old path is unchanged. The
+        // whole browser body below is enclosed by this guard (closed just before
+        // PopFont).
+        if (!g_fitReady.load(std::memory_order_acquire)) {
+            FUCK::AlignTextToFramePadding();
+            FUCK::TextDisabled("$FR_SwitchingTo"_T, g_target.displayName.c_str());
+        } else {
         // (Search moved to the shared bar above both panels; "Real gear"/Clear
         // moved to a per-slot button in the slots panel.)
+        // These THREE keep the manual alignFar/labelLeft args on purpose: they
+        // are one horizontal filter row joined by SameLine below, and alignFar
+        // would have all three chase the right edge and tear the row apart.
+        // Every STACKED checkbox in this mod now takes FLICK's defaults
+        // instead, which is what lines them up with the sliders (Fuzzles).
         if (FUCK::Checkbox("$FR_Collected"_T, &g_collectedOnly, false, false)) {
             EditorStyle::PlayUISound("UIMenuFocus");
         }
@@ -1319,25 +2040,35 @@ namespace OS::EditorUI {
         // (Random button moved onto the armor-type row below - it was being cut off
         //  crammed onto the 3-checkbox filters row, user.)
         // Armor-type filter (Skyrim has three classes; no "medium") on its own
-        // row - three filter checkboxes already fill the first row.
-        const char* kTypeLabels[] = { "$FR_TypeAll"_T, "$FR_TypeLight"_T, "$FR_TypeHeavy"_T, "$FR_TypeClothing"_T };
-        int                typeCombo = g_armorType + 1;  // -1..2 -> 0..3
-        FUCK::SetNextItemWidth(OS::ui::FontSize() * 6.5f);
-        if (FUCK::Combo("##armortype", &typeCombo, kTypeLabels, IM_ARRAYSIZE(kTypeLabels))) {
-            g_armorType = typeCombo - 1;
-            EditorStyle::PlayUISound("UIMenuFocus");
+        // row - three filter checkboxes already fill the first row. Meaningless
+        // for weapons (a weapon has no light/heavy/clothing class), so it hides
+        // entirely while browsing the weapon dimension (Task 8).
+        if (!g_selectedWeapon) {
+            const char* kTypeLabels[] = { "$FR_TypeAll"_T, "$FR_TypeLight"_T, "$FR_TypeHeavy"_T,
+                                          "$FR_TypeClothing"_T };
+            int         typeCombo = g_armorType + 1;  // -1..2 -> 0..3
+            FUCK::SetNextItemWidth(OS::ui::FontSize() * 6.5f);
+            if (FUCK::Combo("##armortype", &typeCombo, kTypeLabels, IM_ARRAYSIZE(kTypeLabels))) {
+                g_armorType = typeCombo - 1;
+                EditorStyle::PlayUISound("UIMenuFocus");
+            }
+            if (FUCK::IsItemHovered()) {
+                FUCK::SetTooltip("$FR_TypeTip"_T);
+            }
         }
-        if (FUCK::IsItemHovered()) {
-            FUCK::SetTooltip("$FR_TypeTip"_T);
-        }
-        // Random (user): rolls a random fitting style for the SELECTED slot. Right-
+        // Random (user): rolls a random fitting style for the SELECTED slot (or,
+        // with a weapon class selected, within that class - Task 8). Right-
         // aligned on the armor-type row (it was cut off crammed onto the 3-checkbox
         // filters row); obeys the same filters (collected / favorites / armor type).
+        // The SameLine is skipped when the armor-type row above didn't draw (weapon
+        // dimension), so Random starts its own row instead of chasing a missing item.
         {
             const std::string randLabel = Icons::Utf8(Icons::kDice) + " " + "$FR_Random"_T;
             const float        randW     = FUCK::CalcTextSize(randLabel.c_str()).x +
                                 OS::ui::FramePadding().x * 2.0f;
-            FUCK::SameLine();
+            if (!g_selectedWeapon) {
+                FUCK::SameLine();
+            }
             FUCK::SetCursorPosX(std::max(FUCK::GetCursorPos().x,
                                           (FUCK::GetCursorPos().x + FUCK::GetContentRegionAvail().x) - randW));
             if (FUCK::Button(randLabel.c_str())) {
@@ -1347,7 +2078,7 @@ namespace OS::EditorUI {
                 }
                 s_rng = s_rng * 1664525u + 1013904223u;  // LCG - plenty for a dice roll
                 const auto all = StyleCatalog::GetSingleton().Query(
-                    g_selectedBit, "", g_collectedOnly, g_armorType, g_favoritesOnly);
+                    g_selectedBit, "", g_collectedOnly, g_armorType, g_favoritesOnly, g_selectedWeapon);
                 std::vector<const StyleItem*> ok;
                 for (const auto* s : all) {
                     if (s->fitsBody && s->fitReason != FitReason::kCrashed) {
@@ -1356,7 +2087,12 @@ namespace OS::EditorUI {
                 }
                 if (!ok.empty()) {
                     CrashGuard::ClearPreviewing();
-                    g_staged.SetStyle(g_selectedBit, ok[s_rng % ok.size()]->key);
+                    const auto& picked = *ok[s_rng % ok.size()];
+                    if (g_selectedWeapon) {
+                        g_staged.SetWeaponStyle(*g_selectedWeapon, picked.key);
+                    } else {
+                        g_staged.SetStyle(g_selectedBit, picked.key);
+                    }
                     Push();
                     EditorStyle::PlayUISound("UIMenuOK");
                 } else {
@@ -1373,16 +2109,23 @@ namespace OS::EditorUI {
         FUCK::Separator();
 
         auto results = StyleCatalog::GetSingleton().Query(g_selectedBit, g_search, g_collectedOnly,
-                                                          g_armorType, g_favoritesOnly);
-        if (g_hideUnfit) {  // hide body-unfit (red) rows; crashers stay (blocked on click)
+                                                          g_armorType, g_favoritesOnly, g_selectedWeapon);
+        if (g_hideUnfit) {  // hide body-unfit (red) rows; crashers stay (blocked on click).
+                             // No-op for weapons - they are always kFits (no armature to fail).
             std::erase_if(results, [](const StyleItem* s) { return !s->fitsBody; });
         }
         FUCK::TextDisabled(g_collectedOnly ? "$FR_CountCollected"_T : "$FR_CountStyle"_T,
                             results.size(), results.size() == 1 ? "" : "s");
         const auto searchLen = std::strlen(g_search);
 
-        const auto classLabel = [](std::uint8_t a_t) -> const char* {
-            switch (a_t) {
+        // Class column: armor's Light/Heavy/Clothing, or a weapon's class label
+        // when the item is a weapon style (Task 8) - the same column serves
+        // both dimensions since only one is ever queried into `results` at once.
+        const auto classLabel = [](const StyleItem* a_item) -> const char* {
+            if (a_item->IsWeapon()) {
+                return FUCK::Translate(ClassLabelKey(*a_item->weaponClass));
+            }
+            switch (a_item->armorType) {
                 case 0:  return "$FR_TypeLight"_T;
                 case 1:  return "$FR_TypeHeavy"_T;
                 default: return "$FR_TypeClothing"_T;
@@ -1458,9 +2201,11 @@ namespace OS::EditorUI {
             bool focusFirstStyle = g_focusStyleList;
             g_focusStyleList     = false;
             for (const auto* item : results) {
-                const bool selected = g_staged.EntryFor(g_selectedBit).style == item->key;
+                const bool selected = g_selectedWeapon
+                                          ? g_staged.WeaponEntryFor(*g_selectedWeapon).style == item->key
+                                          : g_staged.EntryFor(g_selectedBit).style == item->key;
                 const bool unfit    = !item->fitsBody;
-                FUCK::PushID(static_cast<int>(item->armo->GetFormID()));
+                FUCK::PushID(static_cast<int>(item->form->GetFormID()));
                 FUCK::TableNextRow();
                 FUCK::TableNextColumn();  // Name column (first)
                 if (focusFirstStyle) {
@@ -1550,7 +2295,7 @@ namespace OS::EditorUI {
                 const ImVec4 dimCol = unfit ? kUnfitText
                                             : FUCK::GetStyleColorVec4(ImGuiCol_TextDisabled);
                 if (g_showClass && FUCK::TableNextColumn()) {
-                    FUCK::TextColored(dimCol, "%s", classLabel(item->armorType));
+                    FUCK::TextColored(dimCol, "%s", classLabel(item));
                 }
                 if (g_showSource && FUCK::TableNextColumn()) {
                     FUCK::TextColored(dimCol, "%s", item->source.c_str());
@@ -1569,7 +2314,11 @@ namespace OS::EditorUI {
                         // around the kick; a survived crash flags it next
                         // launch).
                         CrashGuard::SetPreviewing(item->key);
-                        g_staged.SetStyle(g_selectedBit, item->key);
+                        if (g_selectedWeapon) {
+                            g_staged.SetWeaponStyle(*g_selectedWeapon, item->key);
+                        } else {
+                            g_staged.SetStyle(g_selectedBit, item->key);
+                        }
                         Push();
                         // Commit ends any hover-preview so leaving the row does
                         // not revert the click.
@@ -1600,7 +2349,8 @@ namespace OS::EditorUI {
         // crashers (filtered above).
         if (g_hoverPreview) {
             const double now = FUCK::GetTime();
-            const auto&  cur = g_staged.EntryFor(g_selectedBit);
+            const auto&  cur = g_selectedWeapon ? g_staged.WeaponEntryFor(*g_selectedWeapon)
+                                                 : g_staged.EntryFor(g_selectedBit);
             const bool   alreadyChosen =
                 cur.kind == SlotEntry::Kind::kStyle && cur.style == frameHoverKey;
             if (frameAnyHover && !alreadyChosen) {
@@ -1610,7 +2360,11 @@ namespace OS::EditorUI {
                         g_hoverPendingSince = now;
                     } else if (now - g_hoverPendingSince >= 0.18) {
                         Outfit tmp = g_staged;  // preview a variant WITHOUT editing the buffer
-                        tmp.SetStyle(g_selectedBit, frameHoverKey);
+                        if (g_selectedWeapon) {
+                            tmp.SetWeaponStyle(*g_selectedWeapon, frameHoverKey);
+                        } else {
+                            tmp.SetStyle(g_selectedBit, frameHoverKey);
+                        }
                         CrashGuard::SetPreviewing(frameHoverKey);
                         session.UpdateStaging(tmp);
                         g_hoverKey = frameHoverKey;
@@ -1625,10 +2379,12 @@ namespace OS::EditorUI {
                 }
             }
         }
+        }  // end g_fitReady gate (Task 8): browser body only drawn once fit is current
         if (styleFont) {
             FUCK::PopFont();
         }
         FUCK::EndChild();
+        FUCK::EndDisabled();  // end the "(away)" read-only wrap (Task 8)
 
         // Keyboard undo/redo (OS-21): Ctrl+Z = undo, Ctrl+Y or Ctrl+Shift+Z =
         // redo. Gated on !WantTextInput so an active search/rename field keeps
@@ -1637,7 +2393,7 @@ namespace OS::EditorUI {
         {
             const bool ctrl  = FUCK::IsModifierPressed(FUCK::Modifier::kCtrl);
             const bool shift = FUCK::IsModifierPressed(FUCK::Modifier::kShift);
-            if (ctrl && !FUCK::IsAnyItemActive()) {
+            if (ctrl && !away && !FUCK::IsAnyItemActive()) {  // no edits on an (away) read-only target
                 const bool zPressed = FUCK::IsKeyPressed(ImGuiKey_Z, false);
                 const bool yPressed = FUCK::IsKeyPressed(ImGuiKey_Y, false);
                 if (zPressed && !shift && g_history.CanUndo()) {
@@ -1654,19 +2410,19 @@ namespace OS::EditorUI {
         // switch mirrors a tab click (discards unsaved staging the same way).
         {
             const int count = static_cast<int>(snap.Count());
-            if (count > 1 && !FUCK::IsAnyItemActive()) {
+            if (count > 1 && !away && !FUCK::IsAnyItemActive()) {  // (away) target is read-only
                 const bool next = FUCK::IsKeyPressed(ImGuiKey_GamepadR1, false);
                 const bool prev = FUCK::IsKeyPressed(ImGuiKey_GamepadL1, false);
                 if (next || prev) {
                     const int base   = snap.ActiveIndex() >= 0 ? snap.ActiveIndex() : 0;
                     const int newIdx = next ? (base + 1) % count : (base - 1 + count) % count;
-                    session.WithLibrary([&](OutfitLibrary& lib) {
+                    WithCurrentLibrary(session, [&](OutfitLibrary& lib) {
                         lib.Activate(static_cast<std::size_t>(newIdx));
                     });
                     if (const auto* o = snap.At(static_cast<std::size_t>(newIdx))) {
                         g_staged = *o;
                     }
-                    session.BeginStaging(g_staged);
+                    BeginStagingCurrent(session, g_staged);
                     g_dirty       = false;
                     g_history.Reset(g_staged);
                     g_forceSelect = newIdx;  // the tab bar follows next frame
@@ -1677,6 +2433,16 @@ namespace OS::EditorUI {
 
         // ---- footer ---------------------------------------------------------
         FUCK::Separator();
+        // Footer hint naming the target (Task 8): a loaded follower's edits
+        // refresh the actor the moment you Apply; an "(away)" assignee is shown
+        // read-only. The player draws no hint (the old, unadorned footer).
+        if (g_target.npc.has_value()) {
+            if (away) {
+                FUCK::TextDisabled("$FR_AwayHint"_T, g_target.displayName.c_str());
+            } else {
+                FUCK::TextDisabled("$FR_NpcApplyHint"_T, g_target.displayName.c_str());
+            }
+        }
         // Lore mode charges gold per CHANGED slot on Apply (preview stays
         // free - the ESO model). Diff the staged outfit against the committed
         // one; without an active outfit everything staged counts as changed.
@@ -1704,7 +2470,7 @@ namespace OS::EditorUI {
         // button in colour (A1), not baked into the label.
         // Undo / redo (OS-21), in the footer action bar next to Apply (moved
         // here from the slots panel). Keyboard Ctrl+Z / Ctrl+Y also work.
-        FUCK::BeginDisabled(!g_history.CanUndo());
+        FUCK::BeginDisabled(!g_history.CanUndo() || away);  // (away) target is read-only
         if (FUCK::Button(Icons::Utf8(Icons::kUndo).c_str())) {
             ApplyHistory(session, g_history.Undo());
         }
@@ -1713,7 +2479,7 @@ namespace OS::EditorUI {
             FUCK::SetTooltip("$FR_UndoTip"_T);
         }
         FUCK::SameLine();
-        FUCK::BeginDisabled(!g_history.CanRedo());
+        FUCK::BeginDisabled(!g_history.CanRedo() || away);  // (away) target is read-only
         if (FUCK::Button(Icons::Utf8(Icons::kRedo).c_str())) {
             ApplyHistory(session, g_history.Redo());
         }
@@ -1723,30 +2489,71 @@ namespace OS::EditorUI {
         }
         FUCK::SameLine();
 
-        FUCK::BeginDisabled(!g_dirty || cantAfford);
-        if (FUCK::Button("$FR_Apply"_T)) {
-            EnsureActiveOutfit(session);
-            session.CommitStaging();
-            session.BeginStaging(g_staged);  // keep editing the same outfit
-            g_dirty = false;
-            if (cost > 0) {
-                g_gold -= cost;
-                const auto amount = static_cast<std::int32_t>(
-                    std::min<std::uint64_t>(cost, INT32_MAX));
-                if (auto* task = SKSE::GetTaskInterface()) {
-                    task->AddTask([amount] {  // inventory mutation: main thread
-                        auto* player = RE::PlayerCharacter::GetSingleton();
-                        auto* gold = RE::TESForm::LookupByID<RE::TESBoundObject>(0x0000000F);
-                        if (player && gold) {
-                            player->RemoveItem(gold, amount, RE::ITEM_REMOVE_REASON::kRemove,
-                                               nullptr, nullptr);
-                        }
-                    });
+        if (away) {
+            // An "(away)" assignee is READ-ONLY (spec §5): the actor isn't loaded,
+            // so there is nothing to preview or kick. Apply is replaced by Remove
+            // assignment (view / clear). The assignment still persists and applies
+            // on its own the next time that follower loads.
+            if (FUCK::Button("$FR_RemoveAssignment"_T)) {
+                if (g_target.npc) {
+                    session.RemoveNpcAssignment(*g_target.npc);
                 }
+                EditorStyle::PlayUISound("UIMenuCancel");
+                SwitchTarget(session, 0);  // drop back to the player
             }
-            EditorStyle::PlayUISound("UIMenuOK");
+            if (FUCK::IsItemHovered()) {
+                FUCK::SetTooltip("$FR_RemoveAssignmentTip"_T);
+            }
+        } else {
+            FUCK::BeginDisabled(!g_dirty || cantAfford);
+            if (FUCK::Button("$FR_Apply"_T)) {
+                if (TargetIsPlayer()) {
+                    // Player: commit the staged outfit into the active library
+                    // outfit and keep editing it (persists to outfits.json).
+                    EnsureActiveOutfit(session);
+                    session.CommitStaging();
+                    session.BeginStaging(g_staged);  // keep editing the same outfit
+                } else {
+                    // NPC: write the staged outfit into the target's active outfit,
+                    // upsert the WHOLE library into the co-save map (NEVER
+                    // WithLibrary / outfits.json), and refresh the loaded actor -
+                    // UpsertNpcLibrary does NOT kick a refresh, so we must
+                    // (Task 6 note). Gold is still charged to the player below.
+                    EnsureActiveOutfitNpc();
+                    const int idx = g_targetLibrary.ActiveIndex();
+                    if (idx >= 0) {
+                        if (auto* o = g_targetLibrary.At(static_cast<std::size_t>(idx))) {
+                            *o = g_staged;
+                        }
+                    }
+                    if (g_target.npc) {
+                        session.UpsertNpcLibrary(*g_target.npc, g_targetLibrary);
+                    }
+                    session.RequestRefreshActor(g_target.handle);
+                    session.BeginStaging(g_target.handle, g_staged);  // keep editing
+                }
+                g_dirty = false;
+                if (cost > 0) {
+                    // Gold is ALWAYS the player's, NPC edits included (spec §5 /
+                    // USER-CHECK #2): the player is the curator paying the tab.
+                    g_gold -= cost;
+                    const auto amount = static_cast<std::int32_t>(
+                        std::min<std::uint64_t>(cost, INT32_MAX));
+                    if (auto* task = SKSE::GetTaskInterface()) {
+                        task->AddTask([amount] {  // inventory mutation: main thread
+                            auto* player = RE::PlayerCharacter::GetSingleton();
+                            auto* gold = RE::TESForm::LookupByID<RE::TESBoundObject>(0x0000000F);
+                            if (player && gold) {
+                                player->RemoveItem(gold, amount, RE::ITEM_REMOVE_REASON::kRemove,
+                                                   nullptr, nullptr);
+                            }
+                        });
+                    }
+                }
+                EditorStyle::PlayUISound("UIMenuOK");
+            }
+            FUCK::EndDisabled();
         }
-        FUCK::EndDisabled();
 
         // Gold cost beside the button, not baked into its label (A1): a coins
         // glyph + the amount in journal-gold. Shown whenever there is a charge,

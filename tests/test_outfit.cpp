@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 static int g_failures = 0;
 #define CHECK(expr)                                                     \
@@ -349,6 +350,133 @@ int main() {
         CHECK(fs.Size() == 1);
 
         CHECK(FavoriteSet::KeyLine(k1) == std::string("Armors.esp|2048"));  // 0x800 == 2048
+    }
+
+    {  // weapon entries: set/get style, hide, passthrough per class (weapon
+       // transmog stage 1) - same SlotEntry kind as armor, separate array
+        Outfit o;
+        o.SetWeaponStyle(WeaponClass::Sword, StyleRefKey{ "Weapons.esp", 0x900 });
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kStyle);
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).style.localFormID == 0x900);
+        CHECK(o.WeaponEntryFor(WeaponClass::Bow).kind == SlotEntry::Kind::kPassthrough);
+
+        o.SetWeaponHide(WeaponClass::Bow);
+        CHECK(o.WeaponEntryFor(WeaponClass::Bow).kind == SlotEntry::Kind::kHide);
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kStyle);  // unaffected
+
+        o.SetWeaponPassthrough(WeaponClass::Sword);
+        CHECK(o.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kPassthrough);
+    }
+
+    {  // ForEachWeaponStyle visits exactly the styled classes, ascending, with the right keys
+        Outfit o;
+        o.SetWeaponStyle(WeaponClass::Bow, StyleRefKey{ "b.esp", 0x22 });
+        o.SetWeaponStyle(WeaponClass::Dagger, StyleRefKey{ "a.esp", 0x11 });
+        o.SetWeaponHide(WeaponClass::Mace);   // must NOT be visited
+        std::vector<WeaponClass> classes;
+        std::vector<StyleRefKey> keys;
+        o.ForEachWeaponStyle([&](WeaponClass c, const StyleRefKey& k) {
+            classes.push_back(c);
+            keys.push_back(k);
+        });
+        CHECK(classes.size() == 2);
+        CHECK(classes == (std::vector<WeaponClass>{ WeaponClass::Dagger, WeaponClass::Bow }));
+        CHECK(keys[0] == (StyleRefKey{ "a.esp", 0x11 }));
+        CHECK(keys[1] == (StyleRefKey{ "b.esp", 0x22 }));
+
+        int count = 0;
+        Outfit empty;
+        empty.ForEachWeaponStyle([&](WeaponClass, const StyleRefKey&) { ++count; });
+        CHECK(count == 0);
+    }
+
+    {  // ChangedSlotCount: weapon diffs count exactly like armor diffs
+        Outfit base;
+        base.SetWeaponStyle(WeaponClass::Sword, StyleRefKey{ "a.esp", 0x10 });
+        Outfit staged = base;
+        CHECK(ChangedSlotCount(base, staged) == 0);                          // identical
+        staged.SetWeaponStyle(WeaponClass::Sword, StyleRefKey{ "a.esp", 0x11 });  // different key
+        CHECK(ChangedSlotCount(base, staged) == 1);
+        staged.SetWeaponStyle(WeaponClass::Sword, StyleRefKey{ "a.esp", 0x10 });  // back to baseline
+        CHECK(ChangedSlotCount(base, staged) == 0);
+        staged.SetWeaponHide(WeaponClass::Bow);                               // new weapon-only change
+        CHECK(ChangedSlotCount(base, staged) == 1);
+    }
+
+    {  // ChangedSlotCount: armor and weapon diffs accumulate independently
+        Outfit base;
+        base.SetStyle(2, StyleRefKey{ "arm.esp", 0x1 });
+        base.SetWeaponStyle(WeaponClass::Bow, StyleRefKey{ "wpn.esp", 0x2 });
+        Outfit staged = base;
+        CHECK(ChangedSlotCount(base, staged) == 0);
+        staged.SetHide(2);                        // armor change
+        staged.SetWeaponHide(WeaponClass::Bow);    // weapon change
+        CHECK(ChangedSlotCount(base, staged) == 2);
+    }
+
+    {  // armor-only outfits are unaffected: default (all-passthrough) weapon
+       // arrays compare equal and contribute nothing to ChangedSlotCount
+        Outfit base;
+        base.SetStyle(1, StyleRefKey{ "arm.esp", 0x1 });
+        base.SetHide(4);
+        Outfit staged = base;
+        CHECK(ChangedSlotCount(base, staged) == 0);            // identical armor, untouched weapons
+        staged.SetStyle(1, StyleRefKey{ "arm.esp", 0x2 });      // armor-only edit
+        CHECK(ChangedSlotCount(base, staged) == 1);             // weapons contribute nothing extra
+    }
+
+    {  // EditHistory: weapon-only edits are recorded, and Undo restores the
+       // previous weapon entry (OS-21 extended to the weapon dimension)
+        EditHistory h;
+        Outfit      a;                                          // baseline (empty)
+        h.Reset(a);
+        CHECK(!h.CanUndo());
+
+        Outfit b = a;
+        b.SetWeaponStyle(WeaponClass::Crossbow, StyleRefKey{ "w.esp", 0x1 });
+        h.Record(b);
+        CHECK(h.CanUndo());
+        CHECK(h.Current().WeaponEntryFor(WeaponClass::Crossbow).style ==
+              (StyleRefKey{ "w.esp", 0x1 }));
+
+        Outfit c = b;
+        c.SetWeaponHide(WeaponClass::Crossbow);
+        h.Record(c);
+        CHECK(h.Current().WeaponEntryFor(WeaponClass::Crossbow).kind == SlotEntry::Kind::kHide);
+
+        const Outfit& undone = h.Undo();
+        CHECK(undone.WeaponEntryFor(WeaponClass::Crossbow).kind == SlotEntry::Kind::kStyle);
+        CHECK(undone.WeaponEntryFor(WeaponClass::Crossbow).style == (StyleRefKey{ "w.esp", 0x1 }));
+    }
+
+    {  // AnyWeaponEntry: the predicate behind the session's weapon fast path.
+       // A false here is a silently dead feature, so pin every kind and the
+       // full class range - and pin that armor styling alone never trips it.
+        Outfit o;
+        CHECK(!AnyWeaponEntry(o));  // fresh outfit: all-passthrough
+
+        o.SetStyle(0, StyleRefKey{ "a.esp", 0x1 });  // armor is a separate dimension
+        o.SetHide(5);
+        CHECK(!AnyWeaponEntry(o));
+
+        o.SetWeaponStyle(WeaponClass::Sword, StyleRefKey{ "w.esp", 0x1 });
+        CHECK(AnyWeaponEntry(o));
+        o.SetWeaponPassthrough(WeaponClass::Sword);
+        CHECK(!AnyWeaponEntry(o));
+
+        o.SetWeaponHide(WeaponClass::Bow);  // hiding is styling too
+        CHECK(AnyWeaponEntry(o));
+        o.SetWeaponPassthrough(WeaponClass::Bow);
+        CHECK(!AnyWeaponEntry(o));
+
+        // Every class must be seen - a loop that stops short (or a class
+        // appended past the count) would strand the last ones as dead.
+        for (std::size_t i = 0; i < kWeaponClassCount; ++i) {
+            const auto c = static_cast<WeaponClass>(i);
+            Outfit     one;
+            one.SetWeaponStyle(c, StyleRefKey{ "w.esp", 0x1 });
+            CHECK(AnyWeaponEntry(one));
+        }
     }
 
     {  // FavoriteSet: serialize/load round-trips, tolerant of CRLF and blank lines

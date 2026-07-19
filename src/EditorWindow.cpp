@@ -4,7 +4,9 @@
 
 #include "EditorStyle.h"  // PlayUISound
 #include "EditorUI.h"
+#include "InputListener.h"  // OS-80 ApplyEditorCameraDrag
 #include "SamCompat.h"
+#include "Settings.h"
 #include "SceneGuard.h"
 #include "StyleCatalog.h"
 
@@ -43,6 +45,10 @@ namespace {
         // Cached in Draw() for GetFlags's passthrough gate; also the camera
         // drag's "did this click land on the world" test (InputListener).
         bool CursorOverUI() const { return cursorOverUI_.load(std::memory_order_relaxed); }
+        // SAM framed this shot, so SAM owns the camera (OS-80c). Read from the
+        // input thread by InputListener's drag gate and from the render thread
+        // by GetFlags's wheel term, which is why the flag is atomic.
+        bool OpenedFromSam() const { return openedFromSam_.load(std::memory_order_relaxed); }
 
         void SetOpen(bool a_open) override {
             const bool was = open_.exchange(a_open, std::memory_order_relaxed);
@@ -51,6 +57,14 @@ namespace {
             }
             auto* ui = RE::UI::GetSingleton();
             if (a_open) {
+                // open_ is already true (exchange above) so FUCK will start
+                // calling Draw on the PRESENT thread immediately - but OnOpen
+                // (which populates g_target / g_targetLibrary, a std::string +
+                // std::optional + OutfitLibrary) has not run yet. Gate Draw on
+                // ready_ so it early-outs until OnOpen completes, instead of
+                // reading half-written editor state. Cleared here, set true
+                // right after OnOpen; a scene-refuse below leaves it false.
+                ready_.store(false, std::memory_order_relaxed);
                 // Refuse during a scene (OStim etc.): transmog is suspended and
                 // the editor would hijack the scene camera/input.
                 if (OS::SceneGuard::Active()) {
@@ -63,14 +77,24 @@ namespace {
                 // before FUCK's Present thread draws rows (fitsBody read unsynced).
                 OS::StyleCatalog::GetSingleton().EnsureFitCurrent();
                 OS::EditorStyle::PlayUISound("UIMenuOK");
-                openedFromSam_ = !(ui && ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) &&
-                                 OS::SamCompat::IsMenuOpen();
+                const bool fromSam = !(ui && ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) &&
+                                     OS::SamCompat::IsMenuOpen();
+                openedFromSam_.store(fromSam, std::memory_order_relaxed);
+                // NPC-target seam (spec §5, moved here from the legacy overlay's
+                // ImGuiOverlay::OnOpen). The editor's "Editing:" selector now
+                // threads a per-actor target through staging/fit/Apply (Task 8),
+                // but the SAM entry point still opens on the PLAYER: EditorUI::
+                // OnOpen resets g_target to the player every open. A future stage
+                // would, when openedFromSam_, read SamCompat's selected refr here
+                // and PRESELECT that NPC as the target (the SAM-framed camera makes
+                // the follower's live updates genuinely visible). Deferred - this
+                // is the single documented handoff point for SAM target preselect.
                 // Ask Apparel Preview (when present) to drop any hover preview.
                 if (auto* messaging = SKSE::GetMessagingInterface()) {
                     messaging->Dispatch(kClearPreviewMsg, nullptr, 0, "ApparelPreview");
                 }
                 // In SAM the shot is already framed - leave the camera alone.
-                if (!openedFromSam_) {
+                if (!fromSam) {
                     if (auto* cam = RE::PlayerCamera::GetSingleton()) {
                         wasFirstPerson_ = cam->IsInFirstPerson();
                         cam->ForceThirdPerson();
@@ -81,7 +105,7 @@ namespace {
                 // also hides the game cursor FUCK relies on (Fuzzles) - instead we zero
                 // the menu's Scaleform root alpha, leaving the cursor menu and the 3D
                 // character intact. kRenderDuringTM keeps our window drawing.
-                if (openedFromSam_) {
+                if (fromSam) {
                     SetMenuRootAlpha(OS::Settings::GetSingleton().samMenuName, 0.0);
                 } else {
                     SetMenuRootAlpha(RE::InventoryMenu::MENU_NAME, 0.0);
@@ -93,19 +117,22 @@ namespace {
                     }
                 }
                 OS::EditorUI::OnOpen();
+                ready_.store(true, std::memory_order_release);  // editor state populated - Draw may now render
                 FUCK::ForceCursor(true);  // belt-and-suspenders; the game cursor stays now
             } else {
+                ready_.store(false, std::memory_order_release);  // stop Draw rendering before OnClose tears state down
                 FUCK::ForceCursor(false);
                 OS::EditorStyle::PlayUISound("UIMenuCancel");
                 OS::EditorUI::OnClose();
                 // Restore the 2D of the menu we alpha-hid on open.
-                if (openedFromSam_) {
+                const bool wasFromSam = openedFromSam_.load(std::memory_order_relaxed);
+                if (wasFromSam) {
                     SetMenuRootAlpha(OS::Settings::GetSingleton().samMenuName, 100.0);
                 } else {
                     SetMenuRootAlpha(RE::InventoryMenu::MENU_NAME, 100.0);
                 }
                 if (auto* cam = RE::PlayerCamera::GetSingleton();
-                    cam && wasFirstPerson_ && !openedFromSam_) {
+                    cam && wasFirstPerson_ && !wasFromSam) {
                     cam->ForceFirstPerson();
                 }
             }
@@ -160,9 +187,36 @@ namespace {
             // unconditional flag. EXPERIMENTAL: if FUCK owns the right stick for scroll they
             // may fight, or the alpha-hidden menu may not rotate - field-test; a clean
             // "give me the right stick" is likely a Fuzzles ask.
-            const bool mouseRotate = !cursorOverUI_.load(std::memory_order_relaxed) &&
-                                     (FUCK::IsMouseDown(0) || FUCK::IsMouseDown(1));
-            if (mouseRotate || rStickActive_.load(std::memory_order_relaxed)) {
+            // OS-80d: UNDER SAM THE GATE IS HOVER-ONLY, NOT BUTTON-HELD, and that is
+            // the whole fix. The button-held form above is SELF-DEFEATING for another
+            // mod's camera: passthrough cannot open until a button is ALREADY down, but
+            // the button-DOWN event is what the closed gate blocks. FLICK's hook
+            // (Hooks::ProcessInputQueue, FUCK.dll RVA 0xaa880) is all-or-nothing per
+            // poll - passthrough on calls the original with the queue untouched, off
+            // walks and filters it - so the press is consumed and only later MOVES get
+            // through. SAM never sees a drag begin, so it never tracks one.
+            //
+            // That is exactly the field report, across every round: "sometimes it did
+            // move if i held both mouse buttons down but it was janky". The FIRST
+            // button's press is always eaten; pressing a SECOND while the gate is
+            // already open lets that one through, so the drag half-starts. Two-button
+            // partial success was never odd - it was the symptom naming its own cause.
+            //
+            // Hovering the world strip is therefore the gesture we gate on when SAM
+            // owns the camera: the gate is open BEFORE the press, so SAM receives
+            // down, move and up as one coherent gesture. This also subsumes the wheel
+            // (no latch needed - the gate is already open when the tick arrives), which
+            // is why OS-80c's wheelActive_ machinery is gone again.
+            //
+            // Kept button-held for the NO-SAM case, where the tightening still earns
+            // its keep (hover-gated passthrough there hid the cursor over the character
+            // and leaked Esc to the inventory) and where we drive the camera ourselves
+            // anyway. COST under SAM: Esc reaches the game while hovering. Accepted -
+            // the camera is the point, and Draw still handles its own Esc close.
+            const bool overUI      = cursorOverUI_.load(std::memory_order_relaxed);
+            const bool mouseRotate = !overUI && (FUCK::IsMouseDown(0) || FUCK::IsMouseDown(1));
+            const bool samCamera   = !overUI && openedFromSam_.load(std::memory_order_relaxed);
+            if (mouseRotate || samCamera || rStickActive_.load(std::memory_order_relaxed)) {
                 flags = flags | FUCK::WindowFlags::kPassInputToGame;
             }
             return flags;
@@ -181,7 +235,23 @@ namespace {
         }
         // Flush to the top-left corner (user): remove the top/left inset; FUCK's window
         // padding provides the small consistent margin. Pairs with the full-height size.
-        ImVec2 GetDefaultPos() const override { return ImVec2(0.0f, 0.0f); }
+        //
+        // OS-80e: under SAM, anchor RIGHT instead. SAM's own UI lives on the right and
+        // we alpha-hide it - but HIDDEN IS NOT GONE. Its region still hit-tests, so it
+        // eats camera drags exactly like a visible panel would, and with our panel on
+        // the LEFT the only draggable area left was a thin strip between the two dead
+        // zones (user: "the only way to move is by putting cursor in the middle which
+        // isn't ideal"). Parking our panel ON TOP of SAM's UI merges the two dead zones
+        // into one and leaves the whole left side contiguous and free for the camera.
+        // Size is unchanged, so the free area is whatever our 60%-clamped width leaves.
+        ImVec2 GetDefaultPos() const override {
+            if (openedFromSam_.load(std::memory_order_relaxed)) {
+                const ImVec2 d = FUCK::GetDisplaySize();
+                const float  w = GetDefaultSize().x;
+                return ImVec2(d.x > w ? d.x - w : 0.0f, 0.0f);
+            }
+            return ImVec2(0.0f, 0.0f);
+        }
 
         void Draw() override {
             // OS-54: force our standardized geometry on the first frame after open (and
@@ -210,7 +280,14 @@ namespace {
                 FUCK::SetWindowPos(GetDefaultPos());
             }
 
-            OS::EditorUI::Draw();
+            // Draw the editor content only once OnOpen has populated g_target /
+            // g_targetLibrary (ready_). FUCK gates Draw on IsOpen(), which flips
+            // true BEFORE OnOpen runs on the main thread, so without this a
+            // present-thread frame landing mid-OnOpen would read half-written
+            // editor state. Geometry above is target-independent, so it still runs.
+            if (ready_.load(std::memory_order_acquire)) {
+                OS::EditorUI::Draw();
+            }
             // Cache "is the cursor over our UI" for GetFlags()'s conditional
             // kPassInputToGame (see there). Over any FUCK window, or while a widget is
             // active (typing / holding a slider) => the panel owns input; otherwise the
@@ -218,6 +295,22 @@ namespace {
             const bool overUI =
                 FUCK::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) || FUCK::IsAnyItemActive();
             cursorOverUI_.store(overUI, std::memory_order_relaxed);
+
+            // OS-80: do NOT drive the camera from here. A Draw-thread drag was
+            // tried on 2026-07-19 and REVERTED the same night: InputListener's
+            // sink already drives it (proven in field - "camera drag: LMB down
+            // ... ARMED" logs from that sink), so this was a SECOND writer on
+            // top of it, and kPassInputToGame below hands the same gesture to the
+            // game as a third. The user felt it immediately: "i can get the
+            // camera to move but only if i hold left click and then right click
+            // at the same time, it's odd, not at all like SAM".
+            //
+            // The reasoning that produced it was the real error: an earlier
+            // session logged no drag lines while the editor was drawing, and that
+            // ABSENCE was read as proof the sink could not run. It only meant the
+            // gesture had not happened. Do not re-add a driver here without first
+            // proving from a log that the sink is genuinely silent DURING a
+            // completed drag. See [[read-evidence-before-mechanism]].
 
             // Controller rotation (OS-53): cache right-stick deflection for GetFlags's
             // passthrough gate. ImGui feeds the right stick as these nav keys; if FUCK
@@ -228,6 +321,14 @@ namespace {
                                     FUCK::IsKeyDown(ImGuiKey_GamepadRStickDown),
                                 std::memory_order_relaxed);
 
+            // OS-80d: the wheel needs NO latch any more. OS-80c latched a wheel window
+            // to work around the gate opening a frame late, but under SAM the gate is
+            // now hover-gated in GetFlags, so it is already open when the tick lands
+            // and the whole queue - wheel included - reaches SAM untouched.
+
+            // NOTE: deliberately still BUTTON-based, not the hover gate above. This
+            // drives ForceCursor, and the cursor should stay visible while merely
+            // hovering the character; only an actual drag should let the game hide it.
             const bool passing = !overUI && (FUCK::IsMouseDown(0) || FUCK::IsMouseDown(1));
 
             // Re-assert the cursor every non-drag frame: ShowMenus(false) keeps
@@ -246,7 +347,7 @@ namespace {
             // Re-clear whenever models are present. Draw runs on the render
             // thread: the loadedModels-size read is a benign race, and the
             // actual Clear3D is queued onto the main thread (engine UI state).
-            if (!openedFromSam_) {
+            if (!openedFromSam_.load(std::memory_order_relaxed)) {
                 if (auto* inv3d = RE::Inventory3DManager::GetSingleton();
                     inv3d && !inv3d->GetRuntimeData().loadedModels.empty() &&
                     !item3dClearQueued_.exchange(true, std::memory_order_relaxed)) {
@@ -276,13 +377,14 @@ namespace {
 
     private:
         std::atomic<bool> open_{ false };
+        std::atomic<bool> ready_{ false };        // set true AFTER OnOpen populates editor state; Draw early-outs until then
         std::atomic<bool> cursorOverUI_{ true };  // cached in Draw(); gates kPassInputToGame (safe default: no passthrough)
         std::atomic<bool> forceLayout_{ false };  // OS-54: set on open; Draw re-applies GetDefaultSize/Pos on the first post-open frame
         std::atomic<bool> rStickActive_{ false }; // OS-53: right stick deflected => rotate passthrough (cached in Draw)
         std::atomic<bool> resetGeometry_{ false };// gear "Reset window position" => re-apply defaults next frame
         std::atomic<bool> item3dClearQueued_{ false };  // AE async item-3D re-clear: one queued main-thread task at a time
         bool              wasFirstPerson_{ false };
-        bool              openedFromSam_{ false };
+        std::atomic<bool> openedFromSam_{ false };
     };
 
     EditorIWindow g_editorWindow;
@@ -302,6 +404,8 @@ namespace OS::EditorWindow {
     bool WantsTextInput() { return FUCK::IsAnyItemActive(); }
 
     bool CursorOverUI() { return g_editorWindow.CursorOverUI(); }
+
+    bool OpenedFromSam() { return g_editorWindow.OpenedFromSam(); }
 
     void ResetGeometry() { g_editorWindow.RequestResetGeometry(); }
 
