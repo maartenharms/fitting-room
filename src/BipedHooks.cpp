@@ -5,6 +5,7 @@
 #include "OutfitSession.h"
 #include "REAugments.h"
 #include "SlotMask.h"
+#include "VersionCheck.h"
 
 #include <functional>
 
@@ -618,11 +619,22 @@ namespace OS {
         // +0x19E loads 0x17E5488 on 1.6.1170) so the pass gate below works
         // unchanged. The sibling inline call at 24725+0xFC is a different
         // visitor (0x17E54C0, a checker) - do not hook that one.
-        const REL::Relocation<std::uintptr_t> site{ REL::RelocationID(24231, 24725),
-                                                    REL::VariantOffset(0x81, 0x1EF, 0x81) };
+        // ⚠ THE OFFSET COMES FROM VersionCheck, NOT FROM A CONSTANT HERE. On
+        // any build but the two measured by hand it is somewhere else, and on
+        // AE it cannot be found by the callee alone: 24725 calls 16096 twice,
+        // and +0xFC is the checker pass described above. VersionCheck picks
+        // the one that is handed the worn visitor vtable.
+        const auto callOffset = VersionCheck::WornPassCallOffset();
+        if (callOffset == 0) {
+            spdlog::error("BipedHooks: no worn-pass call site on this runtime; injection NOT "
+                          "installed. (plugin.cpp refuses to load in this state, so reaching "
+                          "here means the self-check was bypassed.)");
+            return;
+        }
+        const REL::Relocation<std::uintptr_t> site{ REL::RelocationID(24231, 24725), callOffset };
         if (*reinterpret_cast<std::uint8_t*>(site.address()) != 0xE8) {
-            spdlog::error("BipedHooks: expected E8 at the worn-pass call site (SE 24231+0x81 / AE 24725+0x1EF), found {:02X}; injection NOT installed.",
-                          *reinterpret_cast<std::uint8_t*>(site.address()));
+            spdlog::error("BipedHooks: expected E8 at the worn-pass call site (+0x{:X}), found {:02X}; injection NOT installed.",
+                          callOffset, *reinterpret_cast<std::uint8_t*>(site.address()));
             return;
         }
 
@@ -640,11 +652,16 @@ namespace OS {
     }
 
     void BipedHooks::InstallWornMaskShim() {
-        const REL::Relocation<std::uintptr_t> site{ REL::RelocationID(24220, 24724),
-                                                    REL::VariantOffset(0x7C, 0x80, 0x7C) };
+        const auto callOffset = VersionCheck::WornMaskCallOffset();
+        if (callOffset == 0) {
+            spdlog::error("BipedHooks: no worn-mask call site on this runtime; mask shim NOT "
+                          "installed.");
+            return;
+        }
+        const REL::Relocation<std::uintptr_t> site{ REL::RelocationID(24220, 24724), callOffset };
         if (*reinterpret_cast<std::uint8_t*>(site.address()) != 0xE8) {
-            spdlog::error("BipedHooks: expected E8 at the worn-mask call site (24220/24724), found {:02X}; mask shim NOT installed.",
-                          *reinterpret_cast<std::uint8_t*>(site.address()));
+            spdlog::error("BipedHooks: expected E8 at the worn-mask call site (+0x{:X}), found {:02X}; mask shim NOT installed.",
+                          callOffset, *reinterpret_cast<std::uint8_t*>(site.address()));
             return;
         }
         g_origGetWornMask = reinterpret_cast<GetWornMask_t>(

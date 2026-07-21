@@ -1,5 +1,7 @@
 #include "WeaponHooks.h"
 
+#include "VersionCheck.h"
+
 #include "NpcLookup.h"
 #include "OutfitSession.h"
 #include "StyleCatalog.h"
@@ -420,20 +422,30 @@ namespace OS {
         // by ID - we hook its CALLERS and take the original from write_call's
         // return - but anyone adding a direct RelocationID for it must write
         // RelocationID(15526, 15703) or silently hook the wrong code on AE.
+        // ⚠ OFFSETS COME FROM VersionCheck, NOT FROM CONSTANTS HERE. On any
+        // build but the two measured by hand these are somewhere else. The two
+        // weapon sites are the awkward case: 15506/15683 calls the loader
+        // TWICE, for the player and for an NPC, and nothing tells the calls
+        // apart - so they are located by ORDINAL (player first, NPC second,
+        // verified in that order on both binaries). The quiver goes through a
+        // different parent, so its call is unique.
+        const auto playerOff = VersionCheck::WeaponPlayerCallOffset();
+        const auto npcOff    = VersionCheck::WeaponNpcCallOffset();
+        const auto quiverOff = VersionCheck::QuiverCallOffset();
         const REL::Relocation<std::uintptr_t> weaponPlayer{ REL::RelocationID(15506, 15683),
-                                                            REL::VariantOffset(0x17F, 0x2B1, 0x17F) };
+                                                            playerOff };
         const REL::Relocation<std::uintptr_t> weaponNPC{ REL::RelocationID(15506, 15683),
-                                                         REL::VariantOffset(0x1D0, 0x2FA, 0x1D0) };
-        const REL::Relocation<std::uintptr_t> quiver{ REL::RelocationID(15511, 15688),
-                                                      REL::VariantOffset(0x141, 0x199, 0x141) };
+                                                         npcOff };
+        const REL::Relocation<std::uintptr_t> quiver{ REL::RelocationID(15511, 15688), quiverOff };
 
-        weaponPlayerOk_ = InstallSite(weaponPlayer.address(),
-                                      "weapon/player SE 15506+0x17F / AE 15683+0x2B1",
+        weaponPlayerOk_ = playerOff != 0 &&
+                          InstallSite(weaponPlayer.address(), "weapon/player (located)",
                                       g_origWeaponPlayer, &LoadPartThunk<&g_origWeaponPlayer>);
-        weaponNPCOk_    = InstallSite(weaponNPC.address(),
-                                      "weapon/NPC SE 15506+0x1D0 / AE 15683+0x2FA",
+        weaponNPCOk_    = npcOff != 0 &&
+                          InstallSite(weaponNPC.address(), "weapon/NPC (located)",
                                       g_origWeaponNPC, &LoadPartThunk<&g_origWeaponNPC>);
-        quiverOk_       = InstallSite(quiver.address(), "quiver SE 15511+0x141 / AE 15688+0x199",
+        quiverOk_       = quiverOff != 0 &&
+                          InstallSite(quiver.address(), "quiver (located)",
                                       g_origQuiver, &LoadPartThunk<&g_origQuiver>);
 
         spdlog::info("WeaponHooks: part-3D call-site hooks installed (weapon/player={}, "

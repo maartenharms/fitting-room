@@ -22,12 +22,13 @@
 #include "Settings.h"
 #include "SettingsUI.h"
 #include "StyleCatalog.h"
+#include "VersionCheck.h"
 #include "WeaponHooks.h"
 
 namespace {
     constexpr auto kLogName = "FittingRoom.log";
     // Keep in sync with project(... VERSION) in CMakeLists.txt and vcpkg.json; used only for the load log line.
-    constexpr auto kVersion = "0.2.0";
+    constexpr auto kVersion = "0.2.1";
 
     // Resolve where the log goes, and never fail silently.
     //
@@ -161,18 +162,33 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
     SetupLog();
     spdlog::info("Fitting Room v{} loading...", kVersion);
 
-    // Universal SE + AE build. Every engine address is runtime-resolved
-    // (REL::RelocationID); the two mid-function hook offsets are verified on
-    // SE 1.5.97 and next-gen AE (1.6.1170), and the install-time 0xE8 byte
-    // checks fail safe on any runtime where a site does not match. Gate to
-    // next-gen AE (1.6.1130+): the moved worn-mask offset (+0x80) was verified
-    // against 1.6.1170, so pre-next-gen AE would need its own re-verify.
-    const auto ver       = a_skse->RuntimeVersion();
-    const bool supported = (ver == SKSE::RUNTIME_SSE_1_5_97) ||
-                           (ver >= REL::Version(1, 6, 1130, 0));
-    if (!supported) {
-        spdlog::error("Unsupported Skyrim runtime {}. Fitting Room needs SE 1.5.97 or AE 1.6.1130 and later; not loading.",
-                      ver.string());
+    // Universal SE + AE build: SE 1.5.97 and every AE from 1.6.317 up.
+    //
+    // ⚠ THE OLD GATE STOPPED AT 1.6.1130, AND THAT WAS THE BUG. Users on the
+    // mid 1.6 builds got SKSE's "reported as incompatible during load" dialog,
+    // which is this function returning false - our own message, never a crash.
+    // The comment that used to sit here said pre-next-gen AE "would need its
+    // own re-verify", which was true and was never done, so the gate stood in
+    // for the missing evidence.
+    //
+    // The evidence exists now. Every id Fitting Room uses resolves on every AE
+    // database from 1.6.317 up (docs/research/callsites.py), and what actually
+    // varies - the hand-measured byte offsets into functions - is no longer
+    // trusted: VersionCheck locates each call site by what it CALLS, and for
+    // the worn pass by what it calls AND the visitor it hands over. The gate
+    // now refuses on a MEASUREMENT rather than on a version number.
+    const auto ver = a_skse->RuntimeVersion();
+    if (ver != SKSE::RUNTIME_SSE_1_5_97 && ver < REL::Version(1, 6, 317, 0)) {
+        spdlog::error("Unsupported Skyrim runtime {}. Fitting Room needs SE 1.5.97 or AE "
+                      "1.6.317 and later; not loading.", ver.string());
+        return false;
+    }
+
+    OS::VersionCheck::Run();
+    if (!OS::VersionCheck::CriticalOk()) {
+        spdlog::error("Address self-check FAILED on runtime {} - the biped hooks have nowhere to "
+                      "install, so Fitting Room would load and change nothing you wear. Not "
+                      "loading. Please send FittingRoom.log to the author.", ver.string());
         return false;
     }
 

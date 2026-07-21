@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # "Fitting Room" (formerly Outfit Slots) - ESO-style transmog with saved outfit slots.
 # Skyrim SE 1.5.97 only. DLL name = FittingRoom.dll (project name drives it).
-project(FittingRoom VERSION 0.2.0 LANGUAGES CXX)
+project(FittingRoom VERSION 0.2.1 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 # jsoncpp's exported config predates CMake 3.5's policy floor.
@@ -15,6 +15,8 @@ add_commonlibsse_plugin(${PROJECT_NAME}
     SOURCES
         src/PCH.h
         src/plugin.cpp
+        src/VersionCheck.h
+        src/VersionCheck.cpp
         src/REAugments.h
         src/REAugments.cpp
         src/StyleRef.h

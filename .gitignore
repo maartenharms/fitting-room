@@ -8,5 +8,6 @@ compile_commands.json
 tools/build.log
 tools/build_symbols.log
 
-# release artifacts (zips are rebuilt by tools/make_fomod.sh)
+# session worktrees + release artifacts (zips are rebuilt by tools/make_fomod.sh)
+.claude/
 release/

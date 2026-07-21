@@ -23,6 +23,43 @@ namespace {
         }
     }
 
+    // One bindable-key dropdown. Returns whether the binding changed, so the
+    // caller can fold it into its dirty flag and save.
+    //
+    // ⚠ The list is DELIBERATELY curated (EditorGate::kBindableKeys): no WASD,
+    // no Z/X/M, no number row - those are movement, vanilla menus and the
+    // quick-slot keys, and offering them invites a binding that fights the
+    // game. "(unbound)" is first so a key can always be given back.
+    //
+    // a_apply pushes the new value into InputListener's cached copy, which is
+    // what the input sink actually compares against; without it a rebind would
+    // not take until the next load. Persisting to the INI is the caller's job.
+    template <class Fn>
+    bool KeyCombo(const char* a_label, std::uint32_t& a_dik, Fn&& a_apply) {
+        // FUCK::Combo is the array form (no BeginCombo), so gather the names
+        // and map the current value to its index.
+        constexpr int kCount = static_cast<int>(std::size(OS::EditorGate::kBindableKeys));
+        std::vector<const char*> names;
+        names.reserve(kCount);
+        int current = 0;
+        for (int i = 0; i < kCount; ++i) {
+            names.push_back(OS::EditorGate::kBindableKeys[i].name);
+            if (OS::EditorGate::kBindableKeys[i].dik == a_dik) {
+                current = i;
+            }
+        }
+        if (!FUCK::Combo(a_label, &current, names.data(), kCount)) {
+            return false;
+        }
+        const std::uint32_t dik = OS::EditorGate::kBindableKeys[current].dik;
+        if (dik == a_dik) {
+            return false;  // reselecting the same entry is not a change
+        }
+        a_dik = dik;
+        a_apply(dik);
+        return true;
+    }
+
     // The panel body. Edits the Settings singleton in place; a single Save() at
     // the end persists to OutfitSlots.ini when anything changed. Outfit Slots
     // reads settings at editor-open / apply-time, so edits take effect the next
@@ -86,29 +123,21 @@ namespace {
                                 &cfg.sceneCompat);
 
         FUCK::SeparatorText("$FR_Set_Controls"_T);
-        {
-            // Editor hotkey as a dropdown. FUCK::Combo is the array form (no
-            // BeginCombo), so gather the bindable-key names and map the index.
-            constexpr int kCount = static_cast<int>(std::size(OS::EditorGate::kBindableKeys));
-            std::vector<const char*> names;
-            names.reserve(kCount);
-            int current = 0;
-            for (int i = 0; i < kCount; ++i) {
-                names.push_back(OS::EditorGate::kBindableKeys[i].name);
-                if (OS::EditorGate::kBindableKeys[i].dik == cfg.editorKeyDIK) {
-                    current = i;
-                }
-            }
-            if (FUCK::Combo("$FR_Set_Hotkey"_T, &current, names.data(), kCount)) {
-                const std::uint32_t dik = OS::EditorGate::kBindableKeys[current].dik;
-                if (dik != cfg.editorKeyDIK) {
-                    cfg.editorKeyDIK = dik;
-                    OS::InputListener::GetSingleton().SetEditorKey(dik);
-                    dirty = true;
-                }
-            }
-        }
+        // Both hotkeys go through KeyCombo so they cannot drift apart. The
+        // "change outfit" one used to be INI-only (iNextOutfitKeyDIK), which
+        // meant the one binding most people want to change was the one they
+        // could not reach from the panel.
+        dirty |= KeyCombo("$FR_Set_Hotkey"_T, cfg.editorKeyDIK,
+                          [](std::uint32_t a_dik) {
+                              OS::InputListener::GetSingleton().SetEditorKey(a_dik);
+                          });
         Tip("$FR_Set_HotkeyTip"_T);
+
+        dirty |= KeyCombo("$FR_Set_NextOutfit"_T, cfg.nextOutfitKeyDIK,
+                          [](std::uint32_t a_dik) {
+                              OS::InputListener::GetSingleton().SetNextOutfitKey(a_dik);
+                          });
+        Tip("$FR_Set_NextOutfitTip"_T);
 
         FUCK::TextDisabled("%s", "$FR_Set_SaveNote"_T);
 

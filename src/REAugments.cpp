@@ -80,6 +80,31 @@ namespace OS::REAug {
             func(a_actor, a_weapon, a_leftHand);
         }
 
+        // BipedAnim ammo attach - the AMMO mirror of AttachWeaponPart, and the
+        // reason OS-76's weapon fix could not simply be widened to cover ammo.
+        // Actor::AttachWeapon is UNUSABLE here, verified on the binaries rather
+        // than assumed (OS-77 flagged exactly this as needing a check, since the
+        // signature's TESForm* makes it look permissive): AttachWeaponPart opens
+        //     cmp byte ptr [rdx+0x1a], 0x29   ; formType == kWeapon (41)
+        //     jne <exit>
+        // so an AMMO form (kAmmo, 0x2A) is rejected on the FIRST instruction -
+        // SE 1401C85D0 / AE 140214BD0, identical on both. Ammo therefore has its
+        // own entry point, the same function shape gated on 0x2A instead:
+        //     SE 15511 (0x1401C8D40)  cmp byte ptr [rdx+0x1a], 0x2A
+        //     AE 15688 (0x1402154A0)  cmp byte ptr [rdx+0x1a], 0x2A
+        // Both byte-verified on the unpacked binaries; prologue, the +0x2770
+        // biped member and the form gate all match across runtimes.
+        //
+        // TWO args, no leftHand - ammo has exactly one biped slot (kQuiver).
+        // This is also the very function whose inner part-3D call WeaponHooks
+        // already hooks (SE 15511+0x141 / AE 15688+0x199), so calling it is what
+        // runs our own styling hook.
+        void AttachAmmoPart(RE::BipedAnim* a_biped, RE::TESForm* a_ammo) {
+            using func_t = void (*)(RE::BipedAnim*, RE::TESForm*);
+            static REL::Relocation<func_t> func{ REL::RelocationID(15511, 15688) };
+            func(a_biped, a_ammo);
+        }
+
         // Actor virtual 0xB4 - the hip<->hand re-parent, the ONLY thing that
         // moves a weapon between its sheath node and the hand node. Called as a
         // VIRTUAL, never by address: the `Actor` implementation only touches the
@@ -218,6 +243,42 @@ namespace OS::REAug {
                     spdlog::debug("restyle: re-parented '{}' to the hand node (weapon drawn).",
                                   weap->GetName() ? weap->GetName() : "?");
                 }
+            }
+        }
+
+        // OS-77: the quiver, which the loop above can never reach. Ammo is not a
+        // hand slot, so GetEquippedObject never returns it, and Actor::AttachWeapon
+        // would reject it anyway (see AttachAmmoPart). But it hits the SAME
+        // change-detect as weapons did, which is why a quiver style needed an
+        // unequip/re-equip to show. Same remedy: tear the node down, re-attach
+        // through the engine's own ammo entry point.
+        //
+        // Per biped BY HAND. Actor::AttachWeapon walks the 3rd- and 1st-person
+        // bipeds internally and calls the biped-level attach on each; ammo has no
+        // Actor-level counterpart that does the walk, so we do it. Both bipeds for
+        // the OS-76 reason: detach only the 3rd and the stale 1st-person node
+        // still satisfies its own gate.
+        if (auto* const ammo = a_player->GetCurrentAmmo()) {
+            auto* const b3 = a_player->GetBiped1(false).get();
+            auto* const b1 = a_player->GetBiped1(true).get();
+            const bool  d3 = DetachWeaponFrom(b3, ammo);
+            const bool  d1 = DetachWeaponFrom(b1, ammo);
+            if (d3 || d1) {
+                if (b3) {
+                    AttachAmmoPart(b3, ammo);
+                }
+                if (b1) {
+                    AttachAmmoPart(b1, ammo);
+                }
+                // `drawn` is logged, not acted on. The weapon path needs an
+                // explicit hip->hand restore after a forced re-attach; the quiver
+                // has no such move (it stays on the back in both states). The open
+                // question is the NOCKED arrow, which OS-75 records as cloned from
+                // the quiver 3D - so a re-attach mid-draw could plausibly disturb
+                // it. Nothing on the binaries settles that, so field-test it with a
+                // bow drawn and an arrow nocked, and read this line when reporting.
+                spdlog::debug("restyle: quiver re-attached '{}' (drawn={}).",
+                              ammo->GetName() ? ammo->GetName() : "?", drawn);
             }
         }
     }

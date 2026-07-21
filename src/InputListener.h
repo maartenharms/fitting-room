@@ -24,10 +24,11 @@ namespace OS {
         RE::BSEventNotifyControl ProcessEvent(RE::InputEvent* const* a_events,
                                               RE::BSTEventSource<RE::InputEvent*>*) override;
 
-        // Live-update the editor hotkey from the SKSE settings panel dropdown
-        // (the cached copy the input sink compares against). Persisting to the
+        // Live-update the hotkeys from the SKSE settings panel dropdowns (the
+        // cached copies the input sink compares against). Persisting to the
         // INI is the caller's job.
         void SetEditorKey(std::uint32_t a_dik) { editorKey_ = a_dik; }
+        void SetNextOutfitKey(std::uint32_t a_dik) { nextKey_ = a_dik; }
 
     private:
         InputListener() = default;

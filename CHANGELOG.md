@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1 (2026-07-22)
+
+**New**
+
+- **Fitting Room now runs on the Anniversary Edition versions between 1.6.317 and 1.6.1129.** Those versions used to be refused outright, with Skyrim reporting the mod as incompatible during load. Fitting Room now checks its own engine addresses against your build when the game starts, and still declines cleanly if that check fails rather than loading and changing nothing you wear. The result is written to the log.
+
+- **The change outfit hotkey can be set from the settings panel.** It switches to your next saved outfit without opening the editor. It already existed, but only as a line in the INI, so the one binding most people want was the one you could not reach in game. It sits under Controls next to the editor hotkey and is unbound by default.
+
+**Fixed**
+
+- The editor no longer stops blocking game input when another mod has already hooked the same place in the game. Previously it would quietly give up, so movement and camera could still respond while the editor had focus.
+
+**Known**
+
+- On the Anniversary Edition versions between 1.6.317 and 1.6.1129 there is no in-game settings panel, because FLICK has no build for them. Everything else works, and every setting is in `Data\SKSE\Plugins\FittingRoom.ini`.
+
 ## 0.2.0 (2026-07-19)
 
 **New**

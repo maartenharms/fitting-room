@@ -7,6 +7,7 @@
 #include "SceneGuard.h"
 #include "Settings.h"
 #include "StyleCatalog.h"
+#include "VersionCheck.h"
 
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
@@ -249,12 +250,30 @@ namespace OS {
         };
 
         void InstallInputBlockHook() {
-            const REL::Relocation<std::uintptr_t> target{
-                REL::RelocationID(67315, 68617), 0x7B
-            };
+            // ⚠ THIS USED TO WRITE WITHOUT LOOKING. No byte check, no located
+            // offset - it took +0x7B on faith and wrote five bytes there on
+            // whatever runtime was loaded. Every other hook in the codebase
+            // checks for E8 first; this one was the exception, and on an
+            // unverified build it would have been five bytes of corruption in
+            // the middle of an engine function.
+            const auto callOffset = VersionCheck::InputBlockCallOffset();
+            if (callOffset == 0) {
+                spdlog::warn("ImGuiOverlay: no input-dispatch call site on this runtime; the "
+                             "input-block hook is OFF. The editor still works; game input is "
+                             "not suppressed while it has focus.");
+                return;
+            }
+            const REL::Relocation<std::uintptr_t> target{ REL::RelocationID(67315, 68617),
+                                                          callOffset };
+            if (*reinterpret_cast<std::uint8_t*>(target.address()) != 0xE8) {
+                spdlog::error("ImGuiOverlay: expected E8 at the input-dispatch call site (+0x{:X}), "
+                              "found {:02X}; input-block hook NOT installed.",
+                              callOffset, *reinterpret_cast<std::uint8_t*>(target.address()));
+                return;
+            }
             InputDispatchHook::func = SKSE::GetTrampoline().write_call<5>(
                 target.address(), InputDispatchHook::thunk);
-            spdlog::info("ImGuiOverlay: input-block hook installed (67315+0x7B).");
+            spdlog::info("ImGuiOverlay: input-block hook installed (+0x{:X}).", callOffset);
         }
     }
 
