@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 
 # "Fitting Room" (formerly Outfit Slots) - ESO-style transmog with saved outfit slots.
-# Skyrim SE 1.5.97 only. DLL name = FittingRoom.dll (project name drives it).
-project(FittingRoom VERSION 0.2.1 LANGUAGES CXX)
+# One DLL supports Skyrim SE 1.5.97 and next-gen AE 1.6.1130+.
+project(FittingRoom VERSION 0.3.0 LANGUAGES CXX)
 
 find_package(CommonLibSSE CONFIG REQUIRED)
 # jsoncpp's exported config predates CMake 3.5's policy floor.
@@ -28,6 +28,10 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/AutoPresets.h
         src/AutoPresets.cpp
         src/EditorGate.h
+        src/FooterNotice.h
+        src/OutfitTabAdd.h
+        src/OutfitTabs.h
+        src/ShowcaseTabs.h
         src/SamCompat.h
         src/SamCompat.cpp
         src/CrashGuard.h
@@ -59,6 +63,9 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/MenuButton.cpp
         src/LoreModule.h
         src/LoreModule.cpp
+        src/ObodyApi.h
+        src/ObodyApi.cpp
+        extern/OBody_API.h
         src/KeyboardArbiter.h
         src/ImGuiOverlay.h
         src/ImGuiOverlay.cpp
@@ -131,6 +138,17 @@ target_include_directories(WeaponSlotsTests PRIVATE src)
 add_executable(NpcSessionTests tests/test_npcsession.cpp)
 target_compile_features(NpcSessionTests PRIVATE cxx_std_23)
 target_include_directories(NpcSessionTests PRIVATE src)
+
+# Pure-logic player refresh cooldown around blocking transitions.
+add_executable(RefreshGateTests tests/test_refreshgate.cpp)
+target_compile_features(RefreshGateTests PRIVATE cxx_std_23)
+target_include_directories(RefreshGateTests PRIVATE src)
+
+# Real ImGui tab-state regression test for the Presets source tabs.
+add_executable(ShowcaseTabsTests tests/test_showcase_tabs.cpp)
+target_compile_features(ShowcaseTabsTests PRIVATE cxx_std_23)
+target_include_directories(ShowcaseTabsTests PRIVATE src)
+target_link_libraries(ShowcaseTabsTests PRIVATE imgui::imgui)
 
 if(NOT DEFINED OUTPUT_FOLDER)
     set(OUTPUT_FOLDER "C:/Games/Nolvus/Instances/Nolvus Awakening/MODS/mods/Fitting Room")

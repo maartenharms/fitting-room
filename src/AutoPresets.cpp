@@ -68,11 +68,18 @@ namespace OS {
         // flagged red in the browser. Without this a body-mod character sees
         // almost no modded sets (most gear is race-flagged may-not-fit).
         std::vector<SetDetector::DetectStyle> styles;
+        std::vector<SetDetector::DetectWeapon> weapons;
         styles.reserve(items.size());
+        weapons.reserve(items.size());
         for (const auto& it : items) {
-            // Set detection clusters on slot bits and armor classes, neither of
-            // which a weapon has - without this every sword joins a set at bit 0.
             if (it.IsWeapon()) {
+                // Weapons do not participate in armor clustering. They are
+                // linked afterward only when their raw plugin and normalized
+                // set identity match a coherent detected armor set.
+                if (it.fitReason != FitReason::kCrashed) {
+                    weapons.push_back({ it.name, it.source, it.edid, *it.weaponClass,
+                                        it.key });
+                }
                 continue;
             }
             if (it.fitReason == FitReason::kCrashed || it.fitReason == FitReason::kNoSex) {
@@ -100,7 +107,7 @@ namespace OS {
                 if (!(ContainsCI(it.name, diag) || ContainsCI(it.source, diag))) {
                     continue;
                 }
-                const bool included = it.fitReason != FitReason::kCrashed &&
+                const bool included = !it.IsWeapon() && it.fitReason != FitReason::kCrashed &&
                                       it.fitReason != FitReason::kNoSex;
                 spdlog::info("[diag/detect] '{}' edid='{}' slot={} type={} fit={} "
                              "stem(name)='{}' stem(edid)='{}' -> {}",
@@ -108,7 +115,8 @@ namespace OS {
                              FitName(it.fitReason), SetDetector::NameStem(it.name),
                              SetDetector::NameStem(it.edid),
                              included ? "INCLUDED in detection"
-                                      : "EXCLUDED (crash-risk fit reason)");
+                                      : (it.IsWeapon() ? "WEAPON LINK CANDIDATE"
+                                                       : "EXCLUDED (crash-risk fit reason)"));
             }
         }
 
@@ -127,7 +135,8 @@ namespace OS {
         }
 
         SetDetector::Stats stats;
-        const auto         sets = SetDetector::Detect(styles, opts, &stats);
+        auto               sets = SetDetector::Detect(styles, opts, &stats);
+        SetDetector::LinkWeapons(sets, weapons);
 
         // Diagnostic pass 2: did each matching piece land in a final set? A
         // piece that was INCLUDED above but shows "NOT in any set" here means
@@ -142,6 +151,11 @@ namespace OS {
                 for (const auto& d : sets) {
                     bool found = false;
                     d.outfit.ForEachStyle([&](std::uint32_t, const StyleRefKey& a_k) {
+                        if (a_k == it.key) {
+                            found = true;
+                        }
+                    });
+                    d.outfit.ForEachWeaponStyle([&](WeaponClass, const StyleRefKey& a_k) {
                         if (a_k == it.key) {
                             found = true;
                         }
@@ -175,6 +189,14 @@ namespace OS {
             p.file        = "discovered";  // shown as "(discovered)" - no extra parens
             // requires_: the non-vanilla plugin(s) the pieces come from.
             d.outfit.ForEachStyle([&](std::uint32_t, const StyleRefKey& a_key) {
+                if (a_key.modName.empty() || kVanilla.contains(Lower(a_key.modName))) {
+                    return;
+                }
+                if (std::ranges::find(p.requires_, a_key.modName) == p.requires_.end()) {
+                    p.requires_.push_back(a_key.modName);
+                }
+            });
+            d.outfit.ForEachWeaponStyle([&](WeaponClass, const StyleRefKey& a_key) {
                 if (a_key.modName.empty() || kVanilla.contains(Lower(a_key.modName))) {
                     return;
                 }

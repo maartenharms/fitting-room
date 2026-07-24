@@ -13,6 +13,7 @@
 #include "LoreModule.h"
 #include "MenuButton.h"
 #include "Migration.h"
+#include "ObodyApi.h"
 #include "OutfitSession.h"
 #include "Persistence.h"
 #include "PresetStore.h"
@@ -28,7 +29,7 @@
 namespace {
     constexpr auto kLogName = "FittingRoom.log";
     // Keep in sync with project(... VERSION) in CMakeLists.txt and vcpkg.json; used only for the load log line.
-    constexpr auto kVersion = "0.2.1";
+    constexpr auto kVersion = "0.3.0";
 
     // Resolve where the log goes, and never fail silently.
     //
@@ -137,6 +138,14 @@ namespace {
                 // addon and any mod can open the editor via SendModEvent).
                 OS::SamCompat::Register();
                 OS::InputListener::Register();
+                break;
+            case SKSE::MessagingInterface::kPostPostLoad:
+                // OBody NG's native plugin API (4.4.0+). kPostPostLoad is the
+                // message its own documented example uses - OBody does not
+                // answer earlier, so requesting from kPostLoad silently gets
+                // nothing and the body category would just never appear.
+                // Absence is a supported state; see ObodyApi.h.
+                OS::ObodyApi::Request();
                 break;
             case SKSE::MessagingInterface::kPostLoadGame:
             case SKSE::MessagingInterface::kNewGame:

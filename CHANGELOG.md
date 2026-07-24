@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.3.0 (2026-07-24)
+
+**New**
+
+- **OBody NG body presets and ORefit controls.** With OBody NG installed, each player or follower outfit can choose a compatible body preset and an ORefit mode. Auto follows the torso shown by Fitting Room instead of the armor underneath, while On and Off remain available for exceptions. Follower baselines and ORefit policies are actor-scoped and persist with that follower's outfit library. The controls stay hidden when OBody or compatible presets are unavailable.
+- **Shield transmog.** The Weapons & Shields section can style an equipped shield in third person and first person while the real shield keeps its armor rating, enchantment, blocking behavior, name and inventory identity. A shield style only renders while a real shield is equipped, and shield hiding remains unsupported.
+- **Equipped gear baseline.** Player and follower outfit bars now begin with a visually muted, immutable Equipped gear tab. Selecting it deactivates transmog for that actor and restores their unedited equipment without consuming a saved outfit slot.
+- **Reusable exported presets.** Export now adds the outfit to a dedicated Exported source in Presets. Exported looks can be previewed and copied into either player or follower libraries, and can be deleted from the Exported source without affecting Curated presets. Exports with missing required plugins or pieces that do not fit the current target are highlighted red and explain each problem while remaining available for deletion.
+
+**Changed**
+
+- Player and follower libraries now support up to ten saved outfits. Equipped gear remains a separate permanent baseline and does not consume one of those ten slots.
+- Player and follower outfit tabs can now be browsed with the mouse wheel whenever the pointer is over the tab row, even when every tab fits. Wheel down moves right and wheel up moves left, while overflowing rows automatically scroll the selected tab into view.
+- The Collected toggle has been removed from both the editor and settings panel. Free-form always shows every installed style, while Lore-friendly always shows collected styles, so the selected playstyle cannot contradict a second filter.
+- Preset imports now say "Save to player outfits" or "Save to follower outfits" according to the library currently being edited instead of always saying "Save to my outfits."
+- In lore friendly mode, a showcase preset can only be saved as an outfit after every armor, shield and weapon style it uses has been collected. You can preview the complete preset before discovering it, including by hovering its row.
+- Discovered presets now link same-set weapons and quivers from the same plugin, just as they already link matching shields. Unrelated weapon classes remain untouched.
+- Preset previews hide equipped shields, weapons and quivers so the outfit can be judged on its own. Their linked skins remain in the preset and are retained when it is saved to My Outfits.
+- The editor keeps its header and footer fixed instead of scrolling the whole panel. Preset search stays visible while browsing long lists and now carries the same magnifier as outfit search, follower selection shares the title row, and lore friendly mode enforces collected styles without exposing a session toggle. Discovered and Curated use the same tab style as outfit tabs, collapsed accordions keep their frame, and edge controls retain enough trailing clearance to draw their complete frames.
+- The editor UI size slider now scales the complete editor rather than only the style browser. Its range is 0.4 to 1.2 and its default is 0.8.
+- ORefit uses FLICK's native enum selector again, with its value text reduced to the editor's regular scaled font while its label, arrows and interaction area remain unchanged.
+- Saved outfit libraries may now contain zero outfits. Equipped gear remains as the permanent immutable baseline, the plus control creates the first saved outfit, and deleting the final saved outfit lands on Equipped gear for both the player and followers.
+- Equipped gear now shows a focused baseline explanation instead of populating the disabled search, slot, style and body editor panels.
+- Follower editing no longer adds a redundant status sentence above the footer, leaving the bottom controls at the same height as player editing.
+- Follower editing now previews the selected follower outfit, including its OBody preset and ORefit shape, on a temporary bare player mannequin. Switching back to the player or closing Fitting Room restores the player's exact saved outfit and body state, including when the player was on Equipped gear.
+- Adding an outfit now uses a compact, rounded dark-grey, tab-height control beside the outfit tabs, so the plus affordance no longer makes the complete tab row taller.
+- Player appearance refreshes wait while blocking and for one second after blocking ends, preventing weapon changes from exposing the animation lunge.
+- The change-outfit hotkey now cycles through Equipped gear as well as every saved outfit. With no saved outfits it remains safely on Equipped gear.
+- Weapon transmog now covers dual wielding, including different looks for two weapons of the same class. The existing class style remains the backward-compatible Both fallback; Sword, Dagger, War Axe, Mace and Staff add optional Right and Left overrides that may inherit Both, choose another style, or deliberately show that hand's real weapon. The compact hand selector keeps FLICK's native arrows and controller behavior, while its value follows the editor UI scale like ORefit; clearing an explicit hand override through the row's existing X returns it to Both without adding a clipped side button. Existing outfit and preset files continue to behave unchanged.
+
+**Fixed**
+
+- Hidden armor slots now remember the style they covered after saving and reopening the editor. Showing an individually hidden slot restores that style instead of clearing the slot to equipped gear; legacy outfits whose hidden slots have no saved style remain compatible.
+- Hiding body or hand gear now applies to the player's separate first-person arms biped as well as third person, so hidden gauntlets no longer reappear when looking through the player's eyes.
+- Entering Fitting Room with two weapons already drawn now keeps the off-hand replacement in the hand. The rebuild moves the exact off-hand clone from its sheath to the left-hand node, including when both hands use the same weapon form, instead of relying on Skyrim's ambiguous shared-sheath child selection.
+- Previewing or applying an outfit with a shield style while dual-wielding no longer corrupts Skyrim's shared shield/off-hand biped slot and crashes the following equipment rebuild. Shield styles rejected because no real shield is equipped are now excluded from the armor-honesty restore pass.
+- Follower OBody body presets and the player-mannequin preview are now applied on the game-thread pass after the equipment rebuild, so morphs target the replacement 3D instead of disappearing with the outgoing nodes. Follower changes still ensure OBody has processed the actor and verify both the assigned preset and forced ORefit state; rejected assignments are logged with the follower and requested preset instead of failing silently.
+- Exporting an outfit no longer prints its full filesystem path across the shared footer, where long names could overlap Saved and Close. A short "Outfit exported." confirmation now appears for three seconds; export failures remain visible longer and point to the log.
+- Changing an OBody preset or ORefit setting no longer forces Skyrim to rebuild every worn armor addon first. Body-only edits now go directly through OBody, avoiding the equipment-rebuild crash seen with a null armor-addon pointer while preserving full rebuilds for actual armor and weapon changes.
+- Clicking Curated in the preset browser now keeps that tab selected instead of immediately returning to Discovered.
+- Selecting Equipped gear no longer traps the outfit bar there. Saved outfit tabs can be selected normally afterward.
+- If Escape closes Screen Archer Menu while the pointer is over the world, Fitting Room now closes with its host instead of remaining stranded over regular gameplay.
+- A follower's Equipped gear tab now shows their captured worn armor on the player mannequin. During follower outfit editing, styled weapon classes can be previewed on matching player equipment while unrelated player weapons, shields and quivers remain hidden; the player's own appearance is restored afterward.
+- Deleting a follower outfit no longer makes the delete control disappear when only one saved outfit remains; the final saved outfit can be deleted normally.
+- Switching between saved outfits in lore friendly mode no longer briefly flashes a gold cost for the difference between the old and new outfits.
+- Adding an outfit while Equipped gear is selected now moves directly to the newly created outfit tab instead of the stale Equipped tab deactivating it one frame later.
+- Follower helmet and other head-slot styles now render even when the follower is not already wearing a gameplay head item. Hide operations still affect only equipment the follower really wears.
+- Switching follower outfit tabs now refreshes equipped weapon and quiver models immediately, using the same forced detach/reattach path as player weapon previews; Apply remains necessary only for edits to the selected outfit, not for selecting it.
+- Creating a follower outfit now uses that follower's captured equipped armor as the mutable outfit's visual starting point instead of leaving the player mannequin nude. Passthrough slots remain empty in saved data and continue to mean the follower's real gear.
+- Template/default bows that already exist in a follower's visual biped state can now receive weapon transmog even when the game does not expose them as inventory-backed equipped objects. Fitting Room rebuilds only the existing visual object and never adds an item. Ambiguous one-handed visual-only weapons remain untouched.
+- When the player mannequin lacks a real weapon of the follower style's class, the editor now explains why that weapon cannot be shown there. Weapon preview remains replacement-only and never creates temporary inventory items; the live follower preview still works for matching equipped or visual weapons.
+- Choosing a new weapon style while the hand selector is on Both now clears the class's older Right and Left overrides, so the new choice immediately appears on both weapons.
+- Random now stays on the same row as Favorites and Hide unfit in both armor and weapon browsing. The armor-type selector remains on its own row below those shared controls.
+
 ## 0.2.1 (2026-07-22)
 
 **New**

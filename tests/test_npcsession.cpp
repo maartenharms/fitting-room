@@ -23,22 +23,22 @@ int main() {
     using namespace OS;
     using namespace OS::NpcResolve;
 
-    {  // Worn-required math (spec §3): style/hide masked to worn slots.
-       // styleMask 0b111 + worn coverage 0b101 -> 0b101 (the middle bit,
-       // unworn, is dropped); hide masked identically.
+    {  // NPC styles are appearance choices and may fill an unworn visual slot,
+       // matching the player path. Hides remain limited to real worn gear.
         DisplaySet in;
         in.styleMask = 0b111;
         in.hideMask  = 0b111;
         const auto out = WornRequiredDisplay(in, 0b101);
-        CHECK(out.styleMask == 0b101);
+        CHECK(out.styleMask == 0b111);
         CHECK(out.hideMask == 0b101);
     }
 
-    {  // A style bit with NO worn coverage is dropped entirely.
+    {  // In particular, a follower can preview/wear a helmet style without
+       // already having a gameplay helmet equipped underneath it.
         DisplaySet in;
         in.styleMask = (1u << 2);  // one styled slot
         const auto out = WornRequiredDisplay(in, 0u);  // actor wears nothing
-        CHECK(out.styleMask == 0u);
+        CHECK(out.styleMask == (1u << 2));
         CHECK(out.hideMask == 0u);
     }
 

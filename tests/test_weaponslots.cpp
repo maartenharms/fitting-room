@@ -18,9 +18,87 @@ static int g_failures = 0;
 
 int main() {
     using namespace OS;
+    CHECK(IsUnambiguousVisualWeaponSlot(37));
+    CHECK(IsUnambiguousVisualWeaponSlot(38));
+    CHECK(IsUnambiguousVisualWeaponSlot(40));
+    CHECK(!IsUnambiguousVisualWeaponSlot(33));
+    CHECK(!IsUnambiguousVisualWeaponSlot(39));
+
+    {  // The part-loader's biped slot is a hand discriminator.
+        CHECK(IsOffHandWeaponBipedSlot(9));   // vanilla humanoid shield/off-hand slot
+        CHECK(IsOffHandWeaponBipedSlot(31));  // any race-configured editor slot
+        CHECK(!IsOffHandWeaponBipedSlot(32));
+        CHECK(IsMainHandWeaponBipedSlot(32));
+        CHECK(IsMainHandWeaponBipedSlot(40));
+        CHECK(!IsMainHandWeaponBipedSlot(9));
+        CHECK(!IsMainHandWeaponBipedSlot(41));  // quiver has no hand
+        CHECK(IsWeaponOrQuiverBipedSlot(0));
+        CHECK(IsWeaponOrQuiverBipedSlot(41));
+        CHECK(!IsWeaponOrQuiverBipedSlot(42));
+    }
 
     {  // kWeaponClassCount matches the enum's 11 styleable classes
         CHECK(kWeaponClassCount == 11);
+        CHECK(kWeaponHandCount == 3);
+    }
+
+    {  // Only one-handed classes expose overrides; biped slot selects hand.
+        CHECK(SupportsHandOverrides(WeaponClass::Sword));
+        CHECK(SupportsHandOverrides(WeaponClass::Dagger));
+        CHECK(SupportsHandOverrides(WeaponClass::WarAxe));
+        CHECK(SupportsHandOverrides(WeaponClass::Mace));
+        CHECK(SupportsHandOverrides(WeaponClass::Staff));
+        CHECK(!SupportsHandOverrides(WeaponClass::Bow));
+        CHECK(!SupportsHandOverrides(WeaponClass::Greatsword));
+        CHECK(HandForBipedSlot(WeaponClass::Sword, 33) == WeaponHand::Right);
+        CHECK(HandForBipedSlot(WeaponClass::Sword, 9) == WeaponHand::Left);
+        CHECK(HandForBipedSlot(WeaponClass::Bow, 38) == WeaponHand::Both);
+        CHECK(std::string_view(HandJsonName(WeaponHand::Right)) == "right");
+        CHECK(HandFromJsonName("") == WeaponHand::Both);
+        CHECK(HandFromJsonName("left") == WeaponHand::Left);
+        CHECK(!HandFromJsonName("wrong"));
+    }
+
+    {  // A forced model reattach must restore either equipped hand to its
+       // drawn presentation. Only the right uses virtual 0xB4. The left uses
+       // its exact biped clone so same-form dual wield cannot steal child[0]
+       // from a shared sheath node.
+        CHECK(DrawnWeaponRepairFor(false, false) ==
+              DrawnWeaponRepair::None);
+        CHECK(DrawnWeaponRepairFor(false, true) ==
+              DrawnWeaponRepair::None);
+        CHECK(DrawnWeaponRepairFor(true, false) ==
+              DrawnWeaponRepair::ReparentRight);
+        CHECK(DrawnWeaponRepairFor(true, true) ==
+              DrawnWeaponRepair::ReparentLeftClone);
+
+        // Field evidence from the failed build: the rebuilt third-person
+        // offhand clone was on WeaponSwordLeft (the hip), while first person
+        // was already on SHIELD (the left-hand attachment node).
+        CHECK(OffHandCloneNeedsHandReparent(true, "WeaponSwordLeft"));
+        CHECK(OffHandCloneNeedsHandReparent(true, ""));
+        CHECK(!OffHandCloneNeedsHandReparent(true, "SHIELD"));
+        CHECK(!OffHandCloneNeedsHandReparent(false, "WeaponSwordLeft"));
+
+        // Inventory/menu entry may transiently report a sheathed actor state
+        // even while the existing 3D is still visibly hand-parented. Preserve
+        // that visual truth across the equipment rebuild.
+        CHECK(PreserveDrawnWeaponPlacement(false, "WEAPON"));
+        CHECK(PreserveDrawnWeaponPlacement(false, "SHIELD"));  // drawn bow
+        CHECK(!PreserveDrawnWeaponPlacement(false, "WeaponSword"));
+        CHECK(!PreserveDrawnWeaponPlacement(false, "WeaponSwordLeft"));
+        CHECK(PreserveDrawnWeaponPlacement(true, "WeaponSword"));
+    }
+
+    {  // The compact row X replaces the old side button: an explicit
+       // per-hand value first falls back to Both; inherited/legacy rows clear
+       // to the real weapon for that scope.
+        CHECK(ClearWeaponHandActionFor(WeaponHand::Both, false) ==
+              WeaponHandClearAction::UseRealWeapon);
+        CHECK(ClearWeaponHandActionFor(WeaponHand::Right, false) ==
+              WeaponHandClearAction::UseRealWeapon);
+        CHECK(ClearWeaponHandActionFor(WeaponHand::Left, true) ==
+              WeaponHandClearAction::InheritBoth);
     }
 
     {  // ClassFromAnimType: engine WEAPON_TYPE table, animType 1..9

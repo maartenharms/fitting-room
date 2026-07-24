@@ -3,6 +3,7 @@
 #define SI_NO_CONVERSION 1
 #include <SimpleIni.h>
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace OS {
@@ -55,6 +56,7 @@ namespace OS {
             ini.GetDoubleValue("UI", "fFontSize", static_cast<double>(menuFontSize)));
         uiScale = static_cast<float>(
             ini.GetDoubleValue("UI", "fUiScale", static_cast<double>(uiScale)));
+        uiScale = std::clamp(uiScale, kUiScaleMin, kUiScaleMax);
         hoverPreview    = ini.GetBoolValue("UI", "bHoverPreview", hoverPreview);
         advancedSlots   = ini.GetBoolValue("UI", "bAdvancedSlots", advancedSlots);
         lockLayout      = ini.GetBoolValue("UI", "bLockLayout", lockLayout);
@@ -113,7 +115,7 @@ namespace OS {
         ini.SetDoubleValue("UI", "fFontSize", static_cast<double>(menuFontSize),
                            "; editor menu font size in pixels");
         ini.SetDoubleValue("UI", "fUiScale", static_cast<double>(uiScale),
-                           "; live editor UI scale (0.8-1.6); the in-editor slider sets this");
+                           "; live editor UI scale (0.4-1.2); the in-editor slider sets this");
         ini.SetBoolValue("UI", "bHoverPreview", hoverPreview,
                          "; preview a style on the character just by hovering its row");
         ini.SetBoolValue("UI", "bAdvancedSlots", advancedSlots,

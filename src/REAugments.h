@@ -36,14 +36,18 @@ namespace OS::REAug {
     // an NPC rebuild). Same MAIN THREAD ONLY contract as RefreshActor.
     void RefreshPlayer(bool a_sceneKick);
 
-    // OS-76. Re-run the part-3D loader for the player's EQUIPPED weapons, which
+    // OS-76. Re-run the part-3D loader for an actor's EQUIPPED weapons, which
     // a biped rebuild alone never does: the attach short-circuits while the
     // weapon's node is still parented, so a style change could not show until
     // the player unequipped and re-equipped. Detaches then re-attaches through
     // the engine's own equip entry point - see the mechanism written out on the
     // definition. Weapons only (armor rides the rebuild; ammo has its own call
-    // site). MAIN THREAD ONLY, same contract as RefreshActor.
-    void RestyleEquippedWeapons(RE::PlayerCharacter* a_player);
+    // site). a_preserveDrawnHands is captured BEFORE UpdateEquipment (bit 0 =
+    // right, bit 1 = left), because a paused menu rebuild can lose the visual
+    // hand placement after ActorState transiently reports sheathed. MAIN
+    // THREAD ONLY, same contract as RefreshActor.
+    void RestyleEquippedWeapons(
+        RE::Actor* a_actor, std::uint8_t a_preserveDrawnHands);
 
     // The actor's skin ARMO, mirroring RE::Actor::GetSkin() (Actor.h:530):
     // an actor-specific override (TESNPC::skin) if present, else race->skin.

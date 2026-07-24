@@ -7,8 +7,11 @@ Fitting Room is licensed GPL-3.0 (see [LICENSE](LICENSE)). It builds on the foll
 | File | Origin | License |
 |---|---|---|
 | `FUCK_API.h` | [FLICK](https://www.nexusmods.com/skyrimspecialedition/mods/181603) by Fuzzles | GPL-3.0 (project license; the header itself carries no separate notice) |
+| `OBody_API.h` | [OBody-NG](https://github.com/Aietos/OBody-NG) by Aietos (`include/API/API.h`) | GPL-3.0 (project license) |
 
 `FUCK_API.h` declares a C-ABI that binds at runtime against `FUCK.dll` via `GetModuleHandle`/`RequestFUCK`; no third-party object code is linked into this plugin. It references [Dear ImGui](https://github.com/ocornut/imgui) types (MIT), pulled in as a build dependency below.
+
+`OBody_API.h` is a pure-interface header vendored verbatim; its own comment states the expected usage is to "copy it wholesale into your project and use it as-is", and that no other part of OBody's source is needed. It binds at runtime via an SKSE message to `"OBody"`; no third-party object code is linked into this plugin. Both projects are GPL-3.0, so the vendoring is licence-compatible.
 
 ## Bundled assets
 

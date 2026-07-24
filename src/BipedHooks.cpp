@@ -227,6 +227,9 @@ namespace OS {
             //     suppression check short-circuits away entirely for them.
             std::uint32_t styledCoverage = 0;
             auto          applyStyle = [&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
+                if (!CanApplyStyleBit(a_bit, a_real.coverage)) {
+                    return;  // shield style requires a real equipped shield
+                }
                 if (a_ht2Suppressed &&
                     (static_cast<std::uint32_t>(a_armo->GetSlotMask()) & a_ht2Suppressed)) {
                     spdlog::debug("  style bit {} '{}' skipped: Helmet Toggle hides this slot.",
@@ -250,9 +253,14 @@ namespace OS {
             //     (36979->14026) read objects[i].item - hidden body slots now
             //     hold the skin ARMO after (4), so this also keeps hidden-but-
             //     worn gear honest for XP.
+            // Use only APPLIED style coverage here, never the raw requested
+            // style mask. A shield request is actor-gated above; when an
+            // off-hand weapon occupies shared biped object 9, including a
+            // rejected shield bit would replace that WEAP item with skin ARMO
+            // and crash Skyrim's following UpdateEquipment pass.
             BipedPost::RestoreRealItems(
-                biped, a_display.styleMask | a_display.hideMask | styledCoverage, a_real.armo,
-                nakedSkin);
+                biped, PostPassArmorRestoreMask(a_display.hideMask, styledCoverage),
+                a_real.armo, nakedSkin);
 
             // (7) HIDE, attachment slots (helmet/amulet/ring/cloak/…): their
             //     meshes are self-contained, so cull the staged 3D
@@ -267,16 +275,14 @@ namespace OS {
             }
         }
 
-        // ---- BUG-2: the 1st-person worn pass ----
+        // ---- The 1st-person worn pass ----
         // The 1P arms model is built from GetBiped1(true), which the 3P-only
-        // injection below never touches - so styled hands kept showing the
-        // REAL gauntlets in first person. During the pass that stages the 1P
-        // biped, inject styles whose coverage includes a slot the 1P model
-        // renders (body 32 / hands 33 / forearms 34 - the visible arms belong
-        // to the BODY piece's armor addon; shield is kNeverTouch, head slots
-        // have no 1P geometry). STYLE ONLY by design: hide/cull on the 1P
-        // biped is unexplored territory, and the 3P pass owns every
-        // gameplay-visible hide behavior (worn-mask shim included).
+        // injection originally never touched. During the pass that stages the
+        // 1P biped, apply body-skin hides and styles whose coverage includes a
+        // slot the 1P model renders (body 32 / hands 33 / forearms 34 - the
+        // visible arms belong to the BODY piece's armor addon, plus shield 39).
+        // Head and feet have no 1P geometry. Attachment culling remains a 3P
+        // concern; hands/body hide by re-staging the actor's naked 1P skin.
         void StyleFirstPersonPass(RE::BipedAnim* a_passBiped, RE::Actor* a_player,
                                   const RealWorn& a_real) {
             const auto&    holder1p = a_player->GetBiped1(true);
@@ -285,10 +291,6 @@ namespace OS {
                 spdlog::debug("wornpass: pass biped matches neither holder; skipped.");
                 return;
             }
-
-            constexpr auto k1PStyleSlots = MaskForEditorSlot(32) |
-                                           MaskForEditorSlot(33) |
-                                           MaskForEditorSlot(34);
 
             auto*       base      = a_player->GetActorBase();
             auto*       race      = a_player->GetRace();
@@ -311,16 +313,66 @@ namespace OS {
                 }
             }
 
+            const auto display =
+                OutfitSession::GetSingleton().Display();
+            const auto hiddenBodySkin =
+                FirstPersonBodySkinHideMask(display.hiddenBodySkinMask);
+            if (hiddenBodySkin) {
+                if (nakedSkin) {
+                    const bool ok =
+                        REAug::ApplyArmorAddon(nakedSkin, race, awm, isFemale);
+                    spdlog::debug(
+                        "  1p hide: skin reapply '{}' -> {}",
+                        nakedSkin->GetName(), ok);
+
+                    std::uint32_t skinCoverage = 0;
+                    for (auto* arma : nakedSkin->armorAddons) {
+                        if (arma) {
+                            skinCoverage |= static_cast<std::uint32_t>(
+                                arma->GetSlotMask());
+                        }
+                    }
+                    for (std::uint32_t bit = 0; bit < 32; ++bit) {
+                        auto* armo = a_real.armo[bit];
+                        if (!armo || armo == nakedSkin) {
+                            continue;
+                        }
+                        bool seen = false;
+                        for (std::uint32_t j = 0; j < bit && !seen; ++j) {
+                            seen = a_real.armo[j] == armo;
+                        }
+                        const auto mask =
+                            static_cast<std::uint32_t>(armo->GetSlotMask());
+                        if (seen || (mask & display.hideMask) != 0 ||
+                            (mask & skinCoverage) == 0 ||
+                            (mask & kFirstPersonArmorMask) == 0) {
+                            continue;
+                        }
+                        const bool back =
+                            REAug::ApplyArmorAddon(armo, race, awm, isFemale);
+                        spdlog::debug(
+                            "  1p hide: re-apply kept gear '{}' -> {}",
+                            armo->GetName(), back);
+                    }
+                } else {
+                    spdlog::warn(
+                        "1p hide: no player skin resolvable; body/hand hide skipped.");
+                }
+            }
+
             std::uint32_t styled = 0;
             OutfitSession::GetSingleton().VisitStyles(
                 [&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
+                    if (!CanApplyStyleBit(a_bit, a_real.coverage)) {
+                        return;  // no first-person shield without real slot 39 gear
+                    }
                     auto coverage = static_cast<std::uint32_t>(a_armo->GetSlotMask());
                     for (auto* arma : a_armo->armorAddons) {
                         if (arma) {
                             coverage |= static_cast<std::uint32_t>(arma->GetSlotMask());
                         }
                     }
-                    if ((coverage & k1PStyleSlots) == 0) {
+                    if ((coverage & kFirstPersonArmorMask) == 0) {
                         return;  // nothing the 1P model renders
                     }
                     if (ht2Suppressed && (coverage & ht2Suppressed)) {
@@ -334,11 +386,14 @@ namespace OS {
                                   a_armo->GetName(), ok);
                 });
 
-            // Same honesty restore as the 3P pass: staged slots point .item
-            // back at the real gear (or the skin) so XP/conflict readers stay
-            // honest on this biped too.
-            if (styled) {
-                BipedPost::RestoreRealItems(biped1p, styled, a_real.armo, nakedSkin);
+            // Same honesty restore as the 3P pass: every hidden or styled 1P
+            // slot points .item back at the real gear (or the skin) while its
+            // staged model remains visible.
+            const auto touched =
+                FirstPersonArmorRestoreMask(display.hideMask, styled);
+            if (touched) {
+                BipedPost::RestoreRealItems(
+                    biped1p, touched, a_real.armo, nakedSkin);
             }
         }
 
@@ -495,18 +550,17 @@ namespace OS {
                     return;
                 }
 
-                // §3 worn-required rule: an NPC style renders per-slot ONLY where
-                // the actor really wears something, and hide bits act only on
-                // worn gear. Mask the snapshot's resolved DisplaySet down to the
-                // actor's real worn coverage; the derived submasks fall out
-                // consistently (NpcResolve::WornRequiredDisplay). Forms were
-                // pre-resolved on the game thread - the hook never resolves one.
+                // NPC styles are visual and may fill an otherwise unworn slot,
+                // matching the player path (a styled helmet does not require a
+                // gameplay helmet). Hide remains worn-required. The derived
+                // hide submasks stay consistent through WornRequiredDisplay.
+                // Forms were pre-resolved - the hook never resolves one.
                 const DisplaySet display =
                     NpcResolve::WornRequiredDisplay(entry.display, real.coverage);
 
                 // The NPC pass does NOT bump g_playerWornPass (the tripwire stays
                 // player-scoped, spec §3). Style source: the snapshot's resolved
-                // styles, filtered to the worn-required styleMask; no HT2
+                // styles, filtered to the allowed styleMask; no HT2
                 // suppression (mask 0 - player-only). Handle-scoped deferred cull
                 // re-resolves THIS NPC, never the player.
                 ApplyStyledPass(
@@ -586,13 +640,10 @@ namespace OS {
                 if (!lk.entry) {
                     return real;
                 }
-                // Worn-required against the engine's own worn mask: 'real' IS the
-                // actor's worn-slot mask, exactly the coverage the §3 rule
-                // intersects. styleMask is then a subset of real (styles only
-                // where already worn), so it adds nothing here - the shim's live
-                // effect for an NPC is freeing head-part slots we hide (a hidden
-                // helmet regrows the follower's hair). Kept in the player's
-                // (real | style) & ~hideHead form for one code shape.
+                // Hide is worn-required against the engine's own mask. Styles
+                // remain intact and are ORed in here, so an injected follower
+                // helmet still hides the appropriate hair/head-part nodes even
+                // when no gameplay helmet is equipped underneath it.
                 const DisplaySet d = NpcResolve::WornRequiredDisplay(lk.entry->display, real);
                 const auto shimmed = (real | d.styleMask) & ~d.hiddenHeadPartMask;
                 spdlog::debug("wornmask NPC {:08X} real={:08X} -> {:08X} (hideHead={:04X})",

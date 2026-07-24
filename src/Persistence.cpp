@@ -5,6 +5,7 @@
 #include "Collection.h"
 #include "JsonCodec.h"
 #include "NpcAssignments.h"
+#include "ObodyApi.h"
 #include "OutfitSession.h"
 #include "PersistenceCodec.h"
 
@@ -22,8 +23,15 @@ namespace OS::Persistence {
         constexpr std::uint32_t kRecordKnown  = 'KNWN';  // appearance collection
         constexpr std::uint32_t kRecordActive = 'ACTV';  // active outfit NAME (per save)
         constexpr std::uint32_t kRecordNpc    = 'NPCO';  // per-save NPC/follower outfit assignments
+        // The player's ORIGINAL OBody preset, captured once before this mod
+        // ever assigned one. Its own record rather than a field in 'LIBR'
+        // because it is per-SAVE character state, not part of the outfit
+        // library (which is also shared globally through outfits.json - a
+        // baseline written there would leak one character's body onto another).
+        constexpr std::uint32_t kRecordBodyBase = 'BBAS';
         constexpr std::uint32_t kCollectionVersion = 1;
         constexpr std::uint32_t kActiveVersion     = 1;
+        constexpr std::uint32_t kBodyBaseVersion   = 1;
         constexpr std::uint32_t kMaxRecordBytes = 1u << 20;  // save and load must agree
 
         constexpr const char* kLibraryPath = "Data/SKSE/Plugins/FittingRoom/outfits.json";
@@ -56,7 +64,7 @@ namespace OS::Persistence {
                 }
                 const int idx = a_out.Create(parsed.name);
                 if (idx < 0) {
-                    break;  // 10-outfit cap
+                    break;  // saved-outfit cap
                 }
                 *a_out.At(static_cast<std::size_t>(idx)) = std::move(parsed);
             }
@@ -160,6 +168,20 @@ namespace OS::Persistence {
                 spdlog::info("Persistence: saved active outfit '{}'.",
                              activeName.empty() ? "(none)" : activeName);
             }
+            // The OBody baseline. Written only once it has actually been
+            // captured: an absent record means "we never moved this
+            // character's body", which is exactly what a fresh save should
+            // restore to on load.
+            if (ObodyApi::BaselineCaptured()) {
+                const auto     base = ObodyApi::Baseline();
+                std::vector<std::byte> baseBytes(base.size());
+                std::memcpy(baseBytes.data(), base.data(), base.size());
+                if (WriteRecord(a_intf, kRecordBodyBase, kBodyBaseVersion, baseBytes,
+                                "OBody baseline")) {
+                    spdlog::debug("Persistence: saved OBody baseline '{}'.",
+                                  base.empty() ? "(none)" : base.c_str());
+                }
+            }
             const auto known = Collection::GetSingleton().Encode();
             if (WriteRecord(a_intf, kRecordKnown, kCollectionVersion, known, "collection")) {
                 spdlog::info("Persistence: saved {} bytes (appearance collection).", known.size());
@@ -189,7 +211,7 @@ namespace OS::Persistence {
             std::uint32_t type = 0, version = 0, length = 0;
             while (a_intf->GetNextRecordInfo(type, version, length)) {
                 if (type != kRecord && type != kRecordKnown && type != kRecordActive &&
-                    type != kRecordNpc) {
+                    type != kRecordNpc && type != kRecordBodyBase) {
                     continue;
                 }
                 std::uint32_t len = 0;
@@ -205,6 +227,20 @@ namespace OS::Persistence {
                 if (type == kRecordKnown) {
                     if (!Collection::GetSingleton().Decode(bytes, version)) {
                         spdlog::warn("Persistence: refused collection record (version {}).", version);
+                    }
+                    continue;
+                }
+                if (type == kRecordBodyBase) {
+                    if (version == kBodyBaseVersion) {
+                        const std::string base(reinterpret_cast<const char*>(bytes.data()),
+                                               bytes.size());
+                        // Present at all == captured. An empty STRING is a
+                        // real value ("this character had no OBody preset
+                        // before we touched them"), distinct from an absent
+                        // record, so the flag cannot be derived from emptiness.
+                        ObodyApi::SetBaseline(base, true);
+                        spdlog::info("Persistence: OBody baseline restored ('{}').",
+                                     base.empty() ? "(none)" : base.c_str());
                     }
                     continue;
                 }
@@ -296,6 +332,11 @@ namespace OS::Persistence {
             OutfitSession::GetSingleton().OnRevert();
             OutfitSession::GetSingleton().OnNpcRevert();
             Collection::GetSingleton().Revert();
+            // The baseline belongs to the CHARACTER, so it must not survive
+            // into another save. Revert runs before every load; a stale
+            // baseline here would send the next character's "Your usual body"
+            // to the previous character's preset.
+            ObodyApi::SetBaseline({}, false);
         }
     }
 

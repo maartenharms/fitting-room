@@ -1,7 +1,10 @@
 // Pure-logic tests for Outfit / SlotMask / EditHistory / FavoriteSet.
 // No engine, no RE:: types.
 #include "Favorites.h"
+#include "FooterNotice.h"
 #include "Outfit.h"
+#include "OutfitTabs.h"
+#include "PresetPreviewPolicy.h"
 #include "SlotMask.h"
 
 #include <cstdio>
@@ -20,6 +23,17 @@ static int g_failures = 0;
 int main() {
     using namespace OS;
 
+    {  // Export feedback is bounded text, never an unbounded filesystem path.
+        CHECK(FooterNotice::ExportResult(
+                  "Data/SKSE/Plugins/FittingRoom/Exports/"
+                  "Magedali White - Purple Royal.json",
+                  "Exported",
+                  "Export failed")
+                  == "Exported");
+        CHECK(FooterNotice::ExportResult("", "Exported", "Export failed") ==
+              "Export failed");
+    }
+
     {  // slot <-> bit mapping
         CHECK(BitForEditorSlot(30) == 0);
         CHECK(BitForEditorSlot(32) == 2);
@@ -34,11 +48,54 @@ int main() {
         CHECK(!IsHeadPartBit(BitForEditorSlot(32)));
     }
 
+    {  // First-person armor uses its own biped. Body and hand hides must
+       // restage naked 1P skin there; feet/head hides remain third-person-only.
+        const auto head     = MaskForEditorSlot(31);
+        const auto body     = MaskForEditorSlot(32);
+        const auto hands    = MaskForEditorSlot(33);
+        const auto forearms = MaskForEditorSlot(34);
+        const auto feet     = MaskForEditorSlot(37);
+        CHECK(FirstPersonBodySkinHideMask(
+                  head | body | hands | feet) ==
+              (body | hands));
+
+        // Honesty restoration is scoped to the 1P-visible slots touched by
+        // either hiding or style injection, including ARMA forearm coverage.
+        CHECK(FirstPersonArmorRestoreMask(
+                  body | feet, hands | forearms) ==
+              (body | hands | forearms));
+    }
+
     {  // an empty outfit displays nothing of its own
         Outfit o;
         CHECK(o.EntryFor(2).kind == SlotEntry::Kind::kPassthrough);
         CHECK(o.StyleMask() == 0);
         CHECK(o.HideMask() == 0);
+    }
+
+    {  // ORefit Auto follows the visible transmog torso, not replaced gear
+        const auto body  = MaskForEditorSlot(32);
+        const auto chest = MaskForEditorSlot(46);
+
+        CHECK(ResolveAutoORefit(ORefitMode::kDefault, 0, 0, body) ==
+              ORefitMode::kDefault);  // outfit makes no torso decision
+        CHECK(ResolveAutoORefit(ORefitMode::kDefault, body, 0, 0) ==
+              ORefitMode::kForceOn);  // styled torso looks clothed
+        CHECK(ResolveAutoORefit(ORefitMode::kDefault, 0, body, body) ==
+              ORefitMode::kForceOff);  // hidden torso ignores real body armor
+        CHECK(ResolveAutoORefit(ORefitMode::kDefault, 0, body, body | chest) ==
+              ORefitMode::kForceOn);  // passthrough chest remains visibly worn
+        CHECK(ResolveAutoORefit(ORefitMode::kDefault, 0, body | chest, body | chest) ==
+              ORefitMode::kForceOff);  // every occupied torso slot is hidden
+        CHECK(ResolveAutoORefit(ORefitMode::kDefault, body, 0, 0, false) ==
+              ORefitMode::kDefault);  // Auto never overrides OBody's global Off
+
+        CHECK(ResolveAutoORefit(ORefitMode::kForceOn, 0, body, 0) ==
+              ORefitMode::kForceOn);
+        CHECK(ResolveAutoORefit(ORefitMode::kForceOn, 0, body, 0, false) ==
+              ORefitMode::kForceOn);  // explicit override still means explicit
+        CHECK(ResolveAutoORefit(ORefitMode::kForceOff, body, 0, body) ==
+              ORefitMode::kForceOff);
     }
 
     {  // style + hide + passthrough masks
@@ -109,7 +166,7 @@ int main() {
         CHECK(d.hiddenAttachmentMask == (1u << 1));   // helmet culls its node too
     }
 
-    {  // the shield (bit 9) is never styled or hidden, even if an outfit sets it
+    {  // shield styling is render-only: style is allowed, hide remains forbidden
         Outfit o;
         o.SetHide(kBitShield);
         const auto d1 = ComputeDisplaySet(o, /*blocklist*/ 0);
@@ -119,10 +176,34 @@ int main() {
         Outfit o2;
         o2.SetStyle(kBitShield, StyleRefKey{ "x.esp", 1 });
         const auto d2 = ComputeDisplaySet(o2, 0);
-        CHECK((d2.styleMask & MaskForEditorSlot(39)) == 0);
+        CHECK((d2.styleMask & MaskForEditorSlot(39)) != 0);
+
+        // Unlike normal armor, selecting a shield style must not conjure a
+        // shield when the actor has none equipped.
+        CHECK(StyleRequiresWornItem(kBitShield));
+        CHECK(!CanApplyStyleBit(kBitShield, 0));
+        CHECK(CanApplyStyleBit(kBitShield, MaskForEditorSlot(39)));
+        CHECK(!StyleRequiresWornItem(kBitBody));
+        CHECK(CanApplyStyleBit(kBitBody, 0));
+
+        // Regression: shield and off-hand weapon share biped object 9. When a
+        // requested shield style is rejected because no real shield is worn,
+        // slot 9 must not enter the armor-honesty restore mask. Otherwise the
+        // naked-skin ARMO replaces the off-hand WEAP pointer and Skyrim crashes
+        // on the next UpdateEquipment pass.
+        std::uint32_t appliedCoverage = 0;
+        if (CanApplyStyleBit(kBitShield, /*realWornMask*/ 0)) {
+            appliedCoverage |= MaskForEditorSlot(39);
+        }
+        CHECK((PostPassArmorRestoreMask(/*hideMask*/ 0, appliedCoverage) &
+               MaskForEditorSlot(39)) == 0);
+        CHECK(PostPassArmorRestoreMask(MaskForEditorSlot(31),
+                                       MaskForEditorSlot(32)) ==
+              (MaskForEditorSlot(31) | MaskForEditorSlot(32)));
     }
 
-    {  // library: 10 slots, one active, rename, activate/deactivate
+    {  // library: ten saved slots, one active, rename, activate/deactivate
+        CHECK(kMaxOutfits == 10);
         OutfitLibrary lib;
         CHECK(lib.Count() == 0);
         CHECK(lib.ActiveIndex() == -1);
@@ -143,6 +224,158 @@ int main() {
         }
         CHECK(lib.Create("overflow") == -1);   // hard cap of kMaxOutfits
         CHECK(lib.Count() == kMaxOutfits);
+
+        // The quick-switch/controller model includes Equipped gear outside
+        // all ten saved slots and wraps cleanly at the new highest index.
+        lib.Activate(kMaxOutfits - 1);
+        CHECK(lib.CycleIncludingEquipped(true) == -1);
+        CHECK(lib.CycleIncludingEquipped(true) == 0);
+        CHECK(lib.CycleIncludingEquipped(false) == -1);
+        CHECK(lib.CycleIncludingEquipped(false) ==
+              static_cast<int>(kMaxOutfits - 1));
+    }
+
+    {  // immutable equipped-gear tab is logical tab 0, outside the outfit cap
+        CHECK(OutfitTabs::LogicalFromActive(-1) == 0);
+        CHECK(OutfitTabs::LogicalFromActive(0) == 1);
+        CHECK(OutfitTabs::ActiveFromLogical(0) == -1);
+        CHECK(OutfitTabs::ActiveFromLogical(3) == 2);
+        CHECK(OutfitTabs::ForcedSelectionForActive(-1) ==
+              OutfitTabs::kForceEquippedGear);
+        CHECK(OutfitTabs::ForcedSelectionForActive(2) == 2);
+        CHECK(!OutfitTabs::ShouldAcceptActivation(
+            /*reported*/ -1, /*forced*/ 0));
+        CHECK(OutfitTabs::ShouldAcceptActivation(
+            /*reported*/ 0, /*forced*/ 0));
+        CHECK(OutfitTabs::ShouldAcceptActivation(
+            /*reported*/ -1, OutfitTabs::kNoForcedSelection));
+        CHECK(!OutfitTabs::CanDeleteSaved(-1, 1));
+        CHECK(OutfitTabs::CanDeleteSaved(0, 1));  // the final saved outfit is deletable
+        CHECK(OutfitTabs::Cycle(/*active*/ -1, /*outfitCount*/ 2, true) == 0);
+        CHECK(OutfitTabs::Cycle(/*active*/ 0, /*outfitCount*/ 2, true) == 1);
+        CHECK(OutfitTabs::Cycle(/*active*/ 1, /*outfitCount*/ 2, true) == -1);
+        CHECK(OutfitTabs::Cycle(/*active*/ -1, /*outfitCount*/ 2, false) == 1);
+        CHECK(OutfitTabs::Cycle(/*active*/ -1, /*outfitCount*/ 0, true) == -1);
+        CHECK(OutfitTabs::Cycle(/*active*/ -1, /*outfitCount*/ 0, false) == -1);
+    }
+
+    {  // The outfit strip maps vertical wheel motion to the same one-step
+       // selection path as LB/RB, whether or not every tab currently fits.
+       // Wheel down moves right/next; wheel up moves left/previous. Moving the
+       // pointer off the strip leaves selection alone.
+        const auto next = OutfitTabs::WheelCycleRequest(
+            /*active*/ 8, /*outfitCount*/ 10, /*wheel*/ -1.0f,
+            /*stripHovered*/ true);
+        CHECK(next.has_value());
+        CHECK(*next == 9);
+
+        const auto wrapToEquipped = OutfitTabs::WheelCycleRequest(
+            /*active*/ 9, /*outfitCount*/ 10, /*wheel*/ -1.0f,
+            /*stripHovered*/ true);
+        CHECK(wrapToEquipped.has_value());
+        CHECK(*wrapToEquipped == -1);
+
+        const auto previous = OutfitTabs::WheelCycleRequest(
+            /*active*/ -1, /*outfitCount*/ 10, /*wheel*/ 1.0f,
+            /*stripHovered*/ true);
+        CHECK(previous.has_value());
+        CHECK(*previous == 9);
+
+        CHECK(!OutfitTabs::WheelCycleRequest(
+            8, 10, -1.0f, /*stripHovered*/ false));
+        const auto fitsButStillCycles = OutfitTabs::WheelCycleRequest(
+            1, 3, -1.0f, /*stripHovered*/ true);
+        CHECK(fitsButStillCycles.has_value());
+        if (fitsButStillCycles) {
+            CHECK(*fitsButStillCycles == 2);
+        }
+        CHECK(!OutfitTabs::WheelCycleRequest(
+            8, 10, 0.0f, /*stripHovered*/ true));
+        CHECK(!OutfitTabs::WheelCycleRequest(
+            -1, 0, -1.0f, /*stripHovered*/ true));
+    }
+
+    {  // follower mannequin: styles survive, every other hideable slot goes bare
+        Outfit follower;
+        follower.name = "Follower";
+        follower.SetStyle(kBitBody, StyleRefKey{ "FollowerArmor.esp", 0x123 });
+        follower.SetStyle(kBitShield, StyleRefKey{ "FollowerArmor.esp", 0x456 });
+        follower.obodyPreset = "Follower body preview";
+        follower.orefit      = ORefitMode::kForceOn;
+
+        const auto mannequin = MakeMannequinPreview(
+            follower, MaskForEditorSlot(44));  // configured blocklist remains untouched
+        CHECK(mannequin.EntryFor(kBitBody).kind == SlotEntry::Kind::kStyle);
+        CHECK(mannequin.EntryFor(kBitShield).kind == SlotEntry::Kind::kStyle);
+        CHECK(mannequin.EntryFor(BitForEditorSlot(33)).kind == SlotEntry::Kind::kHide);
+        CHECK(mannequin.EntryFor(BitForEditorSlot(44)).kind ==
+              SlotEntry::Kind::kPassthrough);
+        CHECK(mannequin.obodyPreset == "Follower body preview");
+        CHECK(mannequin.orefit == ORefitMode::kForceOn);
+        CHECK(follower.obodyPreset == "Follower body preview");
+
+        const auto suppressed =
+            PresetPreviewPolicy::MannequinSuppressedBipedObjects(follower);
+        CHECK((suppressed & (1ull << BipedSlotForClass(WeaponClass::Sword))) != 0);
+        follower.SetWeaponStyle(WeaponClass::Sword,
+                                StyleRefKey{ "FollowerWeapons.esp", 0x789 });
+        const auto withSword =
+            PresetPreviewPolicy::MannequinSuppressedBipedObjects(follower);
+        CHECK((withSword & (1ull << BipedSlotForClass(WeaponClass::Sword))) == 0);
+        CHECK((withSword & (1ull << BipedSlotForClass(WeaponClass::Bow))) != 0);
+        CHECK(!PresetPreviewPolicy::HighlightPresetRow(
+            /*exported*/ true, 0, 0, false));
+        CHECK(PresetPreviewPolicy::HighlightPresetRow(
+            /*exported*/ true, 1, 0, false));
+        CHECK(PresetPreviewPolicy::HighlightPresetRow(
+            /*exported*/ true, 0, 2, false));
+        CHECK(PresetPreviewPolicy::HighlightPresetRow(
+            /*exported*/ false, 0, 0, true));
+        CHECK(!PresetPreviewPolicy::HighlightPresetRow(
+            /*exported*/ false, 1, 2, false));  // curated filtering is store-owned
+    }
+
+    {  // Equipped gear previews the follower's captured gear, not the empty stage
+        Outfit equipped;
+        equipped.SetStyle(kBitBody, StyleRefKey{ "FollowerArmor.esp", 0x123 });
+        Outfit inactiveStage;
+        const auto source =
+            ComposeMannequinSource(/*actualGear*/ true, equipped, inactiveStage);
+        CHECK(source.EntryFor(kBitBody).kind == SlotEntry::Kind::kStyle);
+    }
+
+    {  // A fresh mutable follower outfit visually starts from captured gear.
+       // Explicit edits overlay it, while the empty saved record stays empty.
+        Outfit equipped;
+        equipped.SetStyle(kBitBody, StyleRefKey{ "FollowerArmor.esp", 0x123 });
+        equipped.SetStyle(kBitHair, StyleRefKey{ "FollowerHair.esp", 0x456 });
+        Outfit fresh;
+        fresh.name = "Outfit 1";
+        fresh.SetHide(kBitHair);
+        fresh.SetWeaponStyle(WeaponClass::Bow,
+                             StyleRefKey{ "FollowerWeapons.esp", 0x789 });
+
+        const auto source =
+            ComposeMannequinSource(/*actualGear*/ false, equipped, fresh);
+        CHECK(source.EntryFor(kBitBody).kind == SlotEntry::Kind::kStyle);
+        CHECK(source.EntryFor(kBitBody).style.modName == "FollowerArmor.esp");
+        CHECK(source.EntryFor(kBitHair).kind == SlotEntry::Kind::kHide);
+        CHECK(source.WeaponEntryFor(WeaponClass::Bow).kind ==
+              SlotEntry::Kind::kStyle);
+        CHECK(fresh.EntryFor(kBitBody).kind == SlotEntry::Kind::kPassthrough);
+        CHECK(fresh.EntryFor(kBitHair).kind == SlotEntry::Kind::kHide);
+    }
+
+    {  // External quick-switch includes immutable Equipped gear.
+        OutfitLibrary lib;
+        CHECK(lib.CycleIncludingEquipped(true) == -1);  // zero-count is stable
+        lib.Create("a");
+        lib.Create("b");
+        CHECK(lib.CycleIncludingEquipped(true) == 0);   // Equipped -> a
+        CHECK(lib.CycleIncludingEquipped(true) == 1);   // a -> b
+        CHECK(lib.CycleIncludingEquipped(true) == -1);  // b -> Equipped
+        CHECK(lib.Active() == nullptr);
+        CHECK(lib.CycleIncludingEquipped(false) == 1);  // Equipped -> b backwards
     }
 
     {  // deleting an outfit clears the active index if it pointed at it
@@ -153,6 +386,31 @@ int main() {
         lib.Remove(1);
         CHECK(lib.ActiveIndex() == -1);
         CHECK(lib.Count() == 1);
+    }
+
+    {  // delete-final lands deterministically on immutable Equipped gear
+        OutfitLibrary lib;
+        lib.Create("only");
+        lib.Activate(0);
+        CHECK(lib.RemoveAndSelectNeighbor(0) == -1);
+        CHECK(lib.Count() == 0);
+        CHECK(lib.ActiveIndex() == -1);
+        CHECK(lib.Active() == nullptr);
+        CHECK(OutfitTabs::ForcedSelectionForActive(lib.ActiveIndex()) ==
+              OutfitTabs::kForceEquippedGear);
+    }
+
+    {  // deleting the active outfit selects the nearest saved neighbor
+        OutfitLibrary lib;
+        lib.Create("a");
+        lib.Create("b");
+        lib.Create("c");
+        lib.Activate(1);
+        CHECK(lib.RemoveAndSelectNeighbor(1) == 1);
+        CHECK(lib.Count() == 2);
+        CHECK(lib.At(1) != nullptr);
+        CHECK(lib.At(1)->name == "c");
+        CHECK(lib.Active() == lib.At(1));
     }
 
     {  // removing below the active index decrements it; it still names the same outfit
@@ -225,39 +483,56 @@ int main() {
 
     {  // ToggleHideSlot round trip returns a STYLED slot to its style -
         // the Apply-cost regression: Hide then Show must net zero cost.
-        std::array<SlotEntry, kBitCount> stash{};
         Outfit base;
         base.SetStyle(2, StyleRefKey{ "Armors.esp", 0x800 });   // committed styled slot
         Outfit staged = base;
         CHECK(ChangedSlotCount(base, staged) == 0);
 
-        ToggleHideSlot(staged, stash, 2);                       // Hide
+        ToggleHideSlot(staged, 2);                              // Hide
         CHECK(staged.EntryFor(2).kind == SlotEntry::Kind::kHide);
+        CHECK(staged.EntryFor(2).style ==
+              (StyleRefKey{ "Armors.esp", 0x800 }));            // covered style travels with outfit
         CHECK(ChangedSlotCount(base, staged) == 1);             // hiding is a real change
 
-        ToggleHideSlot(staged, stash, 2);                       // Show
+        ToggleHideSlot(staged, 2);                              // Show
         CHECK(staged.EntryFor(2).kind == SlotEntry::Kind::kStyle);
         CHECK(staged.EntryFor(2).style == (StyleRefKey{ "Armors.esp", 0x800 }));
         CHECK(ChangedSlotCount(base, staged) == 0);             // cost reset to zero
     }
 
+    {  // switching tabs is not a pending edit: the frame-start snapshot may
+       // still hold the old active outfit, but its structural difference from
+       // the newly staged saved outfit must never flash a lore-friendly price.
+        CHECK(PendingGoldCost(/*hasPendingEdits*/ false,
+                              /*charging*/ true,
+                              /*changedSlots*/ 4,
+                              /*costPerSlot*/ 100) == 0);
+        CHECK(PendingGoldCost(/*hasPendingEdits*/ true,
+                              /*charging*/ true,
+                              /*changedSlots*/ 4,
+                              /*costPerSlot*/ 100) == 400);
+        CHECK(PendingGoldCost(/*hasPendingEdits*/ true,
+                              /*charging*/ false,
+                              /*changedSlots*/ 4,
+                              /*costPerSlot*/ 100) == 0);
+    }
+
     {  // ToggleHideSlot on a passthrough slot round-trips to passthrough
-        std::array<SlotEntry, kBitCount> stash{};
         Outfit o;
-        ToggleHideSlot(o, stash, 5);                            // Hide
+        ToggleHideSlot(o, 5);                                   // Hide
         CHECK(o.EntryFor(5).kind == SlotEntry::Kind::kHide);
-        ToggleHideSlot(o, stash, 5);                            // Show
+        CHECK(o.EntryFor(5).style.Empty());
+        ToggleHideSlot(o, 5);                                   // Show
         CHECK(o.EntryFor(5).kind == SlotEntry::Kind::kPassthrough);
     }
 
     {  // re-stashing on each Hide: pick a new style while hidden, toggle again
-        std::array<SlotEntry, kBitCount> stash{};
         Outfit o;
         o.SetStyle(3, StyleRefKey{ "a.esp", 0x1 });
-        ToggleHideSlot(o, stash, 3);                            // Hide (stash A)
+        ToggleHideSlot(o, 3);                                   // Hide (retain A)
         o.SetStyle(3, StyleRefKey{ "b.esp", 0x2 });            // pick B from browser
-        ToggleHideSlot(o, stash, 3);                            // Hide (re-stash B)
-        ToggleHideSlot(o, stash, 3);                            // Show -> B, not A
+        ToggleHideSlot(o, 3);                                   // Hide (retain B)
+        ToggleHideSlot(o, 3);                                   // Show -> B, not A
         CHECK(o.EntryFor(3).style == (StyleRefKey{ "b.esp", 0x2 }));
     }
 
@@ -366,6 +641,67 @@ int main() {
 
         o.SetWeaponPassthrough(WeaponClass::Sword);
         CHECK(o.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kPassthrough);
+    }
+
+    {  // Same-class dual wield: old Both remains the fallback; each hand can
+       // override independently, including explicit real-weapon passthrough.
+        Outfit o;
+        o.SetWeaponStyle(WeaponClass::Sword, { "Both.esp", 1 });
+        CHECK(o.ResolvedWeaponEntryFor(WeaponClass::Sword, WeaponHand::Right).style.modName ==
+              "Both.esp");
+        CHECK(o.ResolvedWeaponEntryFor(WeaponClass::Sword, WeaponHand::Left).style.modName ==
+              "Both.esp");
+        CHECK(!o.WeaponOverrideFor(WeaponClass::Sword, WeaponHand::Right));
+
+        o.SetWeaponStyle(WeaponClass::Sword, { "Right.esp", 2 }, WeaponHand::Right);
+        o.SetWeaponPassthrough(WeaponClass::Sword, WeaponHand::Left);
+        CHECK(o.ResolvedWeaponEntryFor(WeaponClass::Sword, WeaponHand::Right).style.modName ==
+              "Right.esp");
+        CHECK(o.WeaponOverrideFor(WeaponClass::Sword, WeaponHand::Left).has_value());
+        CHECK(o.ResolvedWeaponEntryFor(WeaponClass::Sword, WeaponHand::Left).kind ==
+              SlotEntry::Kind::kPassthrough);
+        CHECK(AnyWeaponEntry(o));
+
+        o.ClearWeaponHandOverride(WeaponClass::Sword, WeaponHand::Left);
+        CHECK(!o.WeaponOverrideFor(WeaponClass::Sword, WeaponHand::Left));
+        CHECK(o.ResolvedWeaponEntryFor(WeaponClass::Sword, WeaponHand::Left).style.modName ==
+              "Both.esp");
+
+        // Selecting a NEW value while editing Both is a replacement action,
+        // not merely a fallback edit: it deliberately removes both explicit
+        // hand overrides so the choice is visible on both weapons.
+        o.SetWeaponStyleForSelection(
+            WeaponClass::Sword, { "NewBoth.esp", 3 }, WeaponHand::Both);
+        CHECK(!o.WeaponOverrideFor(WeaponClass::Sword, WeaponHand::Right));
+        CHECK(!o.WeaponOverrideFor(WeaponClass::Sword, WeaponHand::Left));
+        CHECK(o.ResolvedWeaponEntryFor(
+                  WeaponClass::Sword, WeaponHand::Right).style.modName ==
+              "NewBoth.esp");
+        CHECK(o.ResolvedWeaponEntryFor(
+                  WeaponClass::Sword, WeaponHand::Left).style.modName ==
+              "NewBoth.esp");
+
+        o.SetWeaponStyle(
+            WeaponClass::Sword, { "RightAgain.esp", 4 }, WeaponHand::Right);
+        o.SetWeaponPassthroughForSelection(
+            WeaponClass::Sword, WeaponHand::Both);
+        CHECK(!o.WeaponOverrideFor(WeaponClass::Sword, WeaponHand::Right));
+        CHECK(o.ResolvedWeaponEntryFor(
+                  WeaponClass::Sword, WeaponHand::Right).kind ==
+              SlotEntry::Kind::kPassthrough);
+    }
+
+    {  // Lore cost counts Both once and each optional hand override once.
+        Outfit base;
+        Outfit edited = base;
+        edited.SetWeaponStyle(WeaponClass::Sword, { "Both.esp", 1 });
+        CHECK(ChangedSlotCount(base, edited) == 1);
+        edited.SetWeaponStyle(WeaponClass::Sword, { "Right.esp", 2 }, WeaponHand::Right);
+        CHECK(ChangedSlotCount(base, edited) == 2);
+        edited.SetWeaponPassthrough(WeaponClass::Sword, WeaponHand::Left);
+        CHECK(ChangedSlotCount(base, edited) == 3);
+        edited.ClearWeaponHandOverride(WeaponClass::Sword, WeaponHand::Right);
+        CHECK(ChangedSlotCount(base, edited) == 2);
     }
 
     {  // ForEachWeaponStyle visits exactly the styled classes, ascending, with the right keys
@@ -499,6 +835,18 @@ int main() {
         FavoriteSet fs4;
         fs4.LoadLines("");                                      // empty blob clears
         CHECK(fs4.Size() == 0);
+    }
+
+    {  // Preset browsing hides only render objects that can spoil an outfit
+       // preview: shield plus every weapon/quiver biped object. The mask is
+       // transient and never becomes an Outfit entry.
+        const auto mask = PresetPreviewPolicy::kSuppressedBipedObjects;
+        CHECK((mask & (1ull << kBitShield)) != 0);
+        for (std::uint32_t slot = 32; slot <= 41; ++slot) {
+            CHECK((mask & (1ull << slot)) != 0);
+        }
+        CHECK((mask & (1ull << kBitBody)) == 0);
+        CHECK((mask & (1ull << 31)) == 0);
     }
 
     if (g_failures == 0) {

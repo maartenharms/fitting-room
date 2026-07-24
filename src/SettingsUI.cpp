@@ -75,9 +75,17 @@ namespace {
         // the Lore section below shows, and the note says so out loud. The
         // ESP itself is the one thing only the installer can add.
         FUCK::SeparatorText("$FR_Set_Playstyle"_T);
+        // ⚠ EVERY PLAYSTYLE FIELD MUST BE SET BY BOTH BUTTONS. A field one
+        // button sets and the other leaves alone is not "unchanged", it is
+        // whatever the previous playstyle left behind - so the preset silently
+        // means different things depending on what you clicked before.
+        // bCollectionOnly was exactly that: neither button touched it, it
+        // defaults true, and Free-form therefore still hid every look the
+        // player had not owned - the opposite of free-form.
         if (FUCK::Button("$FR_Set_PlaystyleLore"_T)) {
             cfg.useGold          = true;
             cfg.requireSeamstone = true;
+            cfg.collectionOnly   = true;  // earn the look before you can wear it
             dirty                = true;
         }
         Tip("$FR_Set_PlaystyleLoreTip"_T);
@@ -85,6 +93,7 @@ namespace {
         if (FUCK::Button("$FR_Set_PlaystyleFree"_T)) {
             cfg.useGold          = false;
             cfg.requireSeamstone = false;
+            cfg.collectionOnly   = false;  // everything installed is available
             dirty                = true;
         }
         Tip("$FR_Set_PlaystyleFreeTip"_T);
@@ -111,10 +120,11 @@ namespace {
         }
 
         FUCK::SeparatorText("$FR_Set_Editor"_T);
-        dirty |= FUCK::Checkbox("$FR_Set_CollectedOnly"_T, &cfg.collectionOnly);
         dirty |= FUCK::Checkbox("$FR_Set_HoverPreview"_T, &cfg.hoverPreview);
         dirty |= FUCK::Checkbox("$FR_Set_EverySlot"_T, &cfg.advancedSlots);
-        if (FUCK::SliderFloat("$FR_Set_UiScale"_T, &cfg.uiScale, 0.8f, 1.6f, "%.2f")) {
+        if (FUCK::SliderFloat("$FR_Set_UiScale"_T, &cfg.uiScale,
+                              OS::Settings::kUiScaleMin,
+                              OS::Settings::kUiScaleMax, "%.2f")) {
             dirty = true;
         }
 

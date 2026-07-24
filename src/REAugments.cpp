@@ -1,8 +1,10 @@
 #include "REAugments.h"
 
+#include "BipedPost.h"
 #include "BipedHooks.h"
 #include "CrashGuard.h"
 #include "OutfitSession.h"
+#include "PresetPreviewPolicy.h"
 #include "WeaponHooks.h"
 
 namespace OS::REAug {
@@ -125,16 +127,102 @@ namespace OS::REAug {
             reparent(a_actor, a_weapon, a_draw, a_leftHand);
         }
 
+        enum class WeaponPartSide {
+            kMainHand,
+            kOffHand,
+            kAny,
+        };
+
+        [[nodiscard]] bool WeaponSlotMatchesSide(
+            std::uint32_t a_slot, WeaponPartSide a_side) {
+            return a_side == WeaponPartSide::kAny ||
+                   (a_side == WeaponPartSide::kOffHand &&
+                    IsOffHandWeaponBipedSlot(a_slot)) ||
+                   (a_side == WeaponPartSide::kMainHand &&
+                    IsMainHandWeaponBipedSlot(a_slot));
+        }
+
+        // Read the visual placement BEFORE UpdateEquipment rebuilds it. Menu
+        // entry can temporarily make ActorState say "sheathed" even though the
+        // existing clone is still on WEAPON/SHIELD in the player's hand.
+        [[nodiscard]] bool WeaponPartWasDrawn(
+            RE::BipedAnim* a_biped, RE::TESForm* a_weapon,
+            WeaponPartSide a_side) {
+            if (!a_biped || !a_weapon) {
+                return false;
+            }
+            for (std::size_t s = 0;
+                 s <= static_cast<std::size_t>(RE::BIPED_OBJECTS::kQuiver);
+                 ++s) {
+                if (!WeaponSlotMatchesSide(
+                        static_cast<std::uint32_t>(s), a_side)) {
+                    continue;
+                }
+                const auto& obj = a_biped->objects[s];
+                if (obj.item != a_weapon || !obj.partClone ||
+                    !obj.partClone->parent) {
+                    continue;
+                }
+                const char* const parent =
+                    obj.partClone->parent->name.c_str();
+                if (PreserveDrawnWeaponPlacement(
+                        false, parent ? std::string_view{ parent }
+                                      : std::string_view{})) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        [[nodiscard]] std::uint8_t CaptureDrawnWeaponHands(
+            RE::Actor* a_actor) {
+            constexpr std::uint8_t kRight = 1u << 0;
+            constexpr std::uint8_t kLeft  = 1u << 1;
+            const bool stateDrawn =
+                a_actor->AsActorState()->IsWeaponDrawn();
+            const bool isPlayer =
+                RE::PlayerCharacter::GetSingleton() == a_actor;
+            std::uint8_t result = 0;
+            for (const bool leftHand : { false, true }) {
+                auto* const weapon = a_actor->GetEquippedObject(leftHand);
+                if (!weapon || !weapon->IsWeapon()) {
+                    continue;
+                }
+                const auto side = leftHand ? WeaponPartSide::kOffHand
+                                           : WeaponPartSide::kMainHand;
+                const bool visuallyDrawn =
+                    WeaponPartWasDrawn(
+                        a_actor->GetBiped1(false).get(), weapon, side) ||
+                    (isPlayer &&
+                     WeaponPartWasDrawn(
+                         a_actor->GetBiped1(true).get(), weapon, side));
+                if (PreserveDrawnWeaponPlacement(
+                        stateDrawn, visuallyDrawn ? "WEAPON" : "")) {
+                    result |= leftHand ? kLeft : kRight;
+                }
+            }
+            return result;
+        }
+
         // Tear the weapon's node off one biped so the change-detect documented
-        // on RestyleEquippedWeapons stops short-circuiting. Returns true if a
-        // node was actually detached.
-        bool DetachWeaponFrom(RE::BipedAnim* a_biped, RE::TESForm* a_weapon) {
+        // on RestyleEquippedWeapons stops short-circuiting. Main-hand weapons
+        // occupy class slots 32..40; off-hand weapons occupy the race's
+        // shield/editor slot below 32. Keeping those domains separate is
+        // load-bearing when both hands use the SAME WEAP form: the main-hand
+        // pass must not detach the off-hand clone before its own attach pass.
+        // Returns true if a node in the requested domain was detached.
+        bool DetachWeaponFrom(RE::BipedAnim* a_biped, RE::TESForm* a_weapon,
+                              WeaponPartSide a_side = WeaponPartSide::kAny) {
             if (!a_biped || !a_weapon) {
                 return false;
             }
             bool any = false;
-            for (auto s = static_cast<std::size_t>(RE::BIPED_OBJECTS::kHandToHandMelee);
+            for (std::size_t s = 0;
                  s <= static_cast<std::size_t>(RE::BIPED_OBJECTS::kQuiver); ++s) {
+                if (!WeaponSlotMatchesSide(
+                        static_cast<std::uint32_t>(s), a_side)) {
+                    continue;
+                }
                 auto& obj = a_biped->objects[s];
                 if (obj.item != a_weapon || !obj.partClone) {
                     continue;
@@ -160,10 +248,104 @@ namespace OS::REAug {
             }
             return any;
         }
+
+        // Move the exact offhand biped clone to Skyrim's left-hand attachment
+        // node. Field logging disproved the earlier "left attach already
+        // targets the hand" assumption: third person returned on
+        // WeaponSwordLeft (the sheath), while first person returned on SHIELD.
+        //
+        // Do not use Actor virtual 0xB4 for this side. That virtual chooses a
+        // sheath child rather than accepting the clone, so same-form dual
+        // wield can move the other hand's child[0]. The biped slot gives us the
+        // unambiguous clone and biped->root keeps 1P and 3P node trees separate.
+        bool RestoreOffHandWeaponPart(
+            RE::BipedAnim* a_biped, RE::TESForm* a_weapon,
+            const char* a_perspective) {
+            if (!a_biped || !a_biped->root || !a_weapon) {
+                return false;
+            }
+
+            static const RE::BSFixedString kLeftHandNode{ "SHIELD" };
+            auto* const targetObject =
+                a_biped->root->GetObjectByName(kLeftHandNode);
+            auto* const target = targetObject ? targetObject->AsNode() : nullptr;
+            if (!target) {
+                spdlog::warn(
+                    "restyle: cannot restore left-hand '{}' {} clone: "
+                    "SHIELD node is missing.",
+                    a_weapon->GetName() ? a_weapon->GetName() : "?",
+                    a_perspective);
+                return false;
+            }
+
+            bool any = false;
+            for (std::size_t s = 0;
+                 s <= static_cast<std::size_t>(RE::BIPED_OBJECTS::kQuiver);
+                 ++s) {
+                if (!WeaponSlotMatchesSide(
+                        static_cast<std::uint32_t>(s),
+                        WeaponPartSide::kOffHand)) {
+                    continue;
+                }
+                auto& obj = a_biped->objects[s];
+                if (obj.item != a_weapon || !obj.partClone) {
+                    continue;
+                }
+
+                // Keep a strong reference across DetachChild. BIPOBJECT also
+                // owns one, but the local makes this operation safe even if an
+                // engine callback mutates that slot while the node is moving.
+                RE::NiPointer<RE::NiAVObject> clone = obj.partClone;
+                auto* const oldParent = clone->parent;
+                const char* const oldParentName =
+                    oldParent ? oldParent->name.c_str() : nullptr;
+                const std::string_view oldName =
+                    oldParentName ? std::string_view{ oldParentName }
+                                  : std::string_view{};
+
+                if (oldParent != target &&
+                    OffHandCloneNeedsHandReparent(true, oldName)) {
+                    if (oldParent) {
+                        RE::NiPointer<RE::NiAVObject> detached;
+                        oldParent->DetachChild(clone.get(), detached);
+                        if (clone->parent == oldParent) {
+                            spdlog::warn(
+                                "restyle: could not detach left-hand '{}' {} "
+                                "clone from '{}'.",
+                                a_weapon->GetName()
+                                    ? a_weapon->GetName()
+                                    : "?",
+                                a_perspective,
+                                oldParentName && *oldParentName
+                                    ? oldParentName
+                                    : "<unnamed>");
+                            continue;
+                        }
+                    }
+                    target->AttachChild(clone.get(), true);
+                }
+
+                clone->SetAppCulled(false);
+                const char* const newParentName =
+                    clone->parent ? clone->parent->name.c_str() : nullptr;
+                spdlog::debug(
+                    "restyle: restored left-hand '{}' {} clone in slot {} "
+                    "(parent '{}' -> '{}').",
+                    a_weapon->GetName() ? a_weapon->GetName() : "?",
+                    a_perspective, s,
+                    oldParentName && *oldParentName ? oldParentName : "<none>",
+                    newParentName && *newParentName
+                        ? newParentName
+                        : "<none>");
+                any = true;
+            }
+            return any;
+        }
     }  // namespace
 
-    void RestyleEquippedWeapons(RE::PlayerCharacter* a_player) {
-        if (!a_player) {
+    void RestyleEquippedWeapons(
+        RE::Actor* a_actor, std::uint8_t a_preserveDrawnHands) {
+        if (!a_actor) {
             return;
         }
         // OS-76, the real mechanism (2026-07-18). The drain above IS genuine and
@@ -211,37 +393,89 @@ namespace OS::REAug {
         // off-camera, so it reads as "invisible" rather than misplaced. Both of
         // the field symptoms are that one fact; restoring the placement fixes
         // both. (Field 2026-07-18, first build of the OS-76 fix.)
-        const bool drawn = a_player->AsActorState()->IsWeaponDrawn();
+        const bool isPlayer =
+            RE::PlayerCharacter::GetSingleton() == a_actor;
 
         for (const bool leftHand : { false, true }) {
-            auto* const weapon = a_player->GetEquippedObject(leftHand);
+            auto* const weapon = a_actor->GetEquippedObject(leftHand);
             // Weapons only. Ammo attaches through its own call site, and a
             // torch/shield/spell in the off hand is not a styling surface.
             if (!weapon || !weapon->IsWeapon()) {
                 continue;
             }
-            const bool d3 = DetachWeaponFrom(a_player->GetBiped1(false).get(), weapon);
-            const bool d1 = DetachWeaponFrom(a_player->GetBiped1(true).get(), weapon);
+            const auto side = leftHand ? WeaponPartSide::kOffHand
+                                       : WeaponPartSide::kMainHand;
+            const bool d3 = DetachWeaponFrom(
+                a_actor->GetBiped1(false).get(), weapon, side);
+            const bool d1 =
+                isPlayer && DetachWeaponFrom(
+                                a_actor->GetBiped1(true).get(), weapon, side);
             if (!d3 && !d1) {
                 continue;
             }
-            AttachWeapon(a_player, weapon, leftHand);
+            AttachWeapon(a_actor, weapon, leftHand);
 
-            // RIGHT HAND ONLY, deliberately. A left-hand weapon and a staff are
-            // attached straight to the hand node by the resolver's own branch
-            // and merely have kHidden set from live weapon state, so they are
-            // already correct and need no move. Restricting it also sidesteps
-            // the one sharp edge of this call: it moves children[0] of the
-            // SOURCE node, and when dual-wielding the same weapon type both
-            // hands share a sheath node - asking for the left one could yank
-            // the right hand's weapon instead. Right runs first in this loop,
-            // so by the time the left hand is attached its sheath node is
-            // already empty either way.
-            if (drawn && !leftHand) {
-                if (auto* const weap = weapon->As<RE::TESObjectWEAP>()) {
-                    UpdateWeaponNode(a_player, weap, true, false);
-                    spdlog::debug("restyle: re-parented '{}' to the hand node (weapon drawn).",
-                                  weap->GetName() ? weap->GetName() : "?");
+            // AttachWeapon parks both replacement sides at their attachment
+            // defaults. The right can use virtual 0xB4. The left uses its exact
+            // offhand biped clone, because 0xB4's child selection is ambiguous
+            // when both hands use the same WEAP form.
+            const bool preserveDrawn =
+                (a_preserveDrawnHands & (leftHand ? 1u << 1 : 1u << 0)) != 0;
+            switch (DrawnWeaponRepairFor(preserveDrawn, leftHand)) {
+                case DrawnWeaponRepair::ReparentRight:
+                    if (auto* const weap =
+                            weapon->As<RE::TESObjectWEAP>()) {
+                        UpdateWeaponNode(a_actor, weap, true, false);
+                        spdlog::debug(
+                            "restyle: re-parented '{}' to the right hand node "
+                            "(weapon drawn).",
+                            weap->GetName() ? weap->GetName() : "?");
+                    }
+                    break;
+                case DrawnWeaponRepair::ReparentLeftClone:
+                    RestoreOffHandWeaponPart(
+                        a_actor->GetBiped1(false).get(), weapon,
+                        "third-person");
+                    if (isPlayer) {
+                        RestoreOffHandWeaponPart(
+                            a_actor->GetBiped1(true).get(), weapon,
+                            "first-person");
+                    }
+                    break;
+                case DrawnWeaponRepair::None:
+                    break;
+            }
+        }
+
+        // Some followers carry an engine-owned/template display weapon that is
+        // already materialized in BipedAnim but is absent from inventory and
+        // therefore invisible to GetEquippedObject above. Do not invent an
+        // item: rebuild only the EXISTING visual biped object, and only in
+        // slots whose hand cannot be ambiguous. That reaches default bows such
+        // as Jenassa's while refusing to guess for one-handed weapons/staves.
+        if (!isPlayer) {
+            auto* const b3 = a_actor->GetBiped1(false).get();
+            if (b3) {
+                auto* const equippedRight = a_actor->GetEquippedObject(false);
+                auto* const equippedLeft  = a_actor->GetEquippedObject(true);
+                for (std::uint32_t slot = 32; slot <= 40; ++slot) {
+                    if (!IsUnambiguousVisualWeaponSlot(slot)) {
+                        continue;
+                    }
+                    auto* const visual = b3->objects[slot].item;
+                    if (!visual || !visual->IsWeapon() ||
+                        visual == equippedRight || visual == equippedLeft ||
+                        !b3->objects[slot].partClone) {
+                        continue;
+                    }
+                    if (DetachWeaponFrom(
+                            b3, visual, WeaponPartSide::kMainHand)) {
+                        AttachWeapon(a_actor, visual, false);
+                        spdlog::info(
+                            "restyle: rebuilt visual-only follower weapon '{}' "
+                            "from biped slot {} (inventory unchanged).",
+                            visual->GetName() ? visual->GetName() : "?", slot);
+                    }
                 }
             }
         }
@@ -258,9 +492,9 @@ namespace OS::REAug {
         // Actor-level counterpart that does the walk, so we do it. Both bipeds for
         // the OS-76 reason: detach only the 3rd and the stale 1st-person node
         // still satisfies its own gate.
-        if (auto* const ammo = a_player->GetCurrentAmmo()) {
-            auto* const b3 = a_player->GetBiped1(false).get();
-            auto* const b1 = a_player->GetBiped1(true).get();
+        if (auto* const ammo = a_actor->GetCurrentAmmo()) {
+            auto* const b3 = a_actor->GetBiped1(false).get();
+            auto* const b1 = isPlayer ? a_actor->GetBiped1(true).get() : nullptr;
             const bool  d3 = DetachWeaponFrom(b3, ammo);
             const bool  d1 = DetachWeaponFrom(b1, ammo);
             if (d3 || d1) {
@@ -278,7 +512,8 @@ namespace OS::REAug {
                 // it. Nothing on the binaries settles that, so field-test it with a
                 // bow drawn and an arrow nocked, and read this line when reporting.
                 spdlog::debug("restyle: quiver re-attached '{}' (drawn={}).",
-                              ammo->GetName() ? ammo->GetName() : "?", drawn);
+                              ammo->GetName() ? ammo->GetName() : "?",
+                              a_preserveDrawnHands != 0);
             }
         }
     }
@@ -334,6 +569,10 @@ namespace OS::REAug {
         const auto c0 = isPlayer ? BipedHooks::PlayerWornPassCount() : 0;
         const auto w0 = isPlayer ? WeaponHooks::PlayerWeaponPartCount()
                                  : WeaponHooks::NpcWeaponPartCount();
+        // Capture each hand's visual truth before UpdateEquipment can replace
+        // a hand-parented clone with a sheath-parented one during menu entry.
+        const auto preserveDrawnHands =
+            CaptureDrawnWeaponHands(a_actor);
 
         // CrashGuard's pending-preview marker is a SINGLE global key, not
         // actor-scoped (CrashGuard.h) - bracketing a non-player refresh with
@@ -357,12 +596,26 @@ namespace OS::REAug {
             // leave the vanilla under-pause behaviour inconsistent for no gain.
             // NPCs need no equivalent - the resolver attaches theirs inline.
             FlushPendingWeapons(player);
-            // Draining is necessary but NOT sufficient - the drain's own attach
-            // hits the same change-detect that blocks everything else while the
-            // weapon's node is still parented. Re-attach the equipped weapons
-            // explicitly so the loader (and our styling hook) actually runs.
-            RestyleEquippedWeapons(player);
+        }
+        // Draining is necessary but NOT sufficient for the player, and NPC
+        // refreshes hit the same already-attached-node short circuit. Force
+        // the part loader for either actor so switching a follower outfit
+        // previews and applies weapon looks without an unequip/re-equip.
+        RestyleEquippedWeapons(a_actor, preserveDrawnHands);
+        if (isPlayer) {
             CrashGuard::EndKick();
+        }
+
+        // Preview modes deliberately suppress unrelated equipment nodes.
+        // Presets retain linked weapon and shield entries for saving while
+        // hiding their preview objects. A follower mannequin also hides the
+        // player's own weapons, shield and quiver because they do not describe
+        // the follower. Immediate and queued sweeps cover sync and late clones.
+        auto& session = OutfitSession::GetSingleton();
+        if (const auto mask = session.PreviewEquipmentSuppressionMask(a_actor);
+            mask != 0) {
+            BipedPost::CullObjectNodes(a_actor->GetCurrentBiped().get(), mask);
+            BipedPost::QueueObjectNodeCull(a_actor->GetHandle(), mask);
         }
 
         if (isPlayer) {
@@ -373,8 +626,8 @@ namespace OS::REAug {
             }
 
             // Weapon dimension, same tripwire shape. Unlike the worn pass, the
-            // part-3D loader is only reached when something IS equipped in slots
-            // 32..41, so zero loads is perfectly benign for an unarmed player -
+            // part-3D loader is only reached when a weapon or quiver is
+            // equipped, so zero loads is perfectly benign for an unarmed player -
             // but it is also exactly how a DEAD hook site presents (the AE
             // inlined-site bug: address resolves, byte check passes, thunk never
             // runs). Ambiguous evidence beats none: this is the line that turns

@@ -29,6 +29,42 @@ namespace OS::EditorGate {
         return GateAction::kOpen;
     }
 
+    // A Fitting Room window opened over SAM cannot outlive that host menu.
+    // World-hover passthrough deliberately lets SAM receive Escape, so its
+    // close event must close the editor as the same transaction.
+    [[nodiscard]] inline constexpr bool ShouldCloseForLostHost(
+        bool a_openedFromSam, bool a_samStillOpen) {
+        return a_openedFromSam && !a_samStillOpen;
+    }
+
+    // A showcase preset may become a saved outfit only when there is a valid
+    // selection, the library has room, and lore-friendly mode's collection
+    // gate is satisfied. Free-form mode deliberately ignores ownership.
+    [[nodiscard]] inline bool CanSaveShowcase(bool a_haveSelection, bool a_libraryFull,
+                                              bool a_collectionOnly,
+                                              bool a_ownsEveryPiece) {
+        return a_haveSelection && !a_libraryFull &&
+               (!a_collectionOnly || a_ownsEveryPiece);
+    }
+
+    // Playstyle owns style visibility completely: free-form sees every
+    // installed look, lore-friendly sees collected looks. There is no
+    // session/settings override that can put either mode into a contradictory
+    // state.
+    [[nodiscard]] inline constexpr bool BrowseCollectedOnly(
+        bool a_loreFriendly) {
+        return a_loreFriendly;
+    }
+
+    // Preset import writes into the CURRENT target library. Naming that target
+    // on the action prevents "my outfits" from implying the player while a
+    // follower is selected.
+    [[nodiscard]] inline constexpr const char* PresetSaveLabel(
+        bool a_targetIsPlayer) {
+        return a_targetIsPlayer ? "Save to player outfits"
+                                : "Save to follower outfits";
+    }
+
     // A readable name for a DirectInput scan code (DIK), for the rebind display.
     // Covers the keys anyone would bind; unlisted codes fall back to "Key 0xNN".
     // 0 = unbound.

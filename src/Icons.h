@@ -52,6 +52,7 @@ namespace OS::Icons {
     inline constexpr std::uint16_t kTimes    = 0xf00d;  // X - clear a slot to equipped gear
     inline constexpr std::uint16_t kTrash    = 0xf1f8;  // trash - delete the whole outfit
     inline constexpr std::uint16_t kCoins    = 0xf51e;  // stack of coins - the Apply gold cost
+    inline constexpr std::uint16_t kShield   = 0xf3ed;  // shield-alt - shield armor slot
 
     // --- Weapons accordion (Task 8, weapon+quiver transmog) ----------------
     // FA5 Free Solid has no dedicated icon for most melee weapon classes
@@ -75,7 +76,7 @@ namespace OS::Icons {
     inline constexpr std::uint16_t kAll[] = {
         kGear, kMask, kHelmet, kBody, kMitten, kHand, kGem, kRing, kShoe, kSocks, kFeather, kUser,
         kCrown, kEar, kSmile, kVest, kBack, kSkull, kSkullX, kMagic, kCube, kRealGear, kDice,
-        kStar, kUndo, kRedo, kSearch, kTimes, kTrash, kCoins,
+        kStar, kUndo, kRedo, kSearch, kTimes, kTrash, kCoins, kShield,
         kBolt, kBullseye, kCrosshairs, kLocationArrow, kHammer,
     };
 

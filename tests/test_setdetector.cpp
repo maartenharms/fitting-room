@@ -20,6 +20,7 @@ int main() {
         CHECK(NameStem("College of Winterhold Hood") == "college of winterhold");
         CHECK(NameStem("College of Winterhold Robes") == "college of winterhold");
         CHECK(NameStem("Nightingale Armor") == "nightingale");
+        CHECK(NameStem("Blades Armor") == "blades");  // faction name, not weapon noise
     }
     {  // NameStem: strip color variants and bracket tags
         CHECK(NameStem("Elaborate Textiles - Emerald Dress") == "elaborate textiles");
@@ -176,6 +177,38 @@ int main() {
         CHECK(sets.size() == 1);
         CHECK(sets[0].name == "Abyss");
         CHECK(sets[0].coverage == 3);  // body + hands + feet
+    }
+    {  // Matching weapon looks join a discovered armor preset by raw plugin
+       // and normalized set name. Unmatched classes stay passthrough, so the
+       // detector never invents a weapon link for a preset that has none.
+        std::vector<DetectStyle> armor = {
+            mk("Abyss Top [OBI]", "Obi's Abyss Armor.esp", 32),
+            mk("Abyss Boots [OBI]", "Obi's Abyss Armor.esp", 37),
+            mk("Abyss Shield [OBI]", "Obi's Abyss Armor.esp", 39),
+        };
+        auto sets = Detect(armor, {});
+        CHECK(sets.size() == 1);
+
+        std::vector<DetectWeapon> weapons = {
+            { "Abyss Sword [OBI]", "Obi's Abyss Armor.esp", "", OS::WeaponClass::Sword,
+              { "Obi's Abyss Armor.esp", 0x901 } },
+            { "Unrelated Bow", "Obi's Abyss Armor.esp", "", OS::WeaponClass::Bow,
+              { "Obi's Abyss Armor.esp", 0x902 } },
+            { "Abyss Dagger", "Different.esp", "", OS::WeaponClass::Dagger,
+              { "Different.esp", 0x903 } },
+        };
+        LinkWeapons(sets, weapons);
+
+        const auto& shield = sets[0].outfit.EntryFor(OS::BitForEditorSlot(39));
+        CHECK(shield.kind == OS::SlotEntry::Kind::kStyle);
+        CHECK(sets[0].outfit.WeaponEntryFor(OS::WeaponClass::Sword).kind ==
+              OS::SlotEntry::Kind::kStyle);
+        CHECK(sets[0].outfit.WeaponEntryFor(OS::WeaponClass::Sword).style.localFormID ==
+              0x901);
+        CHECK(sets[0].outfit.WeaponEntryFor(OS::WeaponClass::Bow).kind ==
+              OS::SlotEntry::Kind::kPassthrough);
+        CHECK(sets[0].outfit.WeaponEntryFor(OS::WeaponClass::Dagger).kind ==
+              OS::SlotEntry::Kind::kPassthrough);
     }
     {  // prefix-merge: an unrecognized-slot piece attaches to its set (Gladiator)
         std::vector<DetectStyle> in = {

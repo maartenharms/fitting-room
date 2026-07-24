@@ -35,6 +35,8 @@ int main() {
         o.SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
         o.SetStyle(kBitFeet, StyleRefKey{ "Skyrim.esm", 0x1B3A3 });
         o.SetHide(kBitHair);
+        o.obodyPreset = "Umbral's Umbrage Nerfed";
+        o.orefit      = ORefitMode::kForceOff;
 
         const auto json = JsonCodec::OutfitToJson(o);
         Outfit     back;
@@ -47,6 +49,27 @@ int main() {
         CHECK(back.EntryFor(kBitFeet).style.localFormID == 0x1B3A3);
         CHECK(back.EntryFor(kBitHair).kind == SlotEntry::Kind::kHide);
         CHECK(back.EntryFor(kBitHands).kind == SlotEntry::Kind::kPassthrough);
+        CHECK(back.obodyPreset == "Umbral's Umbrage Nerfed");
+        CHECK(back.orefit == ORefitMode::kForceOff);
+    }
+
+    {  // hidden style survives player-library/export JSON save and reload
+        Outfit o;
+        o.SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
+        ToggleHideSlot(o, kBitBody);
+
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json["slots"][0]["kind"].asString() == "hide");
+        CHECK(json["slots"][0]["mod"].asString() == "Armors.esp");
+        CHECK(json["slots"][0]["id"].asString() == "0x000801");
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.EntryFor(kBitBody).kind == SlotEntry::Kind::kHide);
+        ToggleHideSlot(back, kBitBody);
+        CHECK(back.EntryFor(kBitBody).kind == SlotEntry::Kind::kStyle);
+        CHECK(back.EntryFor(kBitBody).style ==
+              (StyleRefKey{ "Armors.esp", 0x801 }));
     }
 
     {  // tolerance: bad slots, bad kinds, bad hex are skipped, not fatal
@@ -78,6 +101,26 @@ int main() {
         Outfit o;
         CHECK(!JsonCodec::JsonToOutfit(Json::Value("just a string"), o));
         CHECK(!JsonCodec::JsonToOutfit(Json::Value(Json::arrayValue), o));
+    }
+
+    {  // absent or invalid optional body keys default safely
+        Outfit legacy;
+        CHECK(JsonCodec::JsonToOutfit(Parse(R"({ "name": "Legacy", "slots": [] })"),
+                                      legacy));
+        CHECK(legacy.obodyPreset.empty());
+        CHECK(legacy.orefit == ORefitMode::kDefault);
+
+        Outfit invalid;
+        CHECK(JsonCodec::JsonToOutfit(
+            Parse(R"({ "name": "Invalid", "orefit": 99, "slots": [] })"), invalid));
+        CHECK(invalid.orefit == ORefitMode::kDefault);
+
+        Outfit malformed;
+        CHECK(JsonCodec::JsonToOutfit(
+            Parse(R"({ "name": "Malformed", "obodyPreset": {}, "orefit": "off" })"),
+            malformed));
+        CHECK(malformed.obodyPreset.empty());
+        CHECK(malformed.orefit == ORefitMode::kDefault);
     }
 
     {  // preset happy path (flat schema: metadata + outfit on one object)
@@ -219,13 +262,50 @@ int main() {
         }
     }
 
+    {  // Per-hand JSON is additive: missing hand means legacy Both; explicit
+       // passthrough differs from an absent override (inherit Both).
+        Outfit o;
+        o.name = "Twin Blades";
+        o.SetWeaponStyle(WeaponClass::Sword, { "Both.esp", 1 });
+        o.SetWeaponStyle(WeaponClass::Sword, { "Right.esp", 2 },
+                         WeaponHand::Right);
+        o.SetWeaponPassthrough(WeaponClass::Sword, WeaponHand::Left);
+
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json["weapons"].size() == 3);
+        bool sawBoth = false, sawRight = false, sawLeftReal = false;
+        for (const auto& w : json["weapons"]) {
+            const auto hand = w.get("hand", "").asString();
+            sawBoth |= hand.empty() && w["mod"].asString() == "Both.esp";
+            sawRight |= hand == "right" && w["mod"].asString() == "Right.esp";
+            sawLeftReal |= hand == "left" &&
+                           w["kind"].asString() == "passthrough";
+        }
+        CHECK(sawBoth);
+        CHECK(sawRight);
+        CHECK(sawLeftReal);
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.ResolvedWeaponEntryFor(
+                  WeaponClass::Sword, WeaponHand::Right).style.modName == "Right.esp");
+        CHECK(back.WeaponOverrideFor(
+                  WeaponClass::Sword, WeaponHand::Left).has_value());
+        CHECK(back.ResolvedWeaponEntryFor(
+                  WeaponClass::Sword, WeaponHand::Left).kind ==
+              SlotEntry::Kind::kPassthrough);
+    }
+
     {  // tolerance: bad class, bad kind, empty style key and non-objects are
        // skipped, not fatal - the rest of the outfit (armor slots and other
        // weapon entries) still parses fine. Mirrors the armor slots
        // tolerance block above.
         const auto root = Parse(R"({
             "name": "Tolerant Weapons",
-            "slots": [ { "slot": 32, "kind": "hide" } ],
+            "slots": [
+                { "slot": 32, "kind": "hide" },
+                { "slot": 39, "kind": "style", "mod": "Shields.esp", "id": "0x44" }
+            ],
             "weapons": [
                 { "class": "shield", "kind": "style", "mod": "X.esp", "id": "0x1" },
                 { "class": "mace", "kind": "invisible" },
@@ -238,11 +318,14 @@ int main() {
         CHECK(JsonCodec::JsonToOutfit(root, o));
         CHECK(o.name == "Tolerant Weapons");
         CHECK(o.EntryFor(kBitBody).kind == SlotEntry::Kind::kHide);
+        CHECK(o.EntryFor(kBitShield).kind == SlotEntry::Kind::kStyle);
+        CHECK(o.EntryFor(kBitShield).style.modName == "Shields.esp");
+        CHECK(o.EntryFor(kBitShield).style.localFormID == 0x44);
         CHECK(o.WeaponEntryFor(WeaponClass::Sword).kind == SlotEntry::Kind::kStyle);
         CHECK(o.WeaponEntryFor(WeaponClass::Sword).style.modName == "Weapons.esp");
         CHECK(o.WeaponEntryFor(WeaponClass::Sword).style.localFormID == 0x10A);
-        // "shield" is not a weapon class name in this build - ignored;
-        // unknown kind string and empty style key are ignored too
+        // Shield remains armor slot 39, not a WeaponClass. The weapons-array
+        // "shield" entry is therefore ignored; the slots-array entry above is kept.
         CHECK(o.WeaponEntryFor(WeaponClass::Mace).kind == SlotEntry::Kind::kPassthrough);
         CHECK(o.WeaponEntryFor(WeaponClass::Bow).kind == SlotEntry::Kind::kPassthrough);
         for (std::size_t c = 0; c < kWeaponClassCount; ++c) {

@@ -1,5 +1,6 @@
 #include "SamCompat.h"
 
+#include "EditorGate.h"
 #include "EditorWindow.h"
 
 #include <string_view>
@@ -35,6 +36,27 @@ namespace OS::SamCompat {
         };
         EventSink g_sink;
 
+        // SAM world-hover passthrough intentionally lets SAM receive Escape.
+        // If SAM closes itself, close the editor from the same UI event instead
+        // of leaving its hosted window stranded over regular gameplay.
+        struct MenuSink : RE::BSTEventSink<RE::MenuOpenCloseEvent> {
+            RE::BSEventNotifyControl ProcessEvent(
+                const RE::MenuOpenCloseEvent* a_event,
+                RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override {
+                const auto& menuName = Settings::GetSingleton().samMenuName;
+                if (!a_event || menuName.empty() ||
+                    std::string_view{ a_event->menuName.c_str() } != menuName) {
+                    return RE::BSEventNotifyControl::kContinue;
+                }
+                if (EditorGate::ShouldCloseForLostHost(
+                        EditorWindow::OpenedFromSam(), a_event->opening)) {
+                    EditorWindow::RequestClose();
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+        MenuSink g_menuSink;
+
         // Native global Papyrus function OutfitSlotsSAM.OpenEditor() - the SAM
         // addon's menu entry calls this via its `global:` action (SAM's
         // CallGlobalFunction dispatches to it). Ships as the dependency-free
@@ -58,6 +80,9 @@ namespace OS::SamCompat {
         }
         if (auto* papyrus = SKSE::GetPapyrusInterface()) {
             papyrus->Register(RegisterPapyrusFuncs);
+        }
+        if (auto* ui = RE::UI::GetSingleton()) {
+            ui->AddEventSink<RE::MenuOpenCloseEvent>(&g_menuSink);
         }
     }
 

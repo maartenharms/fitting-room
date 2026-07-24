@@ -32,6 +32,10 @@ build\release\WeaponSlotsTests.exe
 if errorlevel 1 goto :fail
 build\release\NpcSessionTests.exe
 if errorlevel 1 goto :fail
+build\release\RefreshGateTests.exe
+if errorlevel 1 goto :fail
+build\release\ShowcaseTabsTests.exe
+if errorlevel 1 goto :fail
 echo === ALL_DONE ===
 exit /b 0
 

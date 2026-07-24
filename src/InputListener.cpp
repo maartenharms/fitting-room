@@ -150,19 +150,22 @@ namespace OS {
     void InputListener::CycleOutfit() {
         auto&       session = OutfitSession::GetSingleton();
         std::string name;
+        bool        changed = false;
         session.WithLibrary([&](OutfitLibrary& lib) {
             const auto count = lib.Count();
             if (count == 0) {
                 return;
             }
-            const auto next = static_cast<std::size_t>(
-                (lib.ActiveIndex() + 1) % static_cast<int>(count));
-            lib.Activate(next);
-            if (const auto* o = lib.At(next)) {
+            const int before = lib.ActiveIndex();
+            const int next   = lib.CycleIncludingEquipped(true);
+            changed          = next != before;
+            if (next < 0) {
+                name = "Equipped gear";
+            } else if (const auto* o = lib.At(static_cast<std::size_t>(next))) {
                 name = o->name;
             }
         });
-        if (!name.empty()) {
+        if (changed && !name.empty()) {
             OutfitSession::RequestRefresh();
             RE::DebugNotification(("Outfit: " + name).c_str());
             spdlog::info("quick-switch: '{}' activated.", name);

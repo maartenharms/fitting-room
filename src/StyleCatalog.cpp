@@ -178,8 +178,8 @@ namespace OS {
                 continue;  // the naked body is not a style
             }
             const auto mask = static_cast<std::uint32_t>(armo->GetSlotMask());
-            if (mask == 0 || (mask & ~kNeverTouchMask) == 0) {
-                if (dhit) diagFate(armo, name, "DROP: no usable slot (none/shield-only)");
+            if (mask == 0 || (mask & ~kNeverStyleMask) == 0) {
+                if (dhit) diagFate(armo, name, "DROP: no styleable slot");
                 continue;
             }
             // A style must be able to RENDER on some possible player: at

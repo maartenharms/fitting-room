@@ -7,6 +7,10 @@ namespace OS {
 
     // Runtime settings, INI-persisted (Data/SKSE/Plugins/FittingRoom.ini).
     struct Settings {
+        static constexpr float kUiScaleMin     = 0.4f;
+        static constexpr float kUiScaleMax     = 1.2f;
+        static constexpr float kUiScaleDefault = 0.8f;
+
         static Settings& GetSingleton();
 
         void Load();  // kDataLoaded
@@ -36,7 +40,7 @@ namespace OS {
         std::uint32_t goldPerSlot{ 100 };    // [Lore] iGoldPerSlot
         std::uint32_t slotBlocklist{ 0 };    // [Advanced] uSlotBlocklist
         float         menuFontSize{ 26.0f }; // [UI] fFontSize (px)
-        float         uiScale{ 0.9f };        // [UI] fUiScale - editor table-text scale (0.8-1.6), default denser (user)
+        float         uiScale{ kUiScaleDefault };  // [UI] fUiScale - complete editor scale
         bool          hoverPreview{ true };   // [UI] bHoverPreview - preview styles on hover
         bool          advancedSlots{ false }; // [UI] bAdvancedSlots - editor shows ALL slots
         bool          lockLayout{ true };     // [UI] bLockLayout - lock window pos/size/chrome (gear unlocks)

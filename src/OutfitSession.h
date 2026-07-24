@@ -46,8 +46,8 @@ namespace OS {
     // unchanged - it still never resolves, only reads resolved pointers.
 
     // One resolved style piece: the editor bit it occupies and its live ARMO.
-    // The bit is retained so the hook can apply the §3 worn-required rule
-    // (NpcResolve::WornRequiredDisplay) per rebuild without re-deriving it.
+    // The bit is retained so the hook can filter it against the display mask
+    // without re-resolving the form.
     struct ResolvedNpcStyle {
         std::uint32_t      bit{ 0 };
         RE::TESObjectARMO* armo{ nullptr };
@@ -65,12 +65,13 @@ namespace OS {
     // The complete resolved look for one base NPC.
     struct ResolvedNpcDisplay {
         // The outfit's full DisplaySet (blocklist already applied). The hook
-        // narrows this to the actor's REAL worn coverage per rebuild via
-        // NpcResolve::WornRequiredDisplay - the snapshot stores the unmasked
-        // set because worn coverage is only known at rebuild time.
+        // limits HIDE to the actor's real worn coverage per rebuild via
+        // NpcResolve::WornRequiredDisplay. Styles remain visual choices and
+        // may fill an otherwise unworn slot, as on the player.
         DisplaySet                                       display;
         std::vector<ResolvedNpcStyle>                    styles;   // style bits only, bit order
-        std::array<ResolvedNpcWeapon, kWeaponClassCount> weapons{};
+        std::array<std::array<ResolvedNpcWeapon, kWeaponHandCount>,
+                   kWeaponClassCount> weapons{};
     };
 
     // baseFormID -> resolved look. Immutable once published.
@@ -88,6 +89,35 @@ namespace OS {
         [[nodiscard]] bool       IsActive() const;
         [[nodiscard]] DisplaySet Display() const;
 
+        // The body settings the current display implies (OBody).
+        //
+        // ⚠ SAME STAGED-ELSE-ACTIVE RULE AS Display() ABOVE, and for the same
+        // reason: "a live preview is not a second mechanism". Reading the
+        // library's ACTIVE outfit instead is what made a body preset apply
+        // only on Apply while every style previewed instantly - the staged
+        // outfit is the one being shown, so it is the one the body must follow.
+        struct BodyDisplay {
+            std::string preset;                            // empty == revert to baseline
+            ORefitMode  orefit{ ORefitMode::kDefault };
+            std::uint32_t torsoStyleMask{ 0 };             // for transmog-aware Auto
+            std::uint32_t torsoHideMask{ 0 };
+            bool        drives{ false };                   // false == do not touch the body
+            bool        restoreBaseline{ false };          // Equipped: undo a prior preview
+        };
+        [[nodiscard]] BodyDisplay DisplayBody() const;
+
+        struct NpcBodyDisplay : BodyDisplay {
+            NpcKey      key;
+            std::string baseline;
+            bool        baselineCaptured{ false };
+        };
+
+        // Actor-scoped body state for the NPC refresh task. Equipped gear with
+        // a captured baseline still drives one restoration; otherwise an
+        // inactive library merely releases ORefit enforcement.
+        [[nodiscard]] NpcBodyDisplay DisplayBodyForNpc(RE::Actor* a_actor) const;
+        void CaptureNpcBodyBaseline(const NpcKey& a_key, std::string a_preset);
+
         // Calls a_fn(bit, ARMO*) for each styled slot, resolved to live forms.
         void VisitStyles(const std::function<void(std::uint32_t, RE::TESObjectARMO*)>& a_fn) const;
 
@@ -104,7 +134,8 @@ namespace OS {
         // A kStyle whose plugin is gone resolves to nothing and is reported as
         // kPassthrough - the shipped inert-style policy: a missing style shows
         // the real weapon, it never blanks it.
-        [[nodiscard]] WeaponDisplayEntry WeaponDisplayFor(WeaponClass a_class) const;
+        [[nodiscard]] WeaponDisplayEntry WeaponDisplayFor(
+            WeaponClass a_class, WeaponHand a_hand = WeaponHand::Both) const;
 
         // Hook fast path: false = no weapon class is styled or hidden, so the
         // caller can skip WeaponDisplayFor (and its lock) entirely. The contract
@@ -150,7 +181,8 @@ namespace OS {
         // live editor preview on a follower). UpdateStaging/CommitStaging/
         // DiscardStaging all honor whichever target BeginStaging set.
         void BeginStaging(const Outfit& a_from);                     // player (default target)
-        void BeginStaging(RE::ActorHandle a_target, const Outfit& a_from);
+        void BeginStaging(RE::ActorHandle a_target, const Outfit& a_from,
+                          const Outfit& a_playerPreview);
         void UpdateStaging(const Outfit& a_next);
         void CommitStaging();   // player: staged -> active outfit; NPC: upsert into the base's library
         void DiscardStaging();
@@ -160,6 +192,13 @@ namespace OS {
         // handle for the player path; an NPC's handle otherwise. Editor reads
         // this to route Apply / footer text.
         [[nodiscard]] std::optional<RE::ActorHandle> StagingTarget() const;
+
+        // Preset browsing and follower mannequins transiently hide weapon,
+        // shield and quiver render objects that would otherwise show unrelated
+        // real equipment through the preview. Never persisted.
+        void SetPresetPreviewSuppression(bool a_enabled);
+        [[nodiscard]] std::uint64_t PreviewEquipmentSuppressionMask(
+            RE::Actor* a_actor) const;
 
         // ---- Actor dimension (NPC/follower assignments) --------------------
         // Mutation side: an OWN mutex-protected map, keyed by base NPC identity.
@@ -243,6 +282,10 @@ namespace OS {
         // next natural rebuild on reload catches up regardless.
         static void RequestRefreshActor(RE::ActorHandle a_actor);
 
+        // Reapply loaded follower appearance/body state after an external API
+        // readiness cycle (notably OBody going unready around saves).
+        static void RequestRefreshLoadedNpcs();
+
     private:
         OutfitSession() = default;
         [[nodiscard]] const Outfit* EffectiveLocked() const;
@@ -267,17 +310,20 @@ namespace OS {
         std::optional<Outfit> staged_;
         std::uint32_t         blocklist_{ 0 };
         bool                  suspended_{ false };
+        bool                  presetPreviewSuppression_{ false };
         std::atomic<bool>     anyWeaponStyling_{ false };  // see AnyWeaponStyling()
 
         // Staging target. When stagedForPlayer_ is true, staged_ drives the
-        // player channel (EffectiveLocked / weapon fast-path) exactly as
-        // before; when false, staged_ overrides ONLY the NPC base identified by
-        // stagedNpcKey_ / stagedBaseFormID_ in the render snapshot and never
-        // touches the player. All meaningful only while staged_ has a value.
+        // player channel exactly as before. When false, staged_ overrides the
+        // NPC snapshot while playerMannequin_ transiently drives the player
+        // viewport with the same styles over a naked visual baseline. The
+        // mannequin is never inserted into either library.
         bool                  stagedForPlayer_{ true };
         RE::ActorHandle       stagedTarget_;          // player handle for the player path
         std::optional<NpcKey> stagedNpcKey_;          // set iff staging an NPC (for CommitStaging upsert)
         std::uint32_t         stagedBaseFormID_{ 0 };  // resolved base formID of an NPC target (0 = player/none)
+        std::optional<Outfit> playerMannequinBase_;    // captured follower gear under mutable edits
+        std::optional<Outfit> playerMannequin_;       // render-only; never persisted
 
         // Actor dimension. npcAssignments_ is the mutation-side source of truth
         // (per-save co-save state); suspendedActors_ holds BASE formIDs stood

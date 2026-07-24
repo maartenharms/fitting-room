@@ -35,6 +35,7 @@ namespace OS {
 
     void PresetStore::Load() {
         std::vector<JsonCodec::Preset> loaded;
+        std::vector<JsonCodec::Preset> exported;
         std::size_t                    skipped = 0;
 
         auto* dh = RE::TESDataHandler::GetSingleton();
@@ -103,19 +104,73 @@ namespace OS {
             }
         }
 
+        // User exports are a separate, editable source. Keep entries visible
+        // even if a required plugin has since been removed: missing styles are
+        // already inert, and the user must still be able to delete the file.
+        ec.clear();
+        if (std::filesystem::exists(kExportsDir, ec)) {
+            std::vector<std::filesystem::path> files;
+            for (const auto& entry : std::filesystem::directory_iterator(kExportsDir, ec)) {
+                if (entry.is_regular_file(ec) &&
+                    Lower(entry.path().extension().string()) == ".json") {
+                    files.push_back(entry.path());
+                }
+            }
+            std::ranges::sort(files);
+
+            for (const auto& path : files) {
+                const auto file = path.filename().string();
+                if (const auto size = std::filesystem::file_size(path, ec);
+                    !ec && size > kMaxPresetBytes) {
+                    spdlog::warn("PresetStore: SKIP exported '{}': {} bytes (cap {}).",
+                                 file, size, kMaxPresetBytes);
+                    ++skipped;
+                    continue;
+                }
+
+                std::ifstream in(path);
+                Json::Value   root;
+                Json::CharReaderBuilder rb;
+                std::string             errs;
+                if (!in || !Json::parseFromStream(rb, in, &root, &errs)) {
+                    spdlog::warn("PresetStore: SKIP exported '{}': not valid JSON ({}).",
+                                 file, errs.empty() ? "open failed" : errs);
+                    ++skipped;
+                    continue;
+                }
+
+                JsonCodec::Preset preset;
+                std::string       why;
+                if (!JsonCodec::ParsePreset(root, preset, why)) {
+                    spdlog::warn("PresetStore: SKIP exported '{}': {}.", file, why);
+                    ++skipped;
+                    continue;
+                }
+                preset.file = file;
+                if (preset.author.empty()) {
+                    preset.author = "My exports";
+                }
+                exported.push_back(std::move(preset));
+            }
+        }
+
         std::ranges::sort(loaded, [](const auto& a, const auto& b) {
             if (a.author != b.author) {
                 return CILess(a.author, b.author);
             }
             return CILess(a.name, b.name);
         });
+        std::ranges::sort(exported, [](const auto& a, const auto& b) {
+            return CILess(a.name, b.name);
+        });
 
         {
             std::scoped_lock l(lock_);
             presets_ = std::move(loaded);
+            exports_ = std::move(exported);
         }
-        spdlog::info("PresetStore: {} showcase preset(s) loaded, {} skipped.",
-                     Count(), skipped);
+        spdlog::info("PresetStore: {} preset(s) loaded across Curated and Exported, "
+                     "{} skipped.", Count(), skipped);
     }
 
     std::vector<JsonCodec::Preset> PresetStore::Snapshot() const {
@@ -123,9 +178,14 @@ namespace OS {
         return presets_;
     }
 
+    std::vector<JsonCodec::Preset> PresetStore::SnapshotExports() const {
+        std::scoped_lock l(lock_);
+        return exports_;
+    }
+
     std::size_t PresetStore::Count() const {
         std::scoped_lock l(lock_);
-        return presets_.size();
+        return presets_.size() + exports_.size();
     }
 
     void PresetStore::RequestRescan() {
@@ -142,14 +202,18 @@ namespace OS {
             "dragonborn.esm",
         };
         std::vector<std::string> requires_;
-        a_outfit.ForEachStyle([&](std::uint32_t, const StyleRefKey& a_key) {
+        const auto addRequirement = [&](const StyleRefKey& a_key) {
             if (a_key.modName.empty() || kVanilla.contains(Lower(a_key.modName))) {
                 return;
             }
             if (std::ranges::find(requires_, a_key.modName) == requires_.end()) {
                 requires_.push_back(a_key.modName);
             }
-        });
+        };
+        a_outfit.ForEachStyle(
+            [&](std::uint32_t, const StyleRefKey& a_key) { addRequirement(a_key); });
+        a_outfit.ForEachWeaponStyle(
+            [&](WeaponClass, const StyleRefKey& a_key) { addRequirement(a_key); });
 
         const auto root = JsonCodec::PresetToJson(a_outfit, "", "", requires_);
 
@@ -178,6 +242,25 @@ namespace OS {
         out << Json::writeString(wb, root);
         spdlog::info("PresetStore: exported '{}' -> {}.", a_outfit.name, path);
         return path;
+    }
+
+    bool PresetStore::DeleteExport(std::string_view a_file) {
+        const std::filesystem::path file{ a_file };
+        if (file.empty() || file != file.filename() ||
+            Lower(file.extension().string()) != ".json") {
+            spdlog::warn("PresetStore: rejected unsafe export delete '{}'.", a_file);
+            return false;
+        }
+        const auto path = std::filesystem::path{ kExportsDir } / file;
+        std::error_code ec;
+        const bool removed = std::filesystem::remove(path, ec);
+        if (!removed || ec) {
+            spdlog::error("PresetStore: cannot delete export '{}' ({}).",
+                          path.string(), ec ? ec.message() : "file not found");
+            return false;
+        }
+        spdlog::info("PresetStore: deleted exported preset '{}'.", path.string());
+        return true;
     }
 
 }  // namespace OS

@@ -118,6 +118,23 @@ int main() {
         CHECK(out.ActiveIndex() == -1);
     }
 
+    {  // the full ten-slot player library survives a co-save round-trip,
+       // including its highest valid active index
+        OutfitLibrary lib;
+        for (std::size_t i = 0; i < kMaxOutfits; ++i) {
+            CHECK(lib.Create("Saved outfit") == static_cast<int>(i));
+        }
+        CHECK(lib.Count() == 10);
+        lib.Activate(kMaxOutfits - 1);
+        CHECK(lib.ActiveIndex() == 9);
+
+        OutfitLibrary out;
+        CHECK(Decode(Encode(lib), kCodecVersion, out));
+        CHECK(out.Count() == 10);
+        CHECK(out.ActiveIndex() == 9);
+        CHECK(out.Create("overflow") == -1);
+    }
+
     {  // a future version is refused, and the target is left untouched
         OutfitLibrary lib;
         lib.Create("keep me");
@@ -280,6 +297,57 @@ int main() {
                 CHECK(o0->WeaponEntryFor(static_cast<WeaponClass>(c)).kind ==
                       SlotEntry::Kind::kPassthrough);
             }
+            // v1 never had a body block either - it must read back as the
+            // "changes nothing" default, not as garbage.
+            CHECK(o0->obodyPreset.empty());
+            CHECK(o0->orefit == ORefitMode::kDefault);
+        }
+    }
+
+    {  // v4 round-trip: same-class hand overrides preserve style, explicit
+       // real-weapon passthrough, and absent/inherit as distinct states.
+        OutfitLibrary lib;
+        lib.Create("Twin Blades");
+        auto* o = lib.At(0);
+        o->SetWeaponStyle(WeaponClass::Sword, { "Both.esp", 1 });
+        o->SetWeaponStyle(WeaponClass::Sword, { "Right.esp", 2 },
+                          WeaponHand::Right);
+        o->SetWeaponPassthrough(WeaponClass::Sword, WeaponHand::Left);
+
+        OutfitLibrary out;
+        CHECK(Decode(Encode(lib), kCodecVersion, out));
+        const auto* restored = out.At(0);
+        CHECK(restored != nullptr);
+        if (restored) {
+            CHECK(restored->ResolvedWeaponEntryFor(
+                      WeaponClass::Sword, WeaponHand::Right).style.modName ==
+                  "Right.esp");
+            CHECK(restored->WeaponOverrideFor(
+                      WeaponClass::Sword, WeaponHand::Left).has_value());
+            CHECK(restored->ResolvedWeaponEntryFor(
+                      WeaponClass::Sword, WeaponHand::Left).kind ==
+                  SlotEntry::Kind::kPassthrough);
+            CHECK(!restored->WeaponOverrideFor(
+                WeaponClass::Dagger, WeaponHand::Right));
+        }
+    }
+
+    {  // hidden style survives follower co-save round-trip and can be shown again
+        OutfitLibrary lib;
+        const int idx = lib.Create("Covered");
+        lib.At(idx)->SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
+        ToggleHideSlot(*lib.At(idx), kBitBody);
+
+        OutfitLibrary out;
+        CHECK(Decode(Encode(lib), kCodecVersion, out));
+        auto* restored = out.At(0);
+        CHECK(restored != nullptr);
+        if (restored) {
+            CHECK(restored->EntryFor(kBitBody).kind == SlotEntry::Kind::kHide);
+            ToggleHideSlot(*restored, kBitBody);
+            CHECK(restored->EntryFor(kBitBody).kind == SlotEntry::Kind::kStyle);
+            CHECK(restored->EntryFor(kBitBody).style ==
+                  (StyleRefKey{ "Armors.esp", 0x801 }));
         }
     }
 
@@ -333,6 +401,12 @@ int main() {
         buf.push_back(std::byte{ 'Y' });
         PutLE32(buf, 7);                     // formID
 
+        // v3 body block - this buffer is decoded AS the current version, so it
+        // must carry every block that version defines.
+        PutLE32(buf, 0);                     // empty preset name
+        buf.push_back(std::byte{ 0 });       // ORefitMode::kDefault
+        PutLE32(buf, 0);                     // no per-hand overrides (v4)
+
         OutfitLibrary out;
         CHECK(Decode(buf, kCodecVersion, out));
         CHECK(out.Count() == 1);
@@ -370,6 +444,11 @@ int main() {
         PutStrV1(buf, "");
         PutLE32(buf, 0);
 
+        // v3 body block - see the note in the preceding case.
+        PutLE32(buf, 0);                     // empty preset name
+        buf.push_back(std::byte{ 0 });       // ORefitMode::kDefault
+        PutLE32(buf, 0);                     // no per-hand overrides (v4)
+
         OutfitLibrary out;
         CHECK(Decode(buf, kCodecVersion, out));
         CHECK(out.Count() == 1);
@@ -381,10 +460,15 @@ int main() {
         }
     }
 
-    {  // v2 is a pure suffix extension of v1: for an armor-only library the
-       // v2 bytes are exactly the v1 bytes with one zero weapon-count u32
-       // (four zero bytes) inserted after EACH outfit's slot block. Pins the
-       // wire layout itself, not just the round-trip behavior.
+    {  // v4 is a pure suffix extension of v1: for an armor-only library with
+       // no body settings, the v4 bytes are exactly the v1 bytes with, after
+       // EACH outfit's slot block, a zero weapon-count u32 (v2) followed by an
+       // empty preset string (a zero u32 length) and a zero ORefit mode byte
+       // (v3), followed by a zero hand-override count (v4). Pins the wire
+       // layout itself, not just the round-trip behavior.
+       //
+       // This is what makes "old saves keep loading" a property of the FORMAT
+       // rather than a hope: every version's bytes are a prefix of the next.
         OutfitLibrary lib;
         lib.Create("Alpha");
         lib.At(0)->SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
@@ -402,12 +486,58 @@ int main() {
         const auto alphaEnd =
             static_cast<std::ptrdiff_t>(8 + (EncodeV1(onlyAlpha).size() - 8));
 
+        const auto appendEmptyTail = [](std::vector<std::byte>& a_out) {
+            PutLE32(a_out, 0);  // empty weapon block (v2)
+            PutLE32(a_out, 0);  // empty preset string, length 0 (v3)
+            a_out.push_back(std::byte{ 0 });  // ORefitMode::kDefault (v3)
+            PutLE32(a_out, 0);  // no per-hand overrides (v4)
+        };
+
         std::vector<std::byte> expected(v1.begin(), v1.begin() + alphaEnd);
-        PutLE32(expected, 0);  // Alpha's empty weapon block
+        appendEmptyTail(expected);  // Alpha
         expected.insert(expected.end(), v1.begin() + alphaEnd, v1.end());
-        PutLE32(expected, 0);  // Beta's empty weapon block
+        appendEmptyTail(expected);  // Beta
 
         CHECK(Encode(lib) == expected);
+    }
+
+    {  // v3 round-trip: body settings survive Encode/Decode, and a v2-shaped
+       // record (the same bytes with the 5-byte body tail removed) still
+       // decodes - which is the actual guarantee a player upgrading from
+       // 0.2.1 depends on.
+        OutfitLibrary lib;
+        const int a = lib.Create("Gown");
+        lib.At(a)->obodyPreset = "Curvy Preset";
+        lib.At(a)->orefit      = ORefitMode::kForceOff;
+        lib.Activate(static_cast<std::size_t>(a));
+
+        OutfitLibrary out;
+        CHECK(Decode(Encode(lib), kCodecVersion, out));
+        CHECK(out.At(0) != nullptr);
+        if (out.At(0)) {
+            CHECK(out.At(0)->obodyPreset == "Curvy Preset");
+            CHECK(out.At(0)->orefit == ORefitMode::kForceOff);
+        }
+
+        // Same library with default body settings: remove the v4 count, then
+        // the 5-byte body block to obtain exactly a v2 writer's bytes.
+        OutfitLibrary plain;
+        plain.Create("Gown");
+        plain.Activate(0);
+        auto v2 = Encode(plain);
+        CHECK(v2.size() > 9);
+        v2.resize(v2.size() - 4);  // drop v4 hand-override count
+        v2.resize(v2.size() - 5);  // drop v3 body block
+
+        OutfitLibrary fromV2;
+        CHECK(Decode(v2, 2, fromV2));
+        CHECK(fromV2.Count() == 1);
+        CHECK(fromV2.At(0) != nullptr);
+        if (fromV2.At(0)) {
+            CHECK(fromV2.At(0)->name == "Gown");
+            CHECK(fromV2.At(0)->obodyPreset.empty());
+            CHECK(fromV2.At(0)->orefit == ORefitMode::kDefault);
+        }
     }
 
     {  // NpcKey equality + NpcKeyHash usable in an unordered_map: same
@@ -442,6 +572,8 @@ int main() {
         guardLib.At(gi)->SetHide(kBitHair);
         guardLib.Activate(static_cast<std::size_t>(gi));
         map[NpcKey{ "Skyrim.esm", 0x13472 }] = NpcRecord{ std::move(guardLib) };
+        map[NpcKey{ "Skyrim.esm", 0x13472 }].obodyBaseline = "CBBE Athletic";
+        map[NpcKey{ "Skyrim.esm", 0x13472 }].obodyBaselineCaptured = true;
 
         OutfitLibrary lydiaLib;
         const int l1 = lydiaLib.Create("Travel Gear");
@@ -463,6 +595,8 @@ int main() {
             const auto& lib = itGuard->second.library;
             CHECK(lib.Count() == 1);
             CHECK(lib.ActiveIndex() == 0);
+            CHECK(itGuard->second.obodyBaseline == "CBBE Athletic");
+            CHECK(itGuard->second.obodyBaselineCaptured);
             auto* o0 = lib.At(0);
             CHECK(o0 != nullptr);
             if (o0) {
@@ -489,6 +623,101 @@ int main() {
                 CHECK(o1->name == "Formal");
                 CHECK(o1->EntryFor(kBitBody).kind == SlotEntry::Kind::kHide);
             }
+        }
+    }
+
+    {  // v1 NPC records remain readable; they predate follower OBody baselines.
+        OutfitLibrary lib;
+        lib.Create("Legacy");
+        auto innerV2 = Encode(lib);
+        innerV2.resize(innerV2.size() - 9);  // remove v4 hands + v3 body
+
+        std::vector<std::byte> bytes;
+        PutLE32(bytes, 1);
+        PutStrV1(bytes, "Skyrim.esm");
+        PutLE32(bytes, 0xA2C94);
+        PutLE32(bytes, static_cast<std::uint32_t>(innerV2.size()));
+        bytes.insert(bytes.end(), innerV2.begin(), innerV2.end());
+
+        NpcAssignmentMap out;
+        CHECK(DecodeNpcAssignments(bytes, 1, out));
+        const auto it = out.find(NpcKey{ "Skyrim.esm", 0xA2C94 });
+        CHECK(it != out.end());
+        if (it != out.end()) {
+            CHECK(!it->second.obodyBaselineCaptured);
+            CHECK(it->second.obodyBaseline.empty());
+        }
+    }
+
+    {  // v2 NPC records map to the v3 inner library and keep their appended
+       // follower OBody baseline while v4 hand fields remain absent.
+        OutfitLibrary lib;
+        lib.Create("Legacy Body");
+        lib.At(0)->obodyPreset = "Preset A";
+        auto innerV3 = Encode(lib);
+        innerV3.resize(innerV3.size() - 4);  // remove v4 hand count only
+
+        std::vector<std::byte> bytes;
+        PutLE32(bytes, 1);
+        PutStrV1(bytes, "Skyrim.esm");
+        PutLE32(bytes, 0xA2C94);
+        PutLE32(bytes, static_cast<std::uint32_t>(innerV3.size()));
+        bytes.insert(bytes.end(), innerV3.begin(), innerV3.end());
+        PutLE32(bytes, 1);  // baseline captured
+        PutStrV1(bytes, "Baseline");
+
+        NpcAssignmentMap out;
+        CHECK(DecodeNpcAssignments(bytes, 2, out));
+        const auto it = out.find(NpcKey{ "Skyrim.esm", 0xA2C94 });
+        CHECK(it != out.end());
+        if (it != out.end()) {
+            CHECK(it->second.library.At(0)->obodyPreset == "Preset A");
+            CHECK(it->second.obodyBaselineCaptured);
+            CHECK(it->second.obodyBaseline == "Baseline");
+            CHECK(!it->second.library.At(0)->WeaponOverrideFor(
+                WeaponClass::Sword, WeaponHand::Right));
+        }
+    }
+
+    {  // a follower may persist with zero saved outfits: Equipped gear is the
+       // immutable baseline, and the empty inline library survives the co-save
+       // round-trip without silently recreating "Outfit 1".
+        NpcAssignmentMap map;
+        map[NpcKey{ "Skyrim.esm", 0xA2C94 }] = NpcRecord{};
+
+        NpcAssignmentMap out;
+        CHECK(DecodeNpcAssignments(EncodeNpcAssignments(map),
+                                   kNpcRecordVersion, out));
+        const auto it = out.find(NpcKey{ "Skyrim.esm", 0xA2C94 });
+        CHECK(it != out.end());
+        if (it != out.end()) {
+            CHECK(it->second.library.Count() == 0);
+            CHECK(it->second.library.ActiveIndex() == -1);
+        }
+    }
+
+    {  // follower libraries use the same ten-slot cap and keep outfit ten
+       // active across the outer NPC-assignment codec
+        OutfitLibrary lib;
+        for (std::size_t i = 0; i < kMaxOutfits; ++i) {
+            CHECK(lib.Create("Follower outfit") == static_cast<int>(i));
+        }
+        lib.Activate(kMaxOutfits - 1);
+        CHECK(lib.ActiveIndex() == 9);
+
+        NpcAssignmentMap map;
+        map[NpcKey{ "Skyrim.esm", 0xA2C94 }] =
+            NpcRecord{ std::move(lib) };
+
+        NpcAssignmentMap out;
+        CHECK(DecodeNpcAssignments(EncodeNpcAssignments(map),
+                                   kNpcRecordVersion, out));
+        const auto it = out.find(NpcKey{ "Skyrim.esm", 0xA2C94 });
+        CHECK(it != out.end());
+        if (it != out.end()) {
+            CHECK(it->second.library.Count() == 10);
+            CHECK(it->second.library.ActiveIndex() == 9);
+            CHECK(it->second.library.Create("overflow") == -1);
         }
     }
 
@@ -537,16 +766,22 @@ int main() {
         PutLE32(buf, 0x111);
         PutLE32(buf, static_cast<std::uint32_t>(innerA.size()));
         buf.insert(buf.end(), innerA.begin(), innerA.end());
+        PutLE32(buf, 0);  // v2 follower OBody baseline not captured
+        PutStrV1(buf, "");
 
         PutStrV1(buf, "Broken.esp");
         PutLE32(buf, 0x222);
         PutLE32(buf, static_cast<std::uint32_t>(corruptInner.size()));
         buf.insert(buf.end(), corruptInner.begin(), corruptInner.end());
+        PutLE32(buf, 0);
+        PutStrV1(buf, "");
 
         PutStrV1(buf, "Skyrim.esm");
         PutLE32(buf, 0x333);
         PutLE32(buf, static_cast<std::uint32_t>(innerC.size()));
         buf.insert(buf.end(), innerC.begin(), innerC.end());
+        PutLE32(buf, 0);
+        PutStrV1(buf, "");
 
         NpcAssignmentMap out;
         CHECK(DecodeNpcAssignments(buf, kNpcRecordVersion, out));

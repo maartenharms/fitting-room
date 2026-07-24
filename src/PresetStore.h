@@ -6,6 +6,7 @@
 
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace OS {
@@ -25,6 +26,7 @@ namespace OS {
 
         // Consistent copy for the render thread (editor draw loop).
         [[nodiscard]] std::vector<JsonCodec::Preset> Snapshot() const;
+        [[nodiscard]] std::vector<JsonCodec::Preset> SnapshotExports() const;
         [[nodiscard]] std::size_t                    Count() const;
 
         // Re-run Load() on the main thread - the authoring loop: drop a file
@@ -38,11 +40,16 @@ namespace OS {
         // reference). Returns the path, or empty on failure (logged).
         [[nodiscard]] static std::string ExportOutfit(const Outfit& a_outfit);
 
+        // Remove one user-created preset. The argument must be a plain .json
+        // filename from SnapshotExports; paths and curated files are rejected.
+        [[nodiscard]] static bool DeleteExport(std::string_view a_file);
+
     private:
         PresetStore() = default;
 
         mutable std::mutex             lock_;
         std::vector<JsonCodec::Preset> presets_;
+        std::vector<JsonCodec::Preset> exports_;
     };
 
 }  // namespace OS

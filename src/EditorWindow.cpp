@@ -211,8 +211,9 @@ namespace {
             // Kept button-held for the NO-SAM case, where the tightening still earns
             // its keep (hover-gated passthrough there hid the cursor over the character
             // and leaked Esc to the inventory) and where we drive the camera ourselves
-            // anyway. COST under SAM: Esc reaches the game while hovering. Accepted -
-            // the camera is the point, and Draw still handles its own Esc close.
+            // anyway. Under SAM, Esc reaches the game while hovering. SAM's
+            // MenuOpenCloseEvent sink closes this hosted editor if SAM consumes
+            // that Escape first, so the two windows cannot become detached.
             const bool overUI      = cursorOverUI_.load(std::memory_order_relaxed);
             const bool mouseRotate = !overUI && (FUCK::IsMouseDown(0) || FUCK::IsMouseDown(1));
             const bool samCamera   = !overUI && openedFromSam_.load(std::memory_order_relaxed);
@@ -225,16 +226,13 @@ namespace {
         ImVec2 GetDefaultSize() const override {
             const ImVec2 d = FUCK::GetDisplaySize();
             const float  w = std::clamp(d.x * 0.60f, 840.0f, 1230.0f);
-            // Full display height so the panel sits flush to the top AND bottom edges
-            // (user: the old 24px inset left top/left padding while the footer was still
-            // very slightly clipped - go flush, or at least symmetric). FUCK's own window
-            // padding still insets the content, so top and bottom read as an equal small
-            // margin, and the extra height clears the footer clip.
+            // Full display height keeps the host frame itself outside the visible
+            // edge. EditorUI reserves its own bottom breathing room, so footer
+            // controls no longer rely on exposing that harsh outer border.
             const float h = d.y > 96.0f ? d.y : 720.0f;
             return ImVec2(w, h);
         }
-        // Flush to the top-left corner (user): remove the top/left inset; FUCK's window
-        // padding provides the small consistent margin. Pairs with the full-height size.
+        // Flush to the display edge. The content has its own internal padding.
         //
         // OS-80e: under SAM, anchor RIGHT instead. SAM's own UI lives on the right and
         // we alpha-hide it - but HIDDEN IS NOT GONE. Its region still hit-tests, so it

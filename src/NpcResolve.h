@@ -11,9 +11,8 @@
 // unit-tested without RE:: types (see tests/test_npcsession.cpp).
 //
 // Three decisions live here:
-//   1. WornRequiredDisplay - the spec §3 "worn-required rule": an NPC style
-//      renders per-slot ONLY where the actor really wears something. The hook
-//      applies this per biped rebuild against the actor's real worn coverage.
+//   1. WornRequiredDisplay - NPC styles are visual and may fill an otherwise
+//      unworn slot, matching the player. Hides remain limited to real gear.
 //   2. SelectNpcSource - which outfit source a given assigned base resolves
 //      to at snapshot BUILD time (suspension / staged-target override /
 //      assigned-active), mirroring the player's EffectiveLocked precedence.
@@ -22,12 +21,11 @@
 //      styleable humanoid biped (werewolf, vampire lord).
 namespace OS::NpcResolve {
 
-    // §3 worn-required rule. Mask a resolved DisplaySet down to the slots the
-    // actor really wears something in this rebuild - a style bit with no worn
-    // coverage is dropped, and hide bits likewise only act on worn gear. The
-    // derived body/attachment/headpart submasks are RE-derived from the masked
-    // hideMask exactly as ComputeDisplaySet builds them, so downstream code
-    // (skin re-apply, node cull, the mask shim) sees a self-consistent set.
+    // Styles are appearance choices, so they remain intact even if the actor
+    // has no gameplay item in that slot (notably, a follower may wear a styled
+    // helmet without first equipping a real helmet). Hide is different: it can
+    // only remove real worn gear, so it is intersected with worn coverage. The
+    // derived hide submasks are rebuilt from that intersection.
     // Armor path only: weapons/quiver are inherently worn-keyed by the funnel
     // and are never routed through here.
     //
@@ -36,7 +34,7 @@ namespace OS::NpcResolve {
     [[nodiscard]] inline DisplaySet WornRequiredDisplay(DisplaySet     a_in,
                                                         std::uint32_t  a_wornCoverageMask) {
         DisplaySet out;
-        out.styleMask = a_in.styleMask & a_wornCoverageMask;
+        out.styleMask = a_in.styleMask;
         out.hideMask  = a_in.hideMask & a_wornCoverageMask;
 
         // Re-derive from the MASKED hideMask, identical to ComputeDisplaySet -

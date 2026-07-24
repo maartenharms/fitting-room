@@ -36,7 +36,9 @@ namespace OS {
 
         // ---- the part-3D loader (SE 15526 / AE 15703) ----
         //
-        // Weapons and ammo stage into BipedAnim::objects[32..41]: the stager
+        // Main-hand weapons and ammo stage into BipedAnim::objects[32..41].
+        // Off-hand weapons use the actor race's shield/editor biped slot
+        // instead. The stager
         // (SE 15505, re_verify/wpn_batch2_stagers.c:39-40) writes .item = the
         // form and .part = the form's TESModelTextureSwap. But the 3D only
         // materializes through ONE funnel, this loader: it GetModel()s .part,
@@ -267,8 +269,8 @@ namespace OS {
                         // single `if (session.AnyWeaponStyling())` gate this
                         // branch lived under before Task 4.
                         if (anyPlayerStyling && a_biped && a_biped->get() &&
-                            a_slot >= static_cast<std::int32_t>(RE::BIPED_OBJECTS::kHandToHandMelee) &&
-                            a_slot <= static_cast<std::int32_t>(RE::BIPED_OBJECTS::kQuiver)) {
+                            a_slot >= 0 &&
+                            IsWeaponOrQuiverBipedSlot(static_cast<std::uint32_t>(a_slot))) {
                             auto* const biped = a_biped->get();
                             // The REAL form - read, never written. This is the
                             // pointer that keeps armor XP, equip-conflict and AI
@@ -282,7 +284,10 @@ namespace OS {
                                 // tripwire. PLAYER-SCOPED - see g_playerWeaponParts.
                                 g_playerWeaponParts.fetch_add(1, std::memory_order_relaxed);
 
-                                const auto entry = session.WeaponDisplayFor(*cls);
+                                const auto hand = HandForBipedSlot(
+                                    *cls, static_cast<std::uint32_t>(a_slot));
+                                const auto entry =
+                                    session.WeaponDisplayFor(*cls, hand);
                                 if (entry.kind == SlotEntry::Kind::kHide) {
                                     // Inert in v1 - falls through to the vanilla
                                     // call below and renders the real weapon. See
@@ -305,8 +310,8 @@ namespace OS {
                             }
                         }
                     } else if (a_refr && a_biped && a_biped->get() &&
-                               a_slot >= static_cast<std::int32_t>(RE::BIPED_OBJECTS::kHandToHandMelee) &&
-                               a_slot <= static_cast<std::int32_t>(RE::BIPED_OBJECTS::kQuiver)) {
+                               a_slot >= 0 &&
+                               IsWeaponOrQuiverBipedSlot(static_cast<std::uint32_t>(a_slot))) {
                         // ---- NPC PATH (Task 4) ---------------------------------
                         // LookupAssignedNpc (NpcLookup.h, shared with BipedHooks)
                         // folds in the count/scene gate + the snapshot lookup: a
@@ -339,7 +344,12 @@ namespace OS {
                                 // WeaponDisplayFor - so trust the invariant only
                                 // after checking it, not forever.
                                 if (idx < kWeaponClassCount) {
-                                    const auto& weapon = lk.entry->weapons[idx];
+                                    const auto hand = HandForBipedSlot(
+                                        *cls, static_cast<std::uint32_t>(a_slot));
+                                    const auto handIdx =
+                                        static_cast<std::size_t>(hand);
+                                    const auto& weapon =
+                                        lk.entry->weapons[idx][handIdx];
                                     if (weapon.kind == SlotEntry::Kind::kHide) {
                                         // Inert in v1, same engine facts as the
                                         // player path (NoteHideInert).

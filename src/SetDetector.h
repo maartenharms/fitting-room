@@ -23,6 +23,17 @@ namespace OS::SetDetector {
         StyleRefKey   key;
     };
 
+    // A weapon/ammo catalog entry flattened to engine-free data. Weapons do
+    // not participate in armor clustering. Once a coherent armor set exists,
+    // LinkWeapons attaches only same-plugin, same-stem looks to it.
+    struct DetectWeapon {
+        std::string   name;
+        std::string   source;
+        std::string   edid;
+        WeaponClass   weaponClass{ WeaponClass::Sword };
+        StyleRefKey   key;
+    };
+
     struct Options {
         // A small plugin whose pieces have no usable name/EDID stem is treated
         // as one outfit; a large one is dropped (anti-Frankenstein, §4.3).
@@ -35,6 +46,8 @@ namespace OS::SetDetector {
     struct DetectedSet {
         std::string name;    // human preset name
         std::string source;  // clean plugin name (browser group header)
+        std::string sourcePlugin;  // raw filename, used for exact weapon matching
+        std::string stem;          // normalized set identity, used for weapon matching
         Outfit      outfit;
         bool        fullyFits{ true };  // every representative renders on the player
         int         coverage{ 0 };  // major slots filled (head/body/hands/feet)
@@ -58,6 +71,11 @@ namespace OS::SetDetector {
     [[nodiscard]] std::vector<DetectedSet> Detect(const std::vector<DetectStyle>& a_styles,
                                                   const Options& a_opts,
                                                   Stats* a_stats = nullptr);
+
+    // Attach weapon/ammo styles whose raw plugin and normalized name stem both
+    // match a detected armor set. Every unmatched class remains passthrough.
+    void LinkWeapons(std::vector<DetectedSet>& a_sets,
+                     const std::vector<DetectWeapon>& a_weapons);
 
     // The set identity: display name minus slot-nouns and variant tokens.
     // Exposed for unit tests.

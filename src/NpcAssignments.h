@@ -40,11 +40,16 @@ namespace OS {
 
     struct NpcRecord {
         OutfitLibrary library;
+        // Captured before Fitting Room first assigns an OBody preset to this
+        // follower. Empty is a valid captured value ("no prior assignment"),
+        // so the flag cannot be inferred from the string.
+        std::string obodyBaseline;
+        bool        obodyBaselineCaptured{ false };
     };
 
     using NpcAssignmentMap = std::unordered_map<NpcKey, NpcRecord, NpcKeyHash>;
 
-    inline constexpr std::uint32_t kNpcRecordVersion   = 1;
+    inline constexpr std::uint32_t kNpcRecordVersion   = 3;
     inline constexpr std::uint32_t kMaxNpcAssignments  = 512;  // guard vs corrupt count
 
     // Wire format (the record's own bytes; version is carried alongside by
@@ -52,6 +57,10 @@ namespace OS {
     //   PutU32(count)
     //   per entry: PutStr(modName) PutU32(localFormID) PutU32(innerLen)
     //              <innerLen bytes = OS::Encode(library)>
+    //   v2 appends: PutU32(obodyBaselineCaptured ? 1 : 0)
+    //               PutStr(obodyBaseline)
+    //   v3 keeps that outer shape but declares that innerLen contains LIBR v4
+    //      (per-hand weapon overrides). v1 maps to LIBR v2; v2 maps to LIBR v3.
     // The innerLen prefix lets decode skip a corrupt/unresolvable inner
     // library without losing sync with the outer stream.
     [[nodiscard]] inline std::vector<std::byte> EncodeNpcAssignments(const NpcAssignmentMap& a_map) {
@@ -64,6 +73,8 @@ namespace OS {
             const auto inner = Encode(rec.library);
             PutU32(out, static_cast<std::uint32_t>(inner.size()));
             out.insert(out.end(), inner.begin(), inner.end());
+            PutU32(out, rec.obodyBaselineCaptured ? 1u : 0u);
+            PutStr(out, rec.obodyBaseline);
         }
         return out;
     }
@@ -77,9 +88,15 @@ namespace OS {
                                                     std::uint32_t a_version,
                                                     NpcAssignmentMap& a_out) {
         using namespace detail;
-        if (a_version != kNpcRecordVersion) {
+        if (a_version != 1 && a_version != 2 &&
+            a_version != kNpcRecordVersion) {
             return false;
         }
+        // The outer record did not store an inner-version byte, so its own
+        // version is the historical contract: NPCO v1 embedded LIBR v2,
+        // NPCO v2 embedded LIBR v3, and NPCO v3 embeds LIBR v4.
+        const std::uint32_t innerVersion =
+            a_version == 1 ? 2u : a_version == 2 ? 3u : kCodecVersion;
         Reader r{ a_bytes };
 
         const auto count = r.U32();
@@ -99,8 +116,25 @@ namespace OS {
             r.pos += innerLen;  // skip past the inner library regardless of decode result
 
             OutfitLibrary lib;
-            if (Decode(slice, kCodecVersion, lib)) {
-                tmp[NpcKey{ modName, localFormID }] = NpcRecord{ std::move(lib) };
+            if (Decode(slice, innerVersion, lib)) {
+                NpcRecord rec;
+                rec.library = std::move(lib);
+                if (a_version >= 2) {
+                    rec.obodyBaselineCaptured = r.U32() != 0;
+                    rec.obodyBaseline         = r.Str();
+                    if (!r.ok) {
+                        return false;
+                    }
+                }
+                tmp[NpcKey{ modName, localFormID }] = std::move(rec);
+            } else if (a_version >= 2) {
+                // Even when the inner library is corrupt, consume the v2
+                // baseline fields so the next outer entry stays aligned.
+                (void)r.U32();
+                (void)r.Str();
+                if (!r.ok) {
+                    return false;
+                }
             }
             // else: drop this entry only - the outer stream stays aligned
             // because innerLen already told us how far to skip.

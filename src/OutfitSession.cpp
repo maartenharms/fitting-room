@@ -1,9 +1,15 @@
 #include "OutfitSession.h"
 
+#include "BipedPost.h"
+#include "ObodyApi.h"
+#include "PresetPreviewPolicy.h"
 #include "REAugments.h"
+#include "RefreshGate.h"
 #include "SceneGuard.h"
 #include "Settings.h"
 #include "StyleRef.h"
+
+#include <chrono>
 
 namespace OS {
 
@@ -70,6 +76,156 @@ namespace OS {
             }
             return tc;
         }
+
+        std::atomic<bool>                 g_playerRefreshQueued{ false };
+        std::atomic<bool>                 g_playerBodyApplyQueued{ false };
+        RefreshGate::BlockingCooldown     g_blockingCooldown;
+
+        void QueuePlayerPreviewEquipmentShow() {
+            if (auto* player = RE::PlayerCharacter::GetSingleton()) {
+                BipedPost::QueueObjectNodeShow(
+                    player->GetHandle(), PresetPreviewPolicy::kSuppressedBipedObjects);
+            }
+        }
+
+        double SteadySeconds() {
+            using Seconds = std::chrono::duration<double>;
+            return Seconds(std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        bool PlayerIsBlocking() {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!player) {
+                return false;
+            }
+            auto* state = player->AsActorState();
+            return player->IsBlocking() || (state && state->actorState2.wantBlocking);
+        }
+
+        void ApplyPlayerBodyState() {
+            try {
+                const auto body = OutfitSession::GetSingleton().DisplayBody();
+                if (body.drives) {
+                    ObodyApi::ApplyOutfitBody(RE::PlayerCharacter::GetSingleton(), body.preset,
+                                              static_cast<int>(body.orefit),
+                                              body.torsoStyleMask, body.torsoHideMask);
+                } else if (body.restoreBaseline) {
+                    // Equipped gear is a real destination, not a suspended
+                    // preview. Restore the player's captured OBody assignment
+                    // after leaving an outfit or follower mannequin.
+                    ObodyApi::ApplyOutfitBody(
+                        RE::PlayerCharacter::GetSingleton(), {},
+                        static_cast<int>(ORefitMode::kDefault), 0, 0);
+                } else {
+                    ObodyApi::ReleaseOutfitORefit(RE::PlayerCharacter::GetSingleton());
+                }
+            } catch (const std::exception& e) {
+                spdlog::error("ApplyPlayerBodyState threw: {}", e.what());
+            } catch (...) {
+                spdlog::error("ApplyPlayerBodyState threw a non-standard exception.");
+            }
+        }
+
+        // Update3DModel can finish rebuilding armor/body nodes after
+        // REAug::RefreshPlayer returns. Applying OBody in that same task can
+        // therefore morph the outgoing nodes, then lose the visible result
+        // when the replacement 3D arrives. Queue exactly one follow-up pass:
+        // it reads the latest staged body state after the rebuild has crossed
+        // a task boundary, so rapid hover/click changes coalesce safely.
+        void QueuePlayerBodyStateAfterRefresh() {
+            if (g_playerBodyApplyQueued.exchange(true, std::memory_order_acq_rel)) {
+                return;
+            }
+            if (auto* task = SKSE::GetTaskInterface()) {
+                task->AddTask([] {
+                    g_playerBodyApplyQueued.store(false, std::memory_order_release);
+                    ApplyPlayerBodyState();
+                });
+            } else {
+                g_playerBodyApplyQueued.store(false, std::memory_order_release);
+                ApplyPlayerBodyState();
+            }
+        }
+
+        void ApplyNpcBodyState(RE::ActorHandle a_actor) {
+            try {
+                auto       ptr   = a_actor.get();
+                RE::Actor* actor = ptr.get();
+                if (!actor) {
+                    return;
+                }
+                auto& session = OutfitSession::GetSingleton();
+                auto  body    = session.DisplayBodyForNpc(actor);
+                if (body.drives) {
+                    if (!body.preset.empty() && !body.baselineCaptured) {
+                        // A follower may not have passed through OBody's normal
+                        // distribution yet. Process first so the capture records
+                        // the actor's real baseline rather than a premature
+                        // empty assignment.
+                        ObodyApi::EnsureProcessed(actor);
+                        body.baseline = ObodyApi::AssignedPreset(actor);
+                        body.baselineCaptured = true;
+                        session.CaptureNpcBodyBaseline(body.key, body.baseline);
+                        spdlog::info(
+                            "OBody: captured follower baseline '{}' for {}|{:06X}.",
+                            body.baseline.empty() ? "(none)" : body.baseline,
+                            body.key.modName, body.key.localFormID);
+                    }
+                    ObodyApi::ApplyNpcOutfitBody(
+                        actor, body.preset, static_cast<int>(body.orefit),
+                        body.torsoStyleMask, body.torsoHideMask,
+                        body.baseline, body.baselineCaptured);
+                } else {
+                    ObodyApi::ReleaseOutfitORefit(actor);
+                }
+            } catch (const std::exception& e) {
+                spdlog::error("ApplyNpcBodyState threw: {}", e.what());
+            } catch (...) {
+                spdlog::error("ApplyNpcBodyState threw a non-standard exception.");
+            }
+        }
+
+        void QueueNpcBodyStateAfterRefresh(RE::ActorHandle a_actor) {
+            if (auto* task = SKSE::GetTaskInterface()) {
+                task->AddTask([a_actor] { ApplyNpcBodyState(a_actor); });
+            } else {
+                ApplyNpcBodyState(a_actor);
+            }
+        }
+
+        void ApplyPlayerRefresh() {
+            // Defensive: a background refresh must never take the game down;
+            // a C++ throw is caught and logged instead (engine AVs are still
+            // handled by CrashGuard around the kick, not here).
+            try {
+                REAug::RefreshPlayer(Settings::GetSingleton().sceneKick);
+                QueuePlayerBodyStateAfterRefresh();
+            } catch (const std::exception& e) {
+                spdlog::error("RefreshPlayer threw: {}", e.what());
+            } catch (...) {
+                spdlog::error("RefreshPlayer threw a non-standard exception.");
+            }
+        }
+
+        void RunPlayerRefreshWhenSafe() {
+            if (!g_blockingCooldown.Ready(PlayerIsBlocking(), SteadySeconds())) {
+                // AddTask calls made while the queue drains land on a later
+                // game-thread pass. Polling therefore stays non-blocking even
+                // while an inventory menu has paused world time.
+                if (auto* task = SKSE::GetTaskInterface()) {
+                    task->AddTask(RunPlayerRefreshWhenSafe);
+                } else {
+                    g_playerRefreshQueued.store(false, std::memory_order_release);
+                }
+                return;
+            }
+
+            // Clear before applying. A concurrent hover arriving during the
+            // rebuild may queue one follow-up, while all requests accumulated
+            // during the block collapse into this latest-state refresh.
+            g_playerRefreshQueued.store(false, std::memory_order_release);
+            ApplyPlayerRefresh();
+        }
     }  // namespace
 
     OutfitSession& OutfitSession::GetSingleton() {
@@ -88,13 +244,89 @@ namespace OS {
         if (suspended_) {
             return nullptr;
         }
-        // An NPC-target staging never drives the PLAYER channel: while the
-        // editor previews on a follower, the player renders their own active
-        // outfit. Only a player-target staging overrides here.
+        // NPC editing gives the inventory's player-only viewport a transient
+        // mannequin. This outranks the player's saved outfit but never mutates
+        // it; clearing the optional exposes the exact prior library state.
+        if (playerMannequin_) {
+            return &*playerMannequin_;
+        }
         if (staged_ && stagedForPlayer_) {
             return &*staged_;
         }
         return library_.Active();
+    }
+
+    OutfitSession::BodyDisplay OutfitSession::DisplayBody() const {
+        std::scoped_lock l(lock_);
+        BodyDisplay      d;
+        // EffectiveLocked also returns null while a scene mod is running or the
+        // override is suspended. Leaving the body alone there is deliberate:
+        // those states undress the character temporarily, and yanking the body
+        // preset back and forth around an OStim scene would be worse than
+        // letting it ride.
+        if (const auto* o = EffectiveLocked()) {
+            d.preset = o->obodyPreset;
+            d.orefit = o->orefit;
+            const auto display = ComputeDisplaySet(*o, blocklist_);
+            d.torsoStyleMask   = display.styleMask & kORefitTorsoMask;
+            d.torsoHideMask    = display.hideMask & kORefitTorsoMask;
+            d.drives = true;
+        } else if (!SceneGuard::Active() && !suspended_) {
+            // No active saved outfit means Equipped gear. Unlike a scene
+            // suspension, that state must undo a transient follower mannequin
+            // body preview (or the last player outfit's body setting).
+            d.restoreBaseline = true;
+        }
+        return d;
+    }
+
+    OutfitSession::NpcBodyDisplay OutfitSession::DisplayBodyForNpc(
+        RE::Actor* a_actor) const {
+        NpcBodyDisplay d;
+        const auto     tc = ClassifyTarget(a_actor ? a_actor->GetHandle()
+                                                   : RE::ActorHandle{});
+        if (tc.isPlayer || !tc.key || tc.baseFormID == 0) {
+            return d;
+        }
+        d.key = *tc.key;
+        std::scoped_lock l(lock_);
+        if (SceneGuard::Active() || suspendedActors_.contains(tc.baseFormID)) {
+            return d;
+        }
+        const auto it = npcAssignments_.find(*tc.key);
+        if (it != npcAssignments_.end()) {
+            d.baseline         = it->second.obodyBaseline;
+            d.baselineCaptured = it->second.obodyBaselineCaptured;
+        }
+        const Outfit* outfit = nullptr;
+        if (staged_ && !stagedForPlayer_ && stagedBaseFormID_ == tc.baseFormID) {
+            outfit = &*staged_;
+        } else if (it != npcAssignments_.end()) {
+            outfit = it->second.library.Active();
+        }
+        if (outfit) {
+            d.preset = outfit->obodyPreset;
+            d.orefit = outfit->orefit;
+            const auto display = ComputeDisplaySet(*outfit, blocklist_);
+            d.torsoStyleMask   = display.styleMask & kORefitTorsoMask;
+            d.torsoHideMask    = display.hideMask & kORefitTorsoMask;
+            d.drives           = true;
+        } else if (d.baselineCaptured) {
+            // Equipped gear after a body-setting outfit must restore the
+            // follower's captured OBody assignment exactly once per refresh.
+            d.drives = true;
+        }
+        return d;
+    }
+
+    void OutfitSession::CaptureNpcBodyBaseline(
+        const NpcKey& a_key, std::string a_preset) {
+        std::scoped_lock l(lock_);
+        auto&            rec = npcAssignments_[a_key];
+        if (!rec.obodyBaselineCaptured) {
+            rec.obodyBaseline         = std::move(a_preset);
+            rec.obodyBaselineCaptured = true;
+        }
     }
 
     void OutfitSession::RecomputeWeaponStylingLocked() {
@@ -103,14 +335,17 @@ namespace OS {
         // mid-scene would latch the flag false and leave it there once the scene
         // ended. suspended_ only moves through Suspend/Resume, which both
         // recompute, so it is safe to fold in. anyWeaponStyling_ is the PLAYER
-        // weapon fast-path, so - like EffectiveLocked - a staged NPC target is
-        // ignored here (the NPC weapon path reads the render snapshot instead).
-        const Outfit* o =
-            suspended_ ? nullptr : ((staged_ && stagedForPlayer_) ? &*staged_ : library_.Active());
+        // weapon fast-path. A mannequin can carry the follower's weapon styles
+        // too, although a class still needs matching real player equipment.
+        const Outfit* o = suspended_ ? nullptr
+                                     : playerMannequin_ ? &*playerMannequin_
+                                     : (staged_ && stagedForPlayer_) ? &*staged_
+                                                                     : library_.Active();
         anyWeaponStyling_.store(o && AnyWeaponEntry(*o), std::memory_order_release);
     }
 
-    OutfitSession::WeaponDisplayEntry OutfitSession::WeaponDisplayFor(WeaponClass a_class) const {
+    OutfitSession::WeaponDisplayEntry OutfitSession::WeaponDisplayFor(
+        WeaponClass a_class, WeaponHand a_hand) const {
         SlotEntry entry;
         {
             std::scoped_lock l(lock_);
@@ -118,7 +353,7 @@ namespace OS {
             if (!o) {
                 return {};  // suspended, mid-scene, or no outfit at all
             }
-            entry = o->WeaponEntryFor(a_class);
+            entry = o->ResolvedWeaponEntryFor(a_class, a_hand);
         }
         // Resolved outside the lock, as VisitStyles does: StyleRef goes through
         // the data handler. The blocklist is an ARMOR mask, so it does not apply.
@@ -181,25 +416,33 @@ namespace OS {
         if (auto* p = RE::PlayerCharacter::GetSingleton()) {
             playerHandle = p->GetHandle();
         }
+        bool hadMannequin = false;
         {
             std::scoped_lock l(lock_);
             const bool wasNpcStaging = staged_.has_value() && !stagedForPlayer_;
+            hadMannequin             = playerMannequin_.has_value();
 
             stagedTarget_     = playerHandle;
             stagedForPlayer_  = true;
             stagedBaseFormID_ = 0;
             stagedNpcKey_.reset();
             staged_           = a_from;
+            playerMannequinBase_.reset();
+            playerMannequin_.reset();
 
             RecomputeWeaponStylingLocked();
             if (wasNpcStaging) {
                 RebuildSnapshotLocked();  // drop a prior NPC override
             }
         }
+        if (hadMannequin) {
+            QueuePlayerPreviewEquipmentShow();
+        }
         RequestRefresh();
     }
 
-    void OutfitSession::BeginStaging(RE::ActorHandle a_target, const Outfit& a_from) {
+    void OutfitSession::BeginStaging(RE::ActorHandle a_target, const Outfit& a_from,
+                                     const Outfit& a_playerPreview) {
         // Classify the target with engine reads BEFORE taking the lock.
         auto       tc = ClassifyTarget(a_target);
         bool       forPlayer;
@@ -213,8 +456,17 @@ namespace OS {
             stagedNpcKey_     = tc.isPlayer ? std::nullopt : std::move(tc.key);
             staged_           = a_from;
             forPlayer         = stagedForPlayer_;
+            playerMannequinBase_ = forPlayer
+                                       ? std::nullopt
+                                       : std::optional<Outfit>{ a_playerPreview };
+            playerMannequin_ = forPlayer
+                                   ? std::nullopt
+                                   : std::optional<Outfit>{ MakeMannequinPreview(
+                                         ComposeMannequinSource(
+                                             false, *playerMannequinBase_, a_from),
+                                         blocklist_) };
 
-            RecomputeWeaponStylingLocked();  // player fast-path (uses library active when NPC-staging)
+            RecomputeWeaponStylingLocked();
             // Rebuild the snapshot to publish a NEW NPC override, or to DROP a
             // prior one when switching back to the player. A pure player->player
             // stage with no prior NPC override leaves the snapshot untouched.
@@ -232,24 +484,49 @@ namespace OS {
             RequestRefresh();
         } else {
             RequestRefreshActor(a_target);
+            RequestRefresh();  // refresh the player mannequin too
         }
     }
 
     void OutfitSession::UpdateStaging(const Outfit& a_next) {
         bool            forPlayer = true;
         RE::ActorHandle target;  // captured under the lock for the NPC refresh below
+        RefreshGate::StagedUpdate refresh = RefreshGate::StagedUpdate::kNone;
         {
             std::scoped_lock l(lock_);
             if (!staged_) {
                 return;
             }
+            refresh = RefreshGate::ClassifyStagedUpdate(
+                BodyDiffers(*staged_, a_next),
+                ChangedSlotCount(*staged_, a_next));
             staged_   = a_next;
             forPlayer = stagedForPlayer_;
             target    = stagedTarget_;
+            if (!forPlayer) {
+                const Outfit& base =
+                    playerMannequinBase_ ? *playerMannequinBase_ : Outfit{};
+                playerMannequin_ = MakeMannequinPreview(
+                    ComposeMannequinSource(false, base, a_next), blocklist_);
+            }
             RecomputeWeaponStylingLocked();
             if (!forPlayer) {
                 RebuildSnapshotLocked();  // refresh the NPC override with the new outfit
             }
+        }
+        if (refresh == RefreshGate::StagedUpdate::kNone) {
+            return;
+        }
+        if (refresh == RefreshGate::StagedUpdate::kBodyOnly) {
+            // Body controls are actor-scoped OBody operations. They neither
+            // need nor benefit from rebuilding every worn armor addon first.
+            // For a follower, update both the follower and the player
+            // mannequin; the latter is only a preview and remains actor-local.
+            if (!forPlayer) {
+                QueueNpcBodyStateAfterRefresh(target);
+            }
+            QueuePlayerBodyStateAfterRefresh();
+            return;
         }
         // Symmetric self-refresh (see BeginStaging): each hover/click/Random
         // preview kicks the player or the staged follower so the edit shows on
@@ -259,17 +536,24 @@ namespace OS {
             RequestRefresh();
         } else {
             RequestRefreshActor(target);
+            RequestRefresh();
         }
     }
 
     void OutfitSession::CommitStaging() {
-        bool forPlayer = true;
+        bool            forPlayer = true;
+        bool            restorePreviewEquipment = false;
+        bool            hadMannequin = false;
+        RE::ActorHandle oldTarget;
         {
             std::scoped_lock l(lock_);
             if (!staged_) {
                 return;
             }
-            forPlayer = stagedForPlayer_;
+            forPlayer               = stagedForPlayer_;
+            restorePreviewEquipment = presetPreviewSuppression_;
+            hadMannequin             = playerMannequin_.has_value();
+            oldTarget               = stagedTarget_;
             if (forPlayer) {
                 const int idx = library_.ActiveIndex();
                 if (idx >= 0) {
@@ -299,47 +583,74 @@ namespace OS {
                 }
             }
             staged_.reset();
+            presetPreviewSuppression_ = false;
             stagedNpcKey_.reset();
             stagedBaseFormID_ = 0;
             stagedForPlayer_  = true;
             stagedTarget_     = {};  // reset the staging fields as a unit
+            playerMannequinBase_.reset();
+            playerMannequin_.reset();
             RecomputeWeaponStylingLocked();
             if (!forPlayer) {
                 RebuildSnapshotLocked();  // reflect the committed NPC outfit, drop the override
             }
         }
+        if (restorePreviewEquipment) {
+            BipedPost::QueueObjectNodeShow(
+                oldTarget, PresetPreviewPolicy::kSuppressedBipedObjects);
+        }
+        if (hadMannequin) {
+            QueuePlayerPreviewEquipmentShow();
+        }
         if (forPlayer) {
             Persistence::QueueLibrarySave();  // commit mutates the GLOBAL player library
             RequestRefresh();
+        } else {
+            RequestRefresh();  // restore the player's saved outfit
         }
     }
 
     void OutfitSession::DiscardStaging() {
         bool            forPlayer = true;
         bool            hadNpcStage;
+        bool            hadMannequin;
+        bool            restorePreviewEquipment = false;
         RE::ActorHandle oldTarget;  // captured BEFORE the reset for the NPC revert
         {
             std::scoped_lock l(lock_);
             forPlayer   = stagedForPlayer_;
             hadNpcStage = staged_.has_value() && !stagedForPlayer_;
+            hadMannequin = playerMannequin_.has_value();
+            restorePreviewEquipment = presetPreviewSuppression_;
             oldTarget   = stagedTarget_;
             staged_.reset();
+            presetPreviewSuppression_ = false;
             stagedNpcKey_.reset();
             stagedBaseFormID_ = 0;
             stagedForPlayer_  = true;
             stagedTarget_     = {};  // reset the staging fields as a unit
+            playerMannequinBase_.reset();
+            playerMannequin_.reset();
             RecomputeWeaponStylingLocked();
             if (hadNpcStage) {
                 RebuildSnapshotLocked();  // drop the NPC preview override
             }
         }
+        if (restorePreviewEquipment) {
+            BipedPost::QueueObjectNodeShow(
+                oldTarget, PresetPreviewPolicy::kSuppressedBipedObjects);
+        }
+        if (hadMannequin) {
+            QueuePlayerPreviewEquipmentShow();
+        }
         // Symmetric self-refresh (see BeginStaging): a player discard reverts the
         // player, an NPC discard kicks the follower so its preview reverts NOW -
         // when the editor switches away or closes without Apply - instead of
         // lingering until the actor's next natural rebuild.
-        if (forPlayer) {
+        if (forPlayer || hadMannequin) {
             RequestRefresh();
-        } else if (hadNpcStage) {
+        }
+        if (hadNpcStage) {
             RequestRefreshActor(oldTarget);
         }
     }
@@ -355,6 +666,67 @@ namespace OS {
             return std::nullopt;
         }
         return stagedTarget_;
+    }
+
+    void OutfitSession::SetPresetPreviewSuppression(bool a_enabled) {
+        bool            forPlayer = true;
+        bool            restorePreviewEquipment = false;
+        RE::ActorHandle target;
+        {
+            std::scoped_lock l(lock_);
+            const bool next = a_enabled && staged_.has_value();
+            if (presetPreviewSuppression_ == next) {
+                return;
+            }
+            restorePreviewEquipment     = presetPreviewSuppression_ && !next;
+            presetPreviewSuppression_ = next;
+            forPlayer                 = stagedForPlayer_;
+            target                    = stagedTarget_;
+        }
+        if (restorePreviewEquipment) {
+            BipedPost::QueueObjectNodeShow(
+                target, PresetPreviewPolicy::kSuppressedBipedObjects);
+        }
+        if (forPlayer) {
+            RequestRefresh();
+        } else {
+            RequestRefreshActor(target);
+            RequestRefresh();
+        }
+    }
+
+    std::uint64_t OutfitSession::PreviewEquipmentSuppressionMask(
+        RE::Actor* a_actor) const {
+        if (!a_actor) {
+            return 0;
+        }
+        auto* const player      = RE::PlayerCharacter::GetSingleton();
+        const bool  actorPlayer = player && a_actor == player;
+        std::uint32_t actorBase = 0;
+        if (!actorPlayer) {
+            if (auto* base = a_actor->GetActorBase()) {
+                actorBase = base->GetFormID();
+            }
+        }
+        std::scoped_lock l(lock_);
+        if (presetPreviewSuppression_ && staged_) {
+            const bool target =
+                stagedForPlayer_ ? actorPlayer
+                                 : (!actorPlayer && actorBase != 0 &&
+                                    actorBase == stagedBaseFormID_);
+            // Preset browsing keeps its established clean silhouette on both
+            // the edited follower and the player mannequin.
+            if (target || (actorPlayer && playerMannequin_)) {
+                return PresetPreviewPolicy::kSuppressedBipedObjects;
+            }
+        }
+        if (actorPlayer && playerMannequin_) {
+            // Ordinary follower editing previews the follower's styled weapon
+            // classes on the player while hiding unrelated player equipment.
+            return PresetPreviewPolicy::MannequinSuppressedBipedObjects(
+                *playerMannequin_);
+        }
+        return 0;
     }
 
     void OutfitSession::Suspend() {
@@ -384,17 +756,24 @@ namespace OS {
     }
 
     void OutfitSession::OnLoad(OutfitLibrary a_lib) {
+        bool hadMannequin = false;
         {
             std::scoped_lock l(lock_);
+            hadMannequin     = playerMannequin_.has_value();
             library_          = std::move(a_lib);
             staged_.reset();
+            presetPreviewSuppression_ = false;
             stagedNpcKey_.reset();
             stagedBaseFormID_ = 0;
             stagedForPlayer_  = true;
             stagedTarget_     = {};  // reset the staging fields as a unit
+            playerMannequin_.reset();
             suspended_        = false;
             RecomputeWeaponStylingLocked();
             RebuildSnapshotLocked();  // drop any stale staged NPC override
+        }
+        if (hadMannequin) {
+            QueuePlayerPreviewEquipmentShow();
         }
         RequestRefresh();
     }
@@ -404,23 +783,34 @@ namespace OS {
         // boundaries. Only per-save PLAYER state resets: the active selection
         // and any staging. NPC assignments are per-save too, but reset through
         // their own OnNpcRevert (a separate co-save callback).
-        std::scoped_lock l(lock_);
-        library_.Deactivate();
-        staged_.reset();
-        stagedNpcKey_.reset();
-        stagedBaseFormID_ = 0;
-        stagedForPlayer_  = true;
-        stagedTarget_     = {};  // reset the staging fields as a unit
-        suspended_        = false;
-        RecomputeWeaponStylingLocked();
-        RebuildSnapshotLocked();
+        bool hadMannequin = false;
+        {
+            std::scoped_lock l(lock_);
+            hadMannequin = playerMannequin_.has_value();
+            library_.Deactivate();
+            staged_.reset();
+            presetPreviewSuppression_ = false;
+            stagedNpcKey_.reset();
+            stagedBaseFormID_ = 0;
+            stagedForPlayer_  = true;
+            stagedTarget_     = {};  // reset the staging fields as a unit
+            playerMannequin_.reset();
+            suspended_        = false;
+            RecomputeWeaponStylingLocked();
+            RebuildSnapshotLocked();
+        }
+        if (hadMannequin) {
+            QueuePlayerPreviewEquipmentShow();
+        }
     }
 
     // ---- Actor dimension (NPC/follower assignments) ------------------------
 
     void OutfitSession::UpsertNpcLibrary(const NpcKey& a_key, OutfitLibrary a_library) {
         std::scoped_lock l(lock_);
-        npcAssignments_[a_key] = NpcRecord{ std::move(a_library) };
+        // Preserve the actor's captured OBody baseline across every structural
+        // library edit (rename/add/delete/Apply).
+        npcAssignments_[a_key].library = std::move(a_library);
         RebuildSnapshotLocked();
         // NO QueueLibrarySave / no outfits.json write: assignments are per-save
         // co-save state, persisted from SnapshotNpcAssignments in SaveCallback.
@@ -498,17 +888,22 @@ namespace OS {
             }
         });
 
-        // Weapon classes: resolve each non-passthrough entry, exactly as
-        // WeaponDisplayFor does. A kStyle whose plugin is gone collapses to
-        // passthrough (the inert-style policy), resolved once here.
+        // Weapon classes: resolve the effective Both/Right/Left entries.
+        // Optional hand overrides have already inherited Both at this point;
+        // a kStyle whose plugin is gone collapses to passthrough.
         for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
-            const auto  wc = static_cast<WeaponClass>(c);
-            const auto& e  = a_outfit.WeaponEntryFor(wc);
-            if (e.kind == SlotEntry::Kind::kHide) {
-                rd.weapons[c] = ResolvedNpcWeapon{ SlotEntry::Kind::kHide, nullptr };
-            } else if (e.kind == SlotEntry::Kind::kStyle) {
-                if (auto* form = ResolveWeaponStyleForm(wc, e.style)) {
-                    rd.weapons[c] = ResolvedNpcWeapon{ SlotEntry::Kind::kStyle, form };
+            const auto wc = static_cast<WeaponClass>(c);
+            for (std::size_t h = 0; h < kWeaponHandCount; ++h) {
+                const auto hand = static_cast<WeaponHand>(h);
+                const auto& e   = a_outfit.ResolvedWeaponEntryFor(wc, hand);
+                if (e.kind == SlotEntry::Kind::kHide) {
+                    rd.weapons[c][h] =
+                        ResolvedNpcWeapon{ SlotEntry::Kind::kHide, nullptr };
+                } else if (e.kind == SlotEntry::Kind::kStyle) {
+                    if (auto* form = ResolveWeaponStyleForm(wc, e.style)) {
+                        rd.weapons[c][h] =
+                            ResolvedNpcWeapon{ SlotEntry::Kind::kStyle, form };
+                    }
                 }
             }
         }
@@ -615,19 +1010,13 @@ namespace OS {
     }
 
     void OutfitSession::RequestRefresh() {
+        if (g_playerRefreshQueued.exchange(true, std::memory_order_acq_rel)) {
+            return;  // latest staged state will be read by the queued refresh
+        }
         if (auto* task = SKSE::GetTaskInterface()) {
-            task->AddTask([] {
-                // Defensive: a background refresh must never take the game down;
-                // a C++ throw is caught and logged instead (engine AVs are still
-                // handled by CrashGuard around the kick, not here).
-                try {
-                    REAug::RefreshPlayer(Settings::GetSingleton().sceneKick);
-                } catch (const std::exception& e) {
-                    spdlog::error("RefreshPlayer threw: {}", e.what());
-                } catch (...) {
-                    spdlog::error("RefreshPlayer threw a non-standard exception.");
-                }
-            });
+            task->AddTask(RunPlayerRefreshWhenSafe);
+        } else {
+            g_playerRefreshQueued.store(false, std::memory_order_release);
         }
     }
 
@@ -648,11 +1037,48 @@ namespace OS {
                     return;  // unloaded since the request - its next natural rebuild catches up
                 }
                 REAug::RefreshActor(actor, Settings::GetSingleton().sceneKick);
+                // The body morph must target the rebuilt nodes, not the ones
+                // Update3DModel is replacing. Re-resolve the latest staged
+                // follower state on the next task pass.
+                QueueNpcBodyStateAfterRefresh(a_actor);
             } catch (const std::exception& e) {
                 spdlog::error("RefreshActor threw: {}", e.what());
             } catch (...) {
                 spdlog::error("RefreshActor threw a non-standard exception.");
             }
+        });
+    }
+
+    void OutfitSession::RequestRefreshLoadedNpcs() {
+        const auto assignments = GetSingleton().SnapshotNpcAssignments();
+        if (assignments.empty()) {
+            return;
+        }
+        auto* task = SKSE::GetTaskInterface();
+        if (!task) {
+            return;
+        }
+        task->AddTask([assignments] {
+            auto* processLists = RE::ProcessLists::GetSingleton();
+            if (!processLists) {
+                return;
+            }
+            processLists->ForEachHighActor(
+                [&](RE::Actor& a_actor) -> RE::BSContainer::ForEachResult {
+                    auto* base = a_actor.GetActorBase();
+                    if (!base || base->IsDynamicForm()) {
+                        return RE::BSContainer::ForEachResult::kContinue;
+                    }
+                    NpcKey key;
+                    if (auto* file = base->GetFile(0)) {
+                        key.modName = std::string{ file->GetFilename() };
+                    }
+                    key.localFormID = base->GetLocalFormID();
+                    if (assignments.contains(key)) {
+                        RequestRefreshActor(a_actor.GetHandle());
+                    }
+                    return RE::BSContainer::ForEachResult::kContinue;
+                });
         });
     }
 

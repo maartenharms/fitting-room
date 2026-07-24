@@ -21,6 +21,13 @@ namespace OS::JsonCodec {
             s["slot"] = bit + 30;
             if (entry.kind == SlotEntry::Kind::kHide) {
                 s["kind"] = "hide";
+                if (!entry.style.Empty()) {
+                    s["mod"] = entry.style.modName;
+                    char hex[16];
+                    std::snprintf(hex, sizeof(hex), "0x%06X",
+                                  entry.style.localFormID);
+                    s["id"] = hex;
+                }
             } else {
                 s["kind"] = "style";
                 s["mod"]  = entry.style.modName;
@@ -32,30 +39,54 @@ namespace OS::JsonCodec {
         }
         o["slots"] = std::move(slots);
 
+        // Optional body dimension. Omitting defaults keeps legacy outfit and
+        // preset files stable while allowing the global library to persist the
+        // same per-outfit OBody state as the co-save codec.
+        if (!a_outfit.obodyPreset.empty()) {
+            o["obodyPreset"] = a_outfit.obodyPreset;
+        }
+        if (a_outfit.orefit != ORefitMode::kDefault) {
+            o["orefit"] = static_cast<unsigned int>(a_outfit.orefit);
+        }
+
         // Weapon dimension (weapon + quiver transmog), same shape as the
         // slots array above but keyed by weapon-class name instead of an
         // editor slot number. Omitted entirely when every weapon entry is
         // passthrough, so an armor-only outfit serializes byte-identically
         // to a pre-weapons-array (0.1.1-era) file.
         Json::Value weapons(Json::arrayValue);
-        for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
-            const auto  wc    = static_cast<WeaponClass>(c);
-            const auto& entry = a_outfit.WeaponEntryFor(wc);
-            if (entry.kind == SlotEntry::Kind::kPassthrough) {
-                continue;
-            }
+        const auto appendWeapon = [&](WeaponClass a_class, WeaponHand a_hand,
+                                      const SlotEntry& a_entry) {
             Json::Value w;
-            w["class"] = ClassJsonName(wc);
-            if (entry.kind == SlotEntry::Kind::kHide) {
+            w["class"] = ClassJsonName(a_class);
+            if (a_hand != WeaponHand::Both) {
+                w["hand"] = HandJsonName(a_hand);
+            }
+            if (a_entry.kind == SlotEntry::Kind::kHide) {
                 w["kind"] = "hide";
+            } else if (a_entry.kind == SlotEntry::Kind::kPassthrough) {
+                w["kind"] = "passthrough";
             } else {
                 w["kind"] = "style";
-                w["mod"]  = entry.style.modName;
+                w["mod"]  = a_entry.style.modName;
                 char hex[16];
-                std::snprintf(hex, sizeof(hex), "0x%06X", entry.style.localFormID);
+                std::snprintf(hex, sizeof(hex), "0x%06X", a_entry.style.localFormID);
                 w["id"] = hex;
             }
             weapons.append(std::move(w));
+        };
+        for (std::size_t c = 0; c < kWeaponClassCount; ++c) {
+            const auto  wc    = static_cast<WeaponClass>(c);
+            const auto& entry = a_outfit.WeaponEntryFor(wc);
+            if (entry.kind != SlotEntry::Kind::kPassthrough) {
+                appendWeapon(wc, WeaponHand::Both, entry);
+            }
+            for (const auto hand : { WeaponHand::Right, WeaponHand::Left }) {
+                if (const auto& over = a_outfit.WeaponOverrideFor(wc, hand);
+                    over) {
+                    appendWeapon(wc, hand, *over);
+                }
+            }
         }
         if (!weapons.empty()) {
             o["weapons"] = std::move(weapons);
@@ -69,6 +100,16 @@ namespace OS::JsonCodec {
         }
         a_out.name     = a_json.get("name", "Outfit").asString();
         a_out.favorite = a_json.get("favorite", false).asBool();
+        const auto& preset = a_json["obodyPreset"];
+        a_out.obodyPreset  = preset.isString() ? preset.asString() : std::string{};
+        const auto& refit = a_json["orefit"];
+        a_out.orefit      = ORefitMode::kDefault;
+        if (refit.isUInt()) {
+            const auto value = refit.asUInt();
+            if (value <= static_cast<unsigned int>(ORefitMode::kForceOff)) {
+                a_out.orefit = static_cast<ORefitMode>(value);
+            }
+        }
         for (const auto& s : a_json["slots"]) {
             if (!s.isObject()) {
                 continue;
@@ -80,7 +121,11 @@ namespace OS::JsonCodec {
             const auto bit  = BitForEditorSlot(slot);
             const auto kind = s.get("kind", "").asString();
             if (kind == "hide") {
-                a_out.SetHide(bit);
+                StyleRefKey covered;
+                covered.modName = s.get("mod", "").asString();
+                covered.localFormID = static_cast<std::uint32_t>(
+                    std::strtoul(s.get("id", "0").asString().c_str(), nullptr, 16));
+                a_out.SetHiddenWithRestore(bit, std::move(covered));
             } else if (kind == "style") {
                 StyleRefKey key;
                 key.modName     = s.get("mod", "").asString();
@@ -99,17 +144,28 @@ namespace OS::JsonCodec {
             if (!classOpt) {
                 continue;
             }
+            const auto handOpt =
+                HandFromJsonName(w.get("hand", "").asString());
+            if (!handOpt) {
+                continue;
+            }
             const auto wc   = *classOpt;
+            const auto hand = *handOpt;
+            if (hand != WeaponHand::Both && !SupportsHandOverrides(wc)) {
+                continue;
+            }
             const auto kind = w.get("kind", "").asString();
             if (kind == "hide") {
-                a_out.SetWeaponHide(wc);
+                a_out.SetWeaponHide(wc, hand);
+            } else if (kind == "passthrough" && hand != WeaponHand::Both) {
+                a_out.SetWeaponPassthrough(wc, hand);
             } else if (kind == "style") {
                 StyleRefKey key;
                 key.modName     = w.get("mod", "").asString();
                 key.localFormID = static_cast<std::uint32_t>(
                     std::strtoul(w.get("id", "0").asString().c_str(), nullptr, 16));
                 if (!key.Empty()) {
-                    a_out.SetWeaponStyle(wc, std::move(key));
+                    a_out.SetWeaponStyle(wc, std::move(key), hand);
                 }
             }
         }

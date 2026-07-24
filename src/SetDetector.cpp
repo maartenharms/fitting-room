@@ -112,6 +112,47 @@ namespace OS::SetDetector {
                    IsNumberToken(a_t);
         }
 
+        // Weapon class words are removed only from the END of a weapon name.
+        // That distinction preserves real set identities such as "Blades"
+        // while still mapping "Blades Sword" back to the "blades" armor set.
+        const std::set<std::string> kWeaponTailNouns = {
+            "weapon", "weapons", "sword", "swords", "greatsword", "greatswords",
+            "dagger", "daggers", "blade", "axe", "axes", "battleaxe", "battleaxes",
+            "waraxe", "waraxes", "mace", "maces", "warhammer", "warhammers",
+            "hammer", "hammers", "bow", "bows", "longbow", "longbows", "crossbow",
+            "crossbows", "staff", "staves", "arrow", "arrows", "bolt", "bolts",
+            "quiver", "quivers",
+        };
+
+        std::string WeaponNameStem(std::string_view a_name) {
+            std::vector<std::string> kept;
+            for (const auto& token : Tokenize(Lower(a_name))) {
+                if (token.size() > 1 && !IsNoise(token)) {
+                    kept.push_back(token);
+                }
+            }
+            bool removedClass = false;
+            while (!kept.empty() && kWeaponTailNouns.contains(kept.back())) {
+                kept.pop_back();
+                removedClass = true;
+            }
+            if (removedClass && !kept.empty()) {
+                const bool compoundModifier =
+                    kept.back() == "war" || kept.back() == "battle" || kept.back() == "great";
+                if (compoundModifier) {
+                    kept.pop_back();
+                }
+            }
+            std::string out;
+            for (const auto& token : kept) {
+                if (!out.empty()) {
+                    out += ' ';
+                }
+                out += token;
+            }
+            return out;
+        }
+
         // Major-slot category masks (editor slots -> bits). Head folds
         // head/hair-helmet/circlet; hands folds forearms; feet folds calves.
         const std::uint32_t kHeadMask = MaskForEditorSlot(30) | MaskForEditorSlot(31) |
@@ -373,6 +414,8 @@ namespace OS::SetDetector {
             }
             const std::string display = c.stem.empty() ? std::string{} : c.displayName;
             if (auto set = AssembleSet(c.pieces, display, CleanPluginName(c.source))) {
+                set->sourcePlugin = c.source;
+                set->stem         = c.stem;
                 out.push_back(std::move(*set));
                 outStemKey.push_back(c.source + '\x1f' + c.stem);
                 outType.push_back(c.armorType);
@@ -425,6 +468,26 @@ namespace OS::SetDetector {
             a_stats->deduped          = qualifiedCount - static_cast<int>(out.size());
         }
         return out;
+    }
+
+    void LinkWeapons(std::vector<DetectedSet>& a_sets,
+                     const std::vector<DetectWeapon>& a_weapons) {
+        for (const auto& weapon : a_weapons) {
+            const std::string nameStem = WeaponNameStem(weapon.name);
+            const std::string edidStem = WeaponNameStem(weapon.edid);
+            for (auto& set : a_sets) {
+                if (set.stem.empty() || set.sourcePlugin != weapon.source ||
+                    (set.stem != nameStem && set.stem != edidStem)) {
+                    continue;
+                }
+                // StyleCatalog order is deterministic, so the first matching
+                // look is the representative when a mod ships several variants.
+                if (set.outfit.WeaponEntryFor(weapon.weaponClass).kind ==
+                    SlotEntry::Kind::kPassthrough) {
+                    set.outfit.SetWeaponStyle(weapon.weaponClass, weapon.key);
+                }
+            }
+        }
     }
 
 }  // namespace OS::SetDetector

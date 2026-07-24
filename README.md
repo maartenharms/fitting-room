@@ -7,12 +7,14 @@ SKSE plugin for Skyrim Special Edition **1.5.97** and Anniversary Edition **1.6.
 ## Features
 
 - ESO-style transmog: your equipped gear keeps every stat and enchantment; only its appearance changes to the outfit you choose.
-- Save up to six named outfits and switch between them in game.
+- Save up to ten named outfits for the player and each follower, and switch between them in game. Equipped gear remains available as a permanent baseline without consuming a slot.
+- Transmog armor, clothing, jewelry, shields, weapons and quivers. Dual-wielded weapons can use separate right- and left-hand looks, even when both are the same weapon type.
 - An in-game editor with live preview, so you build a look and see it on your character straight away. Controller-first, and vanilla-styled through the FLICK UI framework.
 - Nothing is added to or removed from your inventory. It is a render-layer override, so armor skill experience and equip conflicts stay honest to your real gear.
 - Body-aware fit detection: it reads the armature of what you own and offers the pieces that fit your body.
-- Auto-discovered presets from the gear you already have, plus a showcase preset library to import from.
-- Per-save outfit collections: each save owns its outfits, with a shared library as the seed.
+- Auto-discovered and curated presets, plus reusable exported presets that can move a look between the player and followers.
+- Optional OBody NG integration: save a body preset and ORefit policy with each player or follower outfit.
+- Player outfits persist in the shared library. Follower outfit libraries and assignments persist with the save that owns them.
 - Optional lore item, the Seamstone: a carryable Alteration focus sold by Farengar in Dragonsreach that opens the editor. Optional, and you can turn it off.
 - Optional gold cost for creating outfits, just like in ESO. Toggle it off to build for free.
 
@@ -22,6 +24,7 @@ SKSE plugin for Skyrim Special Edition **1.5.97** and Anniversary Edition **1.6.
 - [SKSE64](https://skse.silverlock.org/) for your runtime
 - [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) (the SE or AE database to match)
 - [FLICK](https://www.nexusmods.com/skyrimspecialedition/mods/181603) by Fuzzles: the in-game UI framework the editor runs on. On AE, install FLICK's AE build.
+- Optional: [OBody NG](https://www.nexusmods.com/skyrimspecialedition/mods/77016) 4.4.0 or newer for per-outfit body presets and ORefit controls.
 - Optional: the Seamstone lore item (a small ESP, offered by the installer). Without it, open the editor by its hotkey.
 - Optional: **Favorite Misc Items**, so you can favorite the Seamstone and open Fitting Room from your favorites hotkey.
 
@@ -41,20 +44,18 @@ Open the editor with **Y** in your inventory by default (rebindable), or with th
 ## Known limitations
 
 - **Appearance only.** Outfits change the look, not the gear. Enchantment visual effects (glow, shaders) follow your real equipped items, not the outfit shown over them.
-- **No weapons or quivers yet.** Transmog covers armor, clothing and jewelry for now.
-- **Anniversary Edition support is new.** The AE build is verified offline against 1.6.1170; in-game AE testing is ongoing. See [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
+- AE 1.6.1170 is field-tested. Other supported next-gen AE builds use the same byte-verified, fail-safe hook policy. See [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 - The editor runs on FLICK; there is no separate fallback UI in a normal install.
 
 ## Planned
 
 On the roadmap for future updates, not in the current build:
 
-- Follower and NPC transmog: give your followers styled looks, the same way you style your own.
 - Location and weather based outfit switching: set rules so your outfit changes on its own with where you are, the weather, or the time of day.
 
 ## How it works
 
-Fitting Room hooks the character's worn-armor render pass. It hides the slots your outfit covers, injects the outfit's 3D over them, then restores the real worn armor in the data the game reads for stats and equip conflicts. So the game keeps scoring your actual gear for skill experience and equip rules, while the screen shows the look you picked. Outfits live in SKSE co-save data, per save, with a shared JSON library as the seed; no dynamic forms, no inventory changes, no equipment scripts. Every patch site is resolved through the Address Library and byte-checked before installation; on AE the same sites resolve through RELOCATION_ID and the mid-function hooks self-disable on a byte mismatch, so an unverified build fails safe.
+Fitting Room hooks the player and follower armor and weapon render paths. It injects the selected appearance over the real equipment, then restores the real item identity where Skyrim reads stats and equip conflicts. The game keeps scoring actual gear while the screen shows the chosen look. Player outfits use the shared JSON library; follower libraries and assignments use SKSE co-save data. There are no dynamic forms, inventory changes or equipment scripts. Every patch site is resolved through the Address Library and byte-checked before installation; on AE the same sites resolve through RELOCATION_ID and the mid-function hooks self-disable on a byte mismatch, so an unverified build fails safe.
 
 ## Credits
 

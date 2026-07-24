@@ -68,31 +68,32 @@ namespace OS::BipedPost {
         }
     }
 
-    void CullNodes(RE::BipedAnim* a_biped, std::uint32_t a_hiddenAttachmentMask) {
-        if (!a_biped || !a_hiddenAttachmentMask) {
+    void CullObjectNodes(RE::BipedAnim* a_biped, std::uint64_t a_objectMask) {
+        if (!a_biped || !a_objectMask) {
             return;
         }
-        for (std::uint32_t bit = 0; bit < 32; ++bit) {
-            if (!((a_hiddenAttachmentMask >> bit) & 1u)) {
+        constexpr auto count = static_cast<std::uint32_t>(RE::BIPED_OBJECTS::kTotal);
+        for (std::uint32_t slot = 0; slot < count; ++slot) {
+            if (!((a_objectMask >> slot) & 1ull)) {
                 continue;
             }
-            auto* const node = a_biped->objects[bit].partClone.get();
+            auto* const node = a_biped->objects[slot].partClone.get();
             if (!node) {
                 continue;
             }
             if (!node->GetFlags().any(RE::NiAVObject::Flag::kHidden)) {
                 node->GetFlags().set(RE::NiAVObject::Flag::kHidden);
-                spdlog::debug("hide: culled node for hidden slot bit {}.", bit);
+                spdlog::debug("hide: culled node for biped object {}.", slot);
             }
         }
     }
 
-    void QueueNodeCull(RE::ActorHandle a_actor, std::uint32_t a_hiddenAttachmentMask) {
+    void QueueObjectNodeCull(RE::ActorHandle a_actor, std::uint64_t a_objectMask) {
         auto* task = SKSE::GetTaskInterface();
-        if (!task || !a_hiddenAttachmentMask) {
+        if (!task || !a_objectMask) {
             return;
         }
-        const auto mask   = a_hiddenAttachmentMask;
+        const auto mask   = a_objectMask;
         const auto handle = a_actor;
         task->AddTask([handle, mask] {
             // Re-resolve the biped at run time against the CAPTURED actor (not
@@ -105,8 +106,49 @@ namespace OS::BipedPost {
             if (!actor) {
                 return;
             }
-            CullNodes(actor->GetCurrentBiped().get(), mask);
+            CullObjectNodes(actor->GetCurrentBiped().get(), mask);
         });
+    }
+
+    void ShowObjectNodes(RE::BipedAnim* a_biped, std::uint64_t a_objectMask) {
+        if (!a_biped || !a_objectMask) {
+            return;
+        }
+        constexpr auto count = static_cast<std::uint32_t>(RE::BIPED_OBJECTS::kTotal);
+        for (std::uint32_t slot = 0; slot < count; ++slot) {
+            if (!((a_objectMask >> slot) & 1ull)) {
+                continue;
+            }
+            if (auto* const node = a_biped->objects[slot].partClone.get();
+                node && node->GetFlags().any(RE::NiAVObject::Flag::kHidden)) {
+                node->GetFlags().reset(RE::NiAVObject::Flag::kHidden);
+                spdlog::debug("hide: restored node for biped object {}.", slot);
+            }
+        }
+    }
+
+    void QueueObjectNodeShow(RE::ActorHandle a_actor, std::uint64_t a_objectMask) {
+        auto* task = SKSE::GetTaskInterface();
+        if (!task || !a_objectMask) {
+            return;
+        }
+        const auto mask   = a_objectMask;
+        const auto handle = a_actor;
+        task->AddTask([handle, mask] {
+            auto       ptr   = handle.get();
+            RE::Actor* actor = ptr.get();
+            if (actor) {
+                ShowObjectNodes(actor->GetCurrentBiped().get(), mask);
+            }
+        });
+    }
+
+    void CullNodes(RE::BipedAnim* a_biped, std::uint32_t a_hiddenAttachmentMask) {
+        CullObjectNodes(a_biped, a_hiddenAttachmentMask);
+    }
+
+    void QueueNodeCull(RE::ActorHandle a_actor, std::uint32_t a_hiddenAttachmentMask) {
+        QueueObjectNodeCull(a_actor, a_hiddenAttachmentMask);
     }
 
     void DumpBipedObjects(const char* a_when, RE::BipedAnim* a_biped) {

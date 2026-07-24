@@ -5,17 +5,19 @@
 
 You know that moment when you find armor with perfect stats but it looks awful, or gear that looks perfect with absolutely useless stats? Say no more to that. Fitting Room lets you keep the gear you want and show off the look you want, in a lore-friendly way too. Build an outfit once, then wear it as a pure appearance layer over whatever you actually have equipped, exactly like the transmog system in The Elder Scrolls Online.
 
-[b]Save up to 6 named outfits and wear any of them as a visual layer over your real equipment. Your stats, enchantments and weight never change; only the look does.[/b]
+[b]Save up to 10 named outfits for the player and each follower, then wear any of them as a visual layer over real equipment. Your stats, enchantments and weight never change; only the look does.[/b]
 
 [color=#c9a875][size=5][b]FEATURES[/b][/size][/color]
 [list]
 [*]ESO-style transmog: your equipped gear keeps every stat and enchantment; only its appearance changes to the outfit you choose.[/*]
-[*]Up to 6 named outfit slots, switchable in game.[/*]
+[*]Up to 10 named outfits for the player and each follower, plus an immutable Equipped gear baseline that consumes no slot.[/*]
+[*]Armor, clothing, jewelry, shields, weapons and quivers. Dual-wielded weapons can use different right- and left-hand looks, including two weapons of the same type.[/*]
 [*]An in-game editor with live preview, so you build a look and see it on your character in real time.[/*]
 [*]Nothing is added to or removed from your inventory. It is a render-layer override, so armor skill experience and equip conflicts stay honest to your real gear.[/*]
 [*]A lore-friendly way in: The Seamstone, a carryable Alteration focus sold by Farengar in Dragonsreach, opens the editor when you use it. Optional, and you can turn it off.[/*]
 [*]Optional gold cost for creating outfits, just like in ESO. Toggle it off if you would rather build for free.[/*]
-[*]Body-aware fit detection, auto-discovered presets from what you own, and a showcase preset library to import from.[/*]
+[*]Body-aware fit detection, auto-discovered and curated presets, and reusable exported presets that can move a look between the player and followers.[/*]
+[*]Optional OBody NG integration saves a body preset and ORefit policy with each player or follower outfit.[/*]
 [/list]
 
 [color=#c9a875][size=5][b]HOW TO USE IT[/b][/size][/color]
@@ -31,6 +33,7 @@ You know that moment when you find armor with perfect stats but it looks awful, 
 [*][url=https://www.nexusmods.com/skyrimspecialedition/mods/181603]FLICK[/url] by Fuzzles: the in-game UI framework the editor runs on. On AE, install FLICK's AE build.[/*]
 [/list]
 Optional: the Seamstone lore item (a small ESP, offered by the installer). Without it the transmog still works; you just open the editor by its hotkey instead of the in-world item.
+Optional: [url=https://www.nexusmods.com/skyrimspecialedition/mods/77016]OBody NG[/url] 4.4.0 or newer for per-outfit body presets and ORefit controls.
 
 [color=#c9a875][size=5][b]HIGHLY RECOMMENDED[/b][/size][/color]
 [list]
@@ -45,20 +48,19 @@ Install with a mod manager (Mod Organizer 2 or Vortex). The installer offers the
 [color=#c9a875][size=5][b]KNOWN LIMITATIONS[/b][/size][/color]
 [list]
 [*][b]Appearance only.[/b] Outfits change the look, not the gear. Enchantment visual effects (glow, shaders) follow your real equipped items, not the outfit shown over them.[/*]
-[*][b]No weapons or quivers yet.[/b] Transmog covers armor, clothing and jewelry for now.[/*]
 [*][b]Beta.[/b] The core is solid but tested on a limited set of setups. If you hit a crash, please post [font=Courier New]crash-*.log[/font] and [font=Courier New]FittingRoom.log[/font] from [font=Courier New]Documents\My Games\Skyrim Special Edition\SKSE\[/font].[/*]
 [/list]
 
 [color=#c9a875][size=5][b]COMPATIBILITY[/b][/size][/color]
 [list]
 [*]No inventory mutation and no equipment scripts, so it does not fight armor mods, followers, or quests that check what you have equipped.[/*]
-[*]Works with custom bodies and armor; it reads the fit of what you own and shows outfits accordingly.[/*]
+[*]Works with custom bodies and armor; it reads the fit of what you own and shows outfits accordingly. OBody NG integration is optional.[/*]
 [*]The game still sees your real gear for armor rating, enchantments and equip rules; only the rendered look changes.[/*]
 [*]Plays well with Apparel Preview, OStim, and Screen Archer Menu (use Fitting Room in place of SAM's own outfit and inventory system).[/*]
 [/list]
 
 [color=#c9a875][size=5][b]HOW IT WORKS[/b][/size][/color]
-Fitting Room hooks the character's armor render pass. It hides the slots your outfit covers, applies the outfit's 3D over them, then restores the real worn armor in the data the game reads for stats and equip conflicts. So the game keeps scoring your actual gear for skill experience and equip rules, while the screen shows the look you picked. No inventory changes, no scripts driving your equipment.
+Fitting Room hooks the player and follower armor and weapon render paths. It applies the selected appearance over real equipment, then restores the real item identity where Skyrim reads stats and equip conflicts. The game keeps scoring actual gear while the screen shows the chosen look. No inventory changes and no scripts driving equipment.
 
 [color=#c9a875][size=5][b]SOURCE CODE[/b][/size][/color]
 This mod is open source under the GPL-3.0 license: [url=https://github.com/maartenharms/fitting-room]github.com/maartenharms/fitting-room[/url]

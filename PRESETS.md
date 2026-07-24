@@ -72,6 +72,7 @@ complete working preset:
   ],
   "weapons": [
     { "class": "sword", "kind": "style", "mod": "Skyrim.esm", "id": "0x013989" },
+    { "class": "sword", "hand": "left", "kind": "style", "mod": "Skyrim.esm", "id": "0x013991" },
     { "class": "bow",   "kind": "style", "mod": "Skyrim.esm", "id": "0x0139C0" }
   ]
 }
@@ -96,14 +97,16 @@ Each `slots` entry:
 | `mod` | For `"style"`: the plugin that DEFINES the armor record. Use the plugin that adds the record, not a patch that overrides it. |
 | `id` | For `"style"`: the record's LOCAL FormID as hex. Strip the load-order prefix (the first two hex digits): xEdit's `2A000D62` becomes `"0x000D62"`. For ESL/ESL-flagged plugins (`FE xxx` prefix) keep only the last three hex digits: `FE01D803` becomes `"0x000803"`. The Export button computes this correctly for every case; hand-writing it is where mistakes happen. |
 
-Each `weapons` entry styles a whole weapon class ("every sword you draw looks
-like this"). The real weapon keeps its stats, enchantment and animations; only
-the model changes.
+By default, a `weapons` entry styles a whole weapon class ("every sword you
+draw looks like this"). The real weapon keeps its stats, enchantment and
+animations; only the model changes. One-handed classes may add optional
+right- and left-hand overrides.
 
 | Key | Meaning |
 |---|---|
 | `class` | One of a fixed set of 11: `sword`, `dagger`, `waraxe`, `mace`, `greatsword`, `battleaxe`, `bow`, `crossbow`, `staff`, `arrows`, `bolts`. (`battleaxe` covers both battleaxes and warhammers; `greatsword` is two-handed swords. `arrows`/`bolts` style the quiver.) An unknown class name is ignored. |
-| `kind` | `"style"`. Hiding a weapon is not supported in this version, so a `"hide"` weapon entry is inert (the real weapon still renders). |
+| `hand` | Optional. Omit it (or use `"both"`) for the backward-compatible whole-class fallback. `"right"` and `"left"` are supported for `sword`, `dagger`, `waraxe`, `mace`, and `staff`; hand values on other classes are ignored. A missing hand override inherits the `"both"` entry. |
+| `kind` | `"style"` selects a model. A Right/Left entry may use `"passthrough"` to deliberately show that hand's real weapon instead of inheriting Both. Hiding a weapon is not supported, so `"hide"` remains inert (the real weapon still renders). |
 | `mod` | The plugin that DEFINES the WEAP or AMMO record (for `arrows`/`bolts`, an AMMO record). |
 | `id` | The record's LOCAL FormID as hex, the same rule as `slots`. Match the class to the record: a `sword` class must reference a one-handed sword WEAP, `arrows` an arrow AMMO, and so on. A mismatched record is skipped. |
 
@@ -135,7 +138,7 @@ resolve through the player's own load order. Body-mod refits, texture
 replacers and so on apply exactly as they do when the item is worn normally.
 
 **Players keep a copy, not a link.** Saving a showcase copies it into the
-player's library (capped at 10 outfits). Editing or removing your preset
+current player or follower library (capped at 10 saved outfits). Editing or removing your preset
 later never breaks a saved copy; a missing plugin only stops the affected
 pieces from rendering.
 

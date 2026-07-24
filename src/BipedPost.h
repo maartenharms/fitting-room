@@ -42,4 +42,16 @@ namespace OS::BipedPost {
     void CullNodes(RE::BipedAnim* a_biped, std::uint32_t a_hiddenAttachmentMask);
     void QueueNodeCull(RE::ActorHandle a_actor, std::uint32_t a_hiddenAttachmentMask);
 
+    // Generalized biped-object cull used by the transient Presets preview.
+    // Unlike the armor-only helpers above, this 64-bit mask can address weapon
+    // and quiver objects 32 through 41 as well as shield object 9.
+    void CullObjectNodes(RE::BipedAnim* a_biped, std::uint64_t a_objectMask);
+    void QueueObjectNodeCull(RE::ActorHandle a_actor, std::uint64_t a_objectMask);
+
+    // Symmetric restore for preview-only culls. Skyrim may reuse the same
+    // partClone across a refresh, so leaving Presets must clear kHidden
+    // explicitly rather than assume a rebuild replaces the clone.
+    void ShowObjectNodes(RE::BipedAnim* a_biped, std::uint64_t a_objectMask);
+    void QueueObjectNodeShow(RE::ActorHandle a_actor, std::uint64_t a_objectMask);
+
 }  // namespace OS::BipedPost
