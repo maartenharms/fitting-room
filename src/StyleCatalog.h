@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Outfit.h"
+#include "StyleGroup.h"
 
 #include <optional>
 #include <string>
@@ -33,12 +34,19 @@ namespace OS {
         std::string         name;
         std::string         source;      // plugin filename
         std::uint32_t       slotMask{ 0 };
-        std::uint32_t       primaryBit{ 0 };  // lowest covered bit: the ONE slot it lists under
+        std::uint32_t       primaryBit{ 0 };  // the ONE slot it lists under - PrimaryBitForSlotMask
         std::uint8_t        armorType{ 0 };   // 0 light, 1 heavy, 2 clothing
         bool                fitsBody{ true };  // false = won't render (see fitReason)
         FitReason           fitReason{ FitReason::kFits };
         bool                isRecent{ false };  // source plugin newly added this launch (OS-26)
         std::string         edid;  // best-effort; empty on runtimes without EDID retention
+
+        // Every record that collapsed into this row, and the distinct names
+        // they were called (StyleGroup.h). ARMOR ONLY: the weapon dimension
+        // collapses by look with no reported name/ownership problem, so weapon
+        // rows leave this empty and every consumer below falls back to the
+        // survivor-exact test it already used.
+        StyleGroup          group;
 
         // Weapon dimension (see WeaponSlots.h). Set = this is a WEAP/AMMO
         // style listing under that class instead of an armor slot bit.
@@ -148,10 +156,13 @@ namespace OS {
         [[nodiscard]] static int SexIdxOf(RE::TESNPC* a_npc);
 
         // Items whose PRIMARY slot is the given bit (multi-slot armor lists
-        // under its lowest slot only - no duplicates across slots), filtered
-        // by a case-insensitive substring of the name OR source plugin (empty
-        // = all). a_collectedOnly additionally limits to looks in the player's
-        // Collection (owned-at-some-point); a_armorType (0 light, 1 heavy,
+        // under ONE slot only - no duplicates across slots; see
+        // PrimaryBitForSlotMask), filtered by a case-insensitive substring of
+        // the name, of any ALIAS the row collapsed (StyleGroup), or of the
+        // source plugin (empty = all). a_collectedOnly additionally limits to
+        // looks in the player's Collection - owned-at-some-point, testing the
+        // whole collapsed group, so owning any member makes the look
+        // browsable; a_armorType (0 light, 1 heavy,
         // 2 clothing; -1 = any) narrows to one armor class; a_favoritesOnly
         // limits to starred looks (OS-22). Styles from newly-added plugins are
         // never filtered - they just sort to the top and carry a NEW badge

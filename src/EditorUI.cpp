@@ -3137,11 +3137,27 @@ namespace OS::EditorUI {
                     }
                 }
                 if (hovered && !overStar) {  // the star shows its own tooltip
+                    // "Also known as": this row matched a name it does not
+                    // show, because the record carrying that name collapsed
+                    // into it. Searching "Novice Robes" lands you on "Mantled
+                    // College Robes", which without this line reads as an
+                    // unrelated hit rather than the look you asked for. Only
+                    // when the visible name did NOT match - if it did, the gold
+                    // highlight has already explained the hit.
+                    std::string tip = item->source;
+                    if (searching && FindCI(item->name, g_search) == std::string_view::npos) {
+                        const auto alias = item->group.MatchingAlias(g_search);
+                        if (!alias.empty()) {
+                            tip += "\n";
+                            tip += "$FR_AlsoKnownAs"_T;
+                            tip += alias;
+                        }
+                    }
                     if (unfit) {
-                        OS::ui::SetTooltipF("$FR_MayNotFit"_T, item->source.c_str(),
+                        OS::ui::SetTooltipF("$FR_MayNotFit"_T, tip.c_str(),
                                           StyleCatalog::FitReasonText(item->fitReason).c_str());
                     } else {
-                        OS::ui::SetTooltipF("%s", item->source.c_str());
+                        OS::ui::SetTooltipF("%s", tip.c_str());
                     }
                 }
                 FUCK::PopID();
