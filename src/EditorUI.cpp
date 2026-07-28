@@ -2999,8 +2999,79 @@ namespace OS::EditorUI {
                 });
             }
 
+            // ---- the pinned "Nothing" row ------------------------------------
+            // Per-slot Hide already does exactly what "show nothing here" asks
+            // for, but its only mouse affordance is the slot row's leading ICON,
+            // which reads as decoration - so the feature is invisible to a user
+            // looking where they are told to look, at the list of things to
+            // pick. This is that missing affordance: a row in the style list,
+            // styled like a real one but backed by no catalog item.
+            //
+            // It is deliberately NOT filtered. Search, favorites, armor type,
+            // hide-unfit and collected-only all narrow which STYLES exist;
+            // "nothing" is not a style and is always available, so it is always
+            // the first row. It is not in `results`, so the "N styles" count
+            // above the table keeps counting styles.
+            //
+            // Never for weapons (weapon hide is unsupported by design) and never
+            // for the shield, using the same predicate the slot row uses for its
+            // own hide affordance.
+            const bool showNothingRow =
+                !g_selectedWeapon && !StyleRequiresWornItem(g_selectedBit);
+            if (showNothingRow) {
+                const bool nothingSelected =
+                    g_staged.EntryFor(g_selectedBit).kind == SlotEntry::Kind::kHide;
+                FUCK::PushID("##nothingrow");
+                FUCK::TableNextRow();
+                FUCK::TableNextColumn();
+                const bool nothingClicked = FUCK::Selectable(
+                    "##row", nothingSelected, ImGuiSelectableFlags_SpanAllColumns);
+                const bool nothingHovered = FUCK::IsItemHovered();
+                const ImVec2 nmin = FUCK::GetItemRectMin();
+                const ImVec2 nmax = FUCK::GetItemRectMax();
+                {
+                    // Hand-drawn at the same inset the style names use, so the
+                    // pinned row lines up with the list under it. The star
+                    // column stays empty - there is nothing to favorite.
+                    const float x = nmin.x + OS::ui::FontSize() + OS::ui::ItemSpacing().x;
+                    const float y = nmin.y + (nmax.y - nmin.y - OS::ui::FontSize()) * 0.5f;
+                    const char* label = "$FR_NothingRow"_T;
+                    OS::ui::TextAt(ImVec2(x, y), OS::ui::Col(ImGuiCol_Text), label,
+                                   label + std::strlen(label), false);
+                }
+                // Class/Plugin cells stay blank: this row has neither, and a
+                // filler glyph would be one more codepoint to audit for tofu.
+                if (g_showClass) {
+                    FUCK::TableNextColumn();
+                }
+                if (g_showSource) {
+                    FUCK::TableNextColumn();
+                }
+                if (nothingClicked) {
+                    // SetHide, NOT ToggleHideSlot: a row you SELECT must not
+                    // deselect itself on a second click. Everything else about
+                    // the edit - crash-guard clear, undo record, dirty flag,
+                    // gold cost, live preview - is the slot icon's own ceremony,
+                    // shared through Push().
+                    CrashGuard::ClearPreviewing();
+                    g_staged.SetHide(g_selectedBit);
+                    Push();
+                    g_hoverKey     = StyleRefKey{};
+                    g_hoverPending = StyleRefKey{};
+                    EditorStyle::PlayUISound("UIMenuOK");
+                }
+                if (nothingHovered) {
+                    FUCK::SetTooltip("$FR_NothingRowTip"_T);
+                }
+                FUCK::PopID();
+            }
+
             // Controller (user): after a gamepad slot pick, land nav on the first style
             // row so the right panel takes focus. One-shot - consume the flag here.
+            // Deliberately resolved AFTER the Nothing row: the pinned row is a
+            // normal nav stop (reachable with D-pad Up, which is what finally
+            // gives the gamepad a discoverable hide), but landing on it would
+            // change where every existing gamepad slot pick puts focus.
             bool focusFirstStyle = g_focusStyleList;
             g_focusStyleList     = false;
             for (const auto* item : results) {
