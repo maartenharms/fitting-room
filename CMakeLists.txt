@@ -21,6 +21,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/REAugments.cpp
         src/StyleRef.h
         src/StyleRef.cpp
+        src/StyleGroup.h
         src/StyleCatalog.h
         src/StyleCatalog.cpp
         src/SetDetector.h
@@ -143,6 +144,11 @@ target_include_directories(NpcSessionTests PRIVATE src)
 add_executable(RefreshGateTests tests/test_refreshgate.cpp)
 target_compile_features(RefreshGateTests PRIVATE cxx_std_23)
 target_include_directories(RefreshGateTests PRIVATE src)
+
+# Pure-logic look-aware catalog tests (variant groups, aliases, primary bit).
+add_executable(StyleGroupTests tests/test_stylegroup.cpp)
+target_compile_features(StyleGroupTests PRIVATE cxx_std_23)
+target_include_directories(StyleGroupTests PRIVATE src)
 
 # Real ImGui tab-state regression test for the Presets source tabs.
 add_executable(ShowcaseTabsTests tests/test_showcase_tabs.cpp)

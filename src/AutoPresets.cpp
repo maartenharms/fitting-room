@@ -26,19 +26,9 @@ namespace OS {
             return a_s;
         }
 
-        // Case-insensitive substring test (for the [Debug] sDiagnosePlugin trace).
-        bool ContainsCI(std::string_view a_hay, std::string_view a_needle) {
-            if (a_needle.empty()) {
-                return true;
-            }
-            const auto lower = [](char c) {
-                return std::tolower(static_cast<unsigned char>(c));
-            };
-            const auto it = std::search(a_hay.begin(), a_hay.end(), a_needle.begin(),
-                                        a_needle.end(),
-                                        [&](char a, char b) { return lower(a) == lower(b); });
-            return it != a_hay.end();
-        }
+        // (The case-insensitive substring test used by the [Debug]
+        // sDiagnosePlugin trace below is OS::ContainsCI, from StyleGroup.h via
+        // StyleCatalog.h - it used to be duplicated here.)
 
         const char* FitName(FitReason a_r) {
             switch (a_r) {

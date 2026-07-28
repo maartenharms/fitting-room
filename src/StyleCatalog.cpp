@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <bit>
 #include <cctype>
+#include <map>
 #include <set>
 #include <string>
 #include <utility>
@@ -19,18 +20,8 @@
 namespace OS {
 
     namespace {
-        bool ContainsCI(std::string_view a_hay, std::string_view a_needle) {
-            if (a_needle.empty()) {
-                return true;
-            }
-            const auto lower = [](char a_c) {
-                return std::tolower(static_cast<unsigned char>(a_c));
-            };
-            const auto it = std::search(a_hay.begin(), a_hay.end(), a_needle.begin(),
-                                        a_needle.end(),
-                                        [&](char a, char b) { return lower(a) == lower(b); });
-            return it != a_hay.end();
-        }
+        // ContainsCI now lives in StyleGroup.h (via StyleCatalog.h) - the alias
+        // search needs the same predicate, and two copies would drift.
 
         // WEAP and AMMO both inherit TESModelTextureSwap, but only through their
         // concrete type - hence the As<> dispatch. nullptr = not a weapon form.
@@ -218,7 +209,7 @@ namespace OS {
             item.name       = name;
             item.source     = item.key.modName;
             item.slotMask   = mask;
-            item.primaryBit = static_cast<std::uint32_t>(std::countr_zero(mask));
+            item.primaryBit = PrimaryBitForSlotMask(mask);
             item.armorType  = static_cast<std::uint8_t>(armo->GetArmorType());
             if (const char* ed = armo->GetFormEditorID(); ed && *ed) {
                 item.edid = ed;  // best-effort; a corroborating stem for set detection
@@ -332,31 +323,58 @@ namespace OS {
             std::ranges::sort(addons);
             return addons;
         };
-        std::vector<StyleItem>                        unique;
-        std::set<std::vector<RE::TESObjectARMA*>>     seen;
-        std::set<std::pair<WeaponClass, std::string>> seenWeapon;  // (class, look)
-        std::size_t                                   armorCollapsed  = 0;
-        std::size_t                                   weaponCollapsed = 0;
+        // The armor map remembers WHERE the survivor landed, not merely that one
+        // was seen: a collapsed variant now folds its FormID and name into that
+        // survivor's group (StyleGroup.h) instead of being discarded, which is
+        // what makes the row searchable and collectable by look rather than by
+        // record. Weapons keep the plain seen-set - their rows carry no group
+        // (see StyleItem::group).
+        std::vector<StyleItem>                             unique;
+        std::map<std::vector<RE::TESObjectARMA*>, std::size_t> seen;  // addon set -> index in unique
+        std::set<std::pair<WeaponClass, std::string>>      seenWeapon;  // (class, look)
+        std::size_t                                        armorCollapsed  = 0;
+        std::size_t                                        weaponCollapsed = 0;
         for (auto& it : items_) {
-            const bool fresh =
-                it.IsWeapon()
-                    ? seenWeapon.emplace(*it.weaponClass, WeaponLookKey(WeaponSwapOf(it.form)))
-                          .second
-                    : seen.insert(addonKey(it)).second;
+            std::size_t survivor = 0;
+            bool        fresh    = false;
+            if (it.IsWeapon()) {
+                fresh = seenWeapon.emplace(*it.weaponClass, WeaponLookKey(WeaponSwapOf(it.form)))
+                            .second;
+            } else {
+                const auto [pos, inserted] = seen.emplace(addonKey(it), unique.size());
+                fresh                      = inserted;
+                survivor                   = pos->second;
+            }
             if (fresh) {
+                if (!it.IsWeapon()) {
+                    it.group.Seed(it.form->GetFormID());
+                }
                 unique.push_back(std::move(it));
                 continue;
             }
+            const bool traced =
+                !diag.empty() && (ContainsCI(it.name, diag) || ContainsCI(it.source, diag));
             if (it.IsWeapon()) {
                 ++weaponCollapsed;
-            } else {
-                ++armorCollapsed;
+                if (traced) {
+                    spdlog::info("[diag/catalog] {:08X} '{}' [{}] -> DROP: variant-collapsed "
+                                 "(same class + look (model + texture swap) as a kept, "
+                                 "lower-FormID style)",
+                                 it.form->GetFormID(), it.name, it.source);
+                }
+                continue;
             }
-            if (!diag.empty() && (ContainsCI(it.name, diag) || ContainsCI(it.source, diag))) {
+            ++armorCollapsed;
+            unique[survivor].group.Fold(it.form->GetFormID(), it.name, unique[survivor].name);
+            if (traced) {
+                // Naming the survivor turns this line into the verification tool
+                // for the whole look-aware feature: it says which row absorbed
+                // this record, so "why can I not find X?" is answerable from the log.
                 spdlog::info("[diag/catalog] {:08X} '{}' [{}] -> DROP: variant-collapsed "
-                             "(same {} as a kept, lower-FormID style)",
+                             "(same addon set as a kept, lower-FormID style) -> survivor "
+                             "{:08X} '{}'",
                              it.form->GetFormID(), it.name, it.source,
-                             it.IsWeapon() ? "class + look (model + texture swap)" : "addon set");
+                             unique[survivor].form->GetFormID(), unique[survivor].name);
             }
         }
         items_ = std::move(unique);
@@ -556,7 +574,13 @@ namespace OS {
     namespace {
         bool Matches(const StyleItem& a_it, std::string_view a_search, bool a_collectedOnly,
                      int a_armorType, bool a_favoritesOnly, const Collection& a_collection) {
-            if (a_collectedOnly && !a_collection.Knows(a_it.form->GetFormID())) {
+            // Ownership is a question about the LOOK, not about whichever record
+            // happened to win the collapse. The survivor is tested
+            // first: it is the common case, and it is the whole test for weapon
+            // rows, which carry no group.
+            if (a_collectedOnly && !a_collection.Knows(a_it.form->GetFormID()) &&
+                !a_it.group.AnyMemberKnown(
+                    [&](std::uint32_t a_id) { return a_collection.Knows(a_id); })) {
                 return false;
             }
             if (a_favoritesOnly && !Favorites::IsFavorite(a_it.key)) {
@@ -572,7 +596,14 @@ namespace OS {
                 a_it.armorType != static_cast<std::uint8_t>(a_armorType)) {
                 return false;
             }
-            return ContainsCI(a_it.name, a_search) || ContainsCI(a_it.source, a_search);
+            // The name a player reads in their inventory is very often a name
+            // this row no longer shows - "Novice Robes of Conjuration" collapsed
+            // into "Mantled College Robes" - so the aliases the group kept are
+            // searched too. The row still draws under its survivor's name (stable, and
+            // no regression for anyone searching it); the tooltip reports which
+            // alias matched.
+            return ContainsCI(a_it.name, a_search) || ContainsCI(a_it.source, a_search) ||
+                   !a_it.group.MatchingAlias(a_search).empty();
         }
     }
 
