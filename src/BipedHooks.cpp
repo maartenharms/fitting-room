@@ -1,6 +1,7 @@
 #include "BipedHooks.h"
 
 #include "BipedPost.h"
+#include "HeadRestore.h"
 #include "NpcLookup.h"
 #include "OutfitSession.h"
 #include "REAugments.h"
@@ -8,6 +9,7 @@
 #include "VersionCheck.h"
 
 #include <functional>
+#include <span>
 
 namespace OS {
 
@@ -71,6 +73,79 @@ namespace OS {
                 }
             }
             return r;
+        }
+
+        // ---- head restore: which real items still suppress head content ----
+        // (see HeadRestore.h for the rule and the mask)
+        // The engine's worn mask describes what is EQUIPPED. Once an outfit
+        // hides or styles over a piece, that piece is no longer rendered, so it
+        // must stop suppressing the head content it was covering - otherwise a
+        // closed helm (slots 30+31+42+43) leaves a headless character behind
+        // when only slot 31 is hidden. See HeadRestore.h for the rule.
+        //
+        // At most four distinct items can cover the four head-content slots,
+        // and in practice it is one helmet, so the fixed array never spills.
+        inline constexpr std::size_t kMaxRealHeadItems = 4;
+
+        struct RealHeadItems {
+            std::uint32_t coverage[kMaxRealHeadItems]{};
+            std::size_t   count{ 0 };
+
+            [[nodiscard]] std::span<const std::uint32_t> View() const {
+                return { coverage, count };
+            }
+        };
+
+        RealHeadItems CollectRealHeadItems(const RealWorn& a_worn) {
+            RealHeadItems      out;
+            RE::TESObjectARMO* seen[kMaxRealHeadItems]{};
+            for (std::uint32_t bit = 0; bit < 32 && out.count < kMaxRealHeadItems; ++bit) {
+                if (((kHeadContentMask >> bit) & 1u) == 0) {
+                    continue;
+                }
+                auto* armo = a_worn.armo[bit];
+                if (!armo) {
+                    continue;
+                }
+                bool already = false;  // one closed helm fills all four slots
+                for (std::size_t i = 0; i < out.count; ++i) {
+                    if (seen[i] == armo) {
+                        already = true;
+                        break;
+                    }
+                }
+                if (already) {
+                    continue;
+                }
+                seen[out.count] = armo;
+                // The ARMO's own slot mask, NOT its ARMAs': this is exactly what
+                // the engine put in the worn mask for this piece, and lifting
+                // more than it contributed would strip bits nobody set.
+                out.coverage[out.count] = static_cast<std::uint32_t>(armo->GetSlotMask());
+                ++out.count;
+            }
+            return out;
+        }
+
+        // The shim's head-restore composition, shared by the player and NPC
+        // paths (they differ only in where the styled coverage comes from).
+        std::uint32_t RestoredWornMask(RE::InventoryChanges* a_changes, std::uint32_t a_real,
+                                       std::uint32_t a_styleMask, std::uint32_t a_hideMask,
+                                       std::uint32_t a_hiddenHeadPartMask,
+                                       std::uint32_t a_styledHeadCoverage) {
+            std::uint32_t lifted = 0;
+            // Two free exact tests before the inventory walk: no real item
+            // covers head content, or the outfit changes nothing. Either way
+            // nothing can lift and the mask is 0.3.0's, bit for bit. Note the
+            // touched mask is NOT narrowed to head slots - hiding the Body row
+            // of a hooded robe (31+32+42) removes its hood too, so its head
+            // suppression must lift with it.
+            if ((a_real & kHeadContentMask) != 0 && (a_hideMask | a_styleMask) != 0) {
+                lifted = LiftedHeadBits(CollectRealHeadItems(SnapshotRealWorn(a_changes)).View(),
+                                        a_hideMask | a_styleMask);
+            }
+            return ComposeWornMask(a_real, a_styleMask, a_styledHeadCoverage,
+                                   a_hiddenHeadPartMask, lifted);
         }
 
         // ---- Helmet Toggle 2 interop (mirrors Apparel Preview's guard) ----
@@ -626,9 +701,26 @@ namespace OS {
                     if (HT2HidesHeadgear()) {
                         styleMask &= ~(kHT2HeadSlots & real);
                     }
-                    const auto shimmed = (real | styleMask) & ~d.hiddenHeadPartMask;
-                    spdlog::debug("wornmask real={:08X} -> {:08X} (style={:04X} hideHead={:04X})",
-                                  real, shimmed, d.styleMask, d.hiddenHeadPartMask);
+                    // A styled head piece must shadow the face exactly as the
+                    // real one would - and now that the real item's suppression
+                    // lifts, it is the only thing that can. Resolved from the
+                    // HT2-adjusted mask so a suppressed style contributes
+                    // nothing, same as its geometry.
+                    std::uint32_t styledHead = 0;
+                    if (styleMask != 0) {
+                        session.VisitStyles([&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
+                            if (a_armo && ((styleMask >> a_bit) & 1u)) {
+                                styledHead |= static_cast<std::uint32_t>(a_armo->GetSlotMask());
+                            }
+                        });
+                    }
+                    const auto shimmed =
+                        RestoredWornMask(a_changes, real, styleMask, d.hideMask,
+                                         d.hiddenHeadPartMask, styledHead);
+                    spdlog::debug("wornmask real={:08X} -> {:08X} (style={:04X} hideHead={:04X} "
+                                  "styledHead={:04X})",
+                                  real, shimmed, d.styleMask, d.hiddenHeadPartMask,
+                                  styledHead & kHeadContentMask);
                     return shimmed;
                 }
 
@@ -645,9 +737,20 @@ namespace OS {
                 // helmet still hides the appropriate hair/head-part nodes even
                 // when no gameplay helmet is equipped underneath it.
                 const DisplaySet d = NpcResolve::WornRequiredDisplay(lk.entry->display, real);
-                const auto shimmed = (real | d.styleMask) & ~d.hiddenHeadPartMask;
-                spdlog::debug("wornmask NPC {:08X} real={:08X} -> {:08X} (hideHead={:04X})",
-                              lk.baseFormID, real, shimmed, d.hiddenHeadPartMask);
+                // Same head restore as the player, with the styles read from the
+                // snapshot's already-resolved ARMOs instead of VisitStyles.
+                std::uint32_t styledHead = 0;
+                for (const auto& styled : lk.entry->styles) {
+                    if (styled.armo && ((d.styleMask >> styled.bit) & 1u)) {
+                        styledHead |= static_cast<std::uint32_t>(styled.armo->GetSlotMask());
+                    }
+                }
+                const auto shimmed = RestoredWornMask(a_changes, real, d.styleMask, d.hideMask,
+                                                      d.hiddenHeadPartMask, styledHead);
+                spdlog::debug("wornmask NPC {:08X} real={:08X} -> {:08X} (hideHead={:04X} "
+                              "styledHead={:04X})",
+                              lk.baseFormID, real, shimmed, d.hiddenHeadPartMask,
+                              styledHead & kHeadContentMask);
                 return shimmed;
             } catch (...) {
                 return real;

@@ -50,6 +50,7 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/Migration.h
         src/OutfitSession.h
         src/OutfitSession.cpp
+        src/HeadRestore.h
         src/BipedHooks.h
         src/BipedHooks.cpp
         src/BipedPost.h
@@ -143,6 +144,11 @@ target_include_directories(NpcSessionTests PRIVATE src)
 add_executable(RefreshGateTests tests/test_refreshgate.cpp)
 target_compile_features(RefreshGateTests PRIVATE cxx_std_23)
 target_include_directories(RefreshGateTests PRIVATE src)
+
+# Pure-logic head-restore mask tests (closed-helm face/ears restore).
+add_executable(HeadRestoreTests tests/test_headrestore.cpp)
+target_compile_features(HeadRestoreTests PRIVATE cxx_std_23)
+target_include_directories(HeadRestoreTests PRIVATE src)
 
 # Real ImGui tab-state regression test for the Presets source tabs.
 add_executable(ShowcaseTabsTests tests/test_showcase_tabs.cpp)
