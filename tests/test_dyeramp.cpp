@@ -59,17 +59,39 @@ int main() {
             CHECK(lo <= hi);
         }
     }
-    {  // ⚠ THE COVERAGE RULE. Iridescent needs a cubemap to be view dependent,
-        // and envmap and default shapes coexist inside ONE garment: an Iron
-        // Armor is IronArmor (EnvironmentMap) beside IronSkirt and IronSatchel
-        // (Default). Degrading to nacre rather than to flat is what stops one
-        // garment half shimmering, which reads as a bug rather than a look.
-        CHECK(EffectiveMode(Mode::kIridescent, true) == Mode::kIridescent);
-        CHECK(EffectiveMode(Mode::kIridescent, false) == Mode::kNacre);
-        CHECK(EffectiveMode(Mode::kNacre, true) == Mode::kNacre);
-        CHECK(EffectiveMode(Mode::kNacre, false) == Mode::kNacre);
-        CHECK(EffectiveMode(Mode::kFlat, true) == Mode::kFlat);
-        CHECK(EffectiveMode(Mode::kFlat, false) == Mode::kFlat);
+    {  // ⚠ THE CARRIER RULE (2026-09-02). An iridescent dye's second colour
+        // needs somewhere OTHER than the diffuse to live: the cubemap of a
+        // reflective shape (the angle sweep on metal) or the fuzz and coat
+        // constants of a True PBR material (the 1.1.6 pearl). A shape with
+        // neither takes its first colour FLAT, like a flat dye.
+        //
+        // Field, 2026-09-02: 1.1.6 had degraded iridescent to nacre on such a
+        // shape, and since d9c49f10 forced recolour there the luminance-keyed
+        // ramp actually ran, spreading both stops across a cloth robe's folds
+        // as marbling. The user chose flat over a tamer ramp ("do 1"). The
+        // half-shimmering Iron Armor the old rule guarded against is now the
+        // look: the cuirass sweeps, the skirt is plain.
+        CHECK(EffectiveMode(Mode::kIridescent, Carrier::kCubemap) == Mode::kIridescent);
+        CHECK(EffectiveMode(Mode::kIridescent, Carrier::kPbrPearl) == Mode::kNacre);
+        CHECK(EffectiveMode(Mode::kIridescent, Carrier::kNone) == Mode::kFlat);
+        // ⚠ NACRE DYES ARE UNTOUCHED. Nacre IS the diffuse ramp by design, and
+        // the user named iridescent alone.
+        CHECK(EffectiveMode(Mode::kNacre, Carrier::kCubemap) == Mode::kNacre);
+        CHECK(EffectiveMode(Mode::kNacre, Carrier::kPbrPearl) == Mode::kNacre);
+        CHECK(EffectiveMode(Mode::kNacre, Carrier::kNone) == Mode::kNacre);
+        CHECK(EffectiveMode(Mode::kFlat, Carrier::kCubemap) == Mode::kFlat);
+        CHECK(EffectiveMode(Mode::kFlat, Carrier::kPbrPearl) == Mode::kFlat);
+        CHECK(EffectiveMode(Mode::kFlat, Carrier::kNone) == Mode::kFlat);
+    }
+    {  // ⚠ THE CUBEMAP OUTRANKS THE PEARL, which pins the order OutfitDye.cpp
+        // asks its two questions in. A reflective shape keeps the sweep it has
+        // always had whatever its material's flags say; the pearl carrier is
+        // only consulted on a shape with no cubemap, which is where a True PBR
+        // piece always lands (Community Shaders answers kDefault for it).
+        CHECK(CarrierFor(true, false) == Carrier::kCubemap);
+        CHECK(CarrierFor(true, true) == Carrier::kCubemap);
+        CHECK(CarrierFor(false, true) == Carrier::kPbrPearl);
+        CHECK(CarrierFor(false, false) == Carrier::kNone);
     }
     {  // ⚠ THE RAMP LANDS ON EXACTLY ONE TARGET, and this is the pair of
         // predicates the paint path branches on. Ramping BOTH the diffuse and
@@ -84,13 +106,19 @@ int main() {
         CHECK(!RampsReflection(Mode::kNacre));
         CHECK(RampsReflection(Mode::kIridescent));
     }
-    {  // And composed with the degrade, which is how the two halves of one
-        // garment end up agreeing: the cloth shape ramps its diffuse, the metal
-        // shape ramps its reflection, and neither ramps both.
-        CHECK(RampsDiffuse(EffectiveMode(Mode::kIridescent, false)));
-        CHECK(!RampsReflection(EffectiveMode(Mode::kIridescent, false)));
-        CHECK(!RampsDiffuse(EffectiveMode(Mode::kIridescent, true)));
-        CHECK(RampsReflection(EffectiveMode(Mode::kIridescent, true)));
+    {  // And composed with the degrade, which is what each shape of one garment
+        // does under an iridescent dye: the metal shape ramps its reflection,
+        // a True PBR pearl carrier ramps its diffuse (OutfitDye.cpp then hands
+        // that ramp to the fuzz, or leaves it on the diffuse for a coat-only
+        // piece), the cloth shape ramps NOTHING, and no shape ramps both.
+        CHECK(RampsReflection(EffectiveMode(Mode::kIridescent, Carrier::kCubemap)));
+        CHECK(!RampsDiffuse(EffectiveMode(Mode::kIridescent, Carrier::kCubemap)));
+        CHECK(RampsDiffuse(EffectiveMode(Mode::kIridescent, Carrier::kPbrPearl)));
+        CHECK(!RampsReflection(EffectiveMode(Mode::kIridescent, Carrier::kPbrPearl)));
+        CHECK(!RampsDiffuse(EffectiveMode(Mode::kIridescent, Carrier::kNone)));
+        CHECK(!RampsReflection(EffectiveMode(Mode::kIridescent, Carrier::kNone)));
+        // A nacre dye on cloth still ramps its diffuse, exactly as 1.1.7 did.
+        CHECK(RampsDiffuse(EffectiveMode(Mode::kNacre, Carrier::kNone)));
     }
     {  // An unknown byte from a future record reads as flat rather than as
         // whatever the enum's last value happens to be.

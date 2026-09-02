@@ -1764,7 +1764,8 @@ void main(uint3 id : SV_DispatchThreadID)
             p.tint[1] = a_req.tint.green;
             p.tint[2] = a_req.tint.blue;
             // ⚠ BIT 2 IS "RUN THE RAMP", AND ONE BIT IS ENOUGH. DyeRamp::
-            // EffectiveMode has already resolved iridescent down to nacre by the
+            // EffectiveMode has already resolved iridescent against the shape's
+            // carrier (nacre on a True PBR pearl carrier, flat with none) by the
             // time a request gets here, and which TARGET the ramp lands on was
             // decided by the caller picking the 2D or the cube shader. So the
             // only thing left for the shader to know is whether to run it.

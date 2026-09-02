@@ -13,7 +13,7 @@ namespace OS::DyeRamp {
     enum class Mode : std::uint8_t {
         kFlat       = 0,  // one hue, exactly what shipped before
         kNacre      = 1,  // two stops mapped over luminance, static
-        kIridescent = 2,  // nacre pointed at the cubemap where there is one
+        kIridescent = 2,  // the ramp on the cubemap where there is one, nacre on a pearl carrier, flat elsewhere
     };
 
     // ⚠ AN UNKNOWN BYTE IS FLAT, NOT THE LAST ENUMERATOR. A record written by a
@@ -66,18 +66,65 @@ namespace OS::DyeRamp {
         return static_cast<std::uint8_t>(static_cast<int>(a_first) + moved);
     }
 
-    // What a shape actually gets, once the shape is known.
+    // ---- where a second colour can live on a shape -------------------------
     //
-    // ⚠ IRIDESCENT DEGRADES TO NACRE, NEVER TO FLAT. The angle shift lives in
-    // the cubemap, so a shape without one cannot have it. Falling back to flat
-    // would leave the cloth half of a garment a plain colour beside a
-    // shimmering metal half, which the fragmentation note already records as
-    // reading like a bug. Nacre keeps both halves on the same two stops.
-    [[nodiscard]] constexpr Mode EffectiveMode(Mode a_declared, bool a_shapeIsReflective) {
-        if (a_declared == Mode::kIridescent && !a_shapeIsReflective) {
-            return Mode::kNacre;
+    // A two-stop dye needs a carrier for its second stop, and the shape decides
+    // which one it has. The cubemap of a reflective shape carries it as an
+    // angle sweep. The fuzz and coat constants of a Community Shaders True PBR
+    // material carry it as a grazing-angle sheen (PbrPearl.h). A shape with
+    // neither has only its diffuse, and on a diffuse a second colour can only
+    // be a luminance-keyed ramp across the texture itself.
+    enum class Carrier : std::uint8_t {
+        kNone     = 0,  // diffuse only: cloth, leather, a PBR piece with no fuzz or coat
+        kCubemap  = 1,  // an environment-mapped shape, the sweep on metal
+        kPbrPearl = 2,  // a True PBR material whose flags declare fuzz or a coloured coat
+    };
+
+    // ⚠ THE CUBEMAP OUTRANKS THE PEARL. A reflective shape keeps the sweep it
+    // has always had whatever its material's flags say; the pearl question is
+    // only asked on a shape with no cubemap, which is where every True PBR
+    // piece lands (Community Shaders answers kDefault for its own material and
+    // PG Patcher stripped the cubemap). Keeping that order here, pure, is what
+    // stops OutfitDye.cpp deciding it inside a condition no test compiles.
+    [[nodiscard]] constexpr Carrier CarrierFor(bool a_shapeIsReflective,
+                                               bool a_pbrPearlCarries) {
+        if (a_shapeIsReflective) {
+            return Carrier::kCubemap;
         }
-        return a_declared;
+        return a_pbrPearlCarries ? Carrier::kPbrPearl : Carrier::kNone;
+    }
+
+    // What a shape actually gets, once its carrier is known.
+    //
+    // ⚠ IRIDESCENT DEGRADES TO FLAT WHERE THERE IS NO CARRIER, AND TO NACRE ON
+    // A PEARL CARRIER (2026-09-02). Through 1.1.7 it degraded to nacre on every
+    // shape without a cubemap, on the argument that a plain skirt beside a
+    // sweeping cuirass reads as a bug. Under softlight that nacre had been a
+    // flat tint anyway, because the shader runs the diffuse ramp only under
+    // recolour; d9c49f10 (1.1.6) forced recolour on that arm to stop a bright
+    // pearl going white, and the luminance-keyed ramp ran on cloth for the
+    // first time. The field called it ugly marbling, fine on metal and not on
+    // cloth, and the user chose flat over a tamer ramp ("do 1"). So a shape
+    // with nothing but its diffuse takes the primary colour flat, like a flat
+    // dye, and the sweep on the metal half of a garment is the look.
+    //
+    // A True PBR pearl carrier keeps nacre: OutfitDye.cpp hands that ramp to
+    // the fuzz (pearlRidesFuzz), or leaves it on the diffuse beside the coat
+    // write for a coat-only piece, which is the 1.1.6 pearl mechanism exactly
+    // as it was. Nacre dyes are the diffuse ramp by design and are degraded
+    // nowhere.
+    [[nodiscard]] constexpr Mode EffectiveMode(Mode a_declared, Carrier a_carrier) {
+        if (a_declared != Mode::kIridescent) {
+            return a_declared;
+        }
+        switch (a_carrier) {
+            case Carrier::kCubemap:
+                return Mode::kIridescent;
+            case Carrier::kPbrPearl:
+                return Mode::kNacre;
+            default:
+                return Mode::kFlat;
+        }
     }
 
     // ---- which ONE target the ramp lands on --------------------------------
@@ -86,8 +133,9 @@ namespace OS::DyeRamp {
     // shape running iridescent the reflection is what changes with viewing
     // angle, so the ramp goes to the cubemap and the diffuse keeps the flat
     // tint. Ramping the diffuse as well would double the colour and read as a
-    // stain rather than as a sheen. On every other shape there is no reflection
-    // to carry it, so the ramp goes to the diffuse instead.
+    // stain rather than as a sheen. On a pearl carrier, and under a nacre dye
+    // anywhere, the ramp goes to the diffuse instead. A shape with no carrier
+    // under an iridescent dye ramps neither.
     //
     // ⚠ BOTH PREDICATES TAKE AN *EFFECTIVE* MODE. Pass a declared one and a
     // cloth shape asks for a cubemap it does not have; EffectiveMode above is

@@ -94,7 +94,7 @@
 
 namespace {
     // Keep in sync with project(... VERSION) in CMakeLists.txt and vcpkg.json; used only for the load log line.
-    constexpr auto kVersion = "1.1.7";
+    constexpr auto kVersion = "1.1.8";
 
     // Resolve where the log goes, and never fail silently.
     //

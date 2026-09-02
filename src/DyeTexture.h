@@ -450,8 +450,9 @@ namespace OS::DyeTexture {
     // keeps the key it already had.
     //
     // ⚠ THE MODE HERE IS ALREADY EFFECTIVE, never declared. DyeRamp::EffectiveMode
-    // resolves iridescent down to nacre on a shape with no cubemap, and that
-    // decision belongs to the caller because only the caller knows the shape.
+    // resolves iridescent against the shape's carrier (nacre on a True PBR pearl
+    // carrier, flat on a shape with no carrier at all), and that decision
+    // belongs to the caller because only the caller knows the shape.
     // Which TARGET the ramp lands on is likewise the caller's: it picks the
     // diffuse or the cubemap by which texture it hands in. By the time a request
     // reaches this module the only remaining question is whether to run the ramp

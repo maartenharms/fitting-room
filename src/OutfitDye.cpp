@@ -723,9 +723,11 @@ namespace OS::OutfitDye {
         // Delete with Settings::dyeSpikeRung when the spike returns.
         // a_ramp arrives with its mode DECLARED rather than effective, which is
         // the one thing about this signature worth saying out loud: only this
-        // function knows the shape, so only this function can resolve iridescent
-        // down to nacre. Its stops are already narrowed by strength, at the call
-        // site, beside the tint, for the reason the call site records.
+        // function knows the shape, so only this function knows the shape's
+        // CARRIER and can resolve iridescent against it (the sweep on a cubemap,
+        // nacre on a True PBR pearl carrier, flat with neither). Its stops are
+        // already narrowed by strength, at the call site, beside the tint, for
+        // the reason the call site records.
         // a_capPx is a ceiling THIS SHAPE needs on top of the install's, 0 for
         // none, and it reaches only the DIFFUSE. The right resolution is a
         // property of the surface: an eye is a few dozen pixels on screen and an
@@ -843,7 +845,18 @@ namespace OS::OutfitDye {
                 glowPath    = ts->GetTexturePath(RE::BSTextureSet::Texture::kGlowMap);
             }
 
-            // ---- which mode this SHAPE gets, and where its ramp goes --------
+            // ---- which CARRIER this SHAPE has, then which mode it gets -------
+            //
+            // ⚠⚠ THE CARRIER IS WORKED OUT BEFORE THE MODE, AND IT HAS TO BE
+            // (2026-09-02). DyeRamp::EffectiveMode degrades iridescent to FLAT
+            // on a shape with no carrier for a second colour, and a True PBR
+            // piece is NOT reflective either: Community Shaders answers
+            // kDefault for its own material and PG Patcher stripped the
+            // cubemap. Asking only "reflective?" would flatten the pearl on
+            // every PBR piece, which is the 2026-08-30/31 arc undone. So the
+            // pearl question (same RTTI test, same flag read, on the SOURCE
+            // material, as the write site below asks of the clone) is asked
+            // here first, and the carrier decides the mode.
             //
             // ⚠ THE FEATURE TEST, NOT A NULL CHECK ON THE ENVMAP MATERIAL. The
             // cast below in the finish probe is unconditional and never yields
@@ -854,8 +867,19 @@ namespace OS::OutfitDye {
             // has to be known HERE because the diffuse is acquired first.
             const bool reflective =
                 src->GetFeature() == RE::BSShaderMaterial::Feature::kEnvironmentMap;
+            const bool pbrShapeHere = a_prop->flags.any(
+                RE::BSShaderProperty::EShaderPropertyFlag::kVertexLighting);
+            PbrPearl::Writes pearlPlan{};
+            if (pbrShapeHere && Settings::GetSingleton().dyePbrPearl &&
+                PbrPearl::IsTruePbrMaterial(src)) {
+                const auto srcFlags = *reinterpret_cast<const std::uint32_t*>(
+                    reinterpret_cast<const std::byte*>(src) +
+                    PbrPearl::kPbrFlagsOffset);
+                pearlPlan = PbrPearl::PlanFor(srcFlags, true);
+            }
+            const auto carrier   = DyeRamp::CarrierFor(reflective, pearlPlan.Any());
             const auto effective = DyeRamp::EffectiveMode(
-                DyeRamp::ModeFromByte(a_ramp.mode), reflective);
+                DyeRamp::ModeFromByte(a_ramp.mode), carrier);
 
             // The same stops under the resolved mode. Handed to whichever ONE
             // target the mode names; the other gets a flat request, which is
@@ -865,7 +889,9 @@ namespace OS::OutfitDye {
             // the reflection is what changes with viewing angle, so the ramp goes
             // to the cubemap and the diffuse keeps the flat tint. Ramping the
             // diffuse as well would double the colour and read as a stain rather
-            // than as a sheen.
+            // than as a sheen. A shape with no carrier under an iridescent dye
+            // hands a flat request to BOTH, which is what that dye now means on
+            // cloth: the primary colour through the ordinary curve.
             DyeTexture::Ramp resolved = a_ramp;
             resolved.mode             = static_cast<std::uint8_t>(effective);
 
@@ -888,22 +914,19 @@ namespace OS::OutfitDye {
             // albedo at full saturation, stop B on the grazing angle, one
             // writer each.
             //
-            // ⚠ GATED ON THE FUZZ WRITE ACTUALLY LANDING: same RTTI test,
-            // same flag read, on the SOURCE material. A PBR shape without the
-            // fuzz feature (or with the pearl switch off) keeps the old
-            // nacre-recolour diffuse, which for it is still the only carrier
-            // of a second colour at all.
-            const bool pbrShapeHere = a_prop->flags.any(
-                RE::BSShaderProperty::EShaderPropertyFlag::kVertexLighting);
-            bool pearlRidesFuzz = false;
-            if (pbrShapeHere && DyeRamp::RampsDiffuse(effective) &&
-                Settings::GetSingleton().dyePbrPearl &&
-                PbrPearl::IsTruePbrMaterial(src)) {
-                const auto srcFlags = *reinterpret_cast<const std::uint32_t*>(
-                    reinterpret_cast<const std::byte*>(src) +
-                    PbrPearl::kPbrFlagsOffset);
-                pearlRidesFuzz = PbrPearl::PlanFor(srcFlags, true).fuzz;
-            }
+            // ⚠ GATED ON THE FUZZ WRITE ACTUALLY LANDING: the plan read above
+            // off the SOURCE material, and a mode that still ramps the diffuse
+            // (nacre, or iridescent on this carrier; a flat dye has no second
+            // stop). A PBR shape with a coloured coat and no fuzz keeps the
+            // nacre-recolour diffuse beside its coat write, as in 1.1.7. One
+            // with neither feature is kNone above, so an iridescent dye goes
+            // FLAT on it through sDyePbrBlend, where it used to take
+            // nacre-recolour on a flat albedo whose luminance key collapsed
+            // and showed no ramp anyway; flat multiply is the more saturated
+            // answer there.
+            const bool pearlRidesFuzz = carrier == DyeRamp::Carrier::kPbrPearl &&
+                                        pearlPlan.fuzz &&
+                                        DyeRamp::RampsDiffuse(effective);
 
             const DyeTexture::Ramp diffuseRamp =
                 (DyeRamp::RampsDiffuse(effective) && !pearlRidesFuzz)

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # "Fitting Room" (formerly Outfit Slots) - ESO-style transmog with saved outfit slots.
 # One DLL supports Skyrim SE 1.5.97 and next-gen AE 1.6.1130+.
-project(FittingRoom VERSION 1.1.7 LANGUAGES CXX)
+project(FittingRoom VERSION 1.1.8 LANGUAGES CXX)
 
 # ⚠ TWO OPTIONS, NOT ONE. FR_BODY_STUDIO compiles the authoring workbench in.
 # FR_BODY_STUDIO_DEV additionally moves the build onto an isolated data channel
