@@ -1,5 +1,7 @@
 #include "Favorites.h"
 
+#include "BuildChannel.h"
+
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -9,8 +11,8 @@
 namespace OS::Favorites {
 
     namespace {
-        constexpr const char* kDir  = "Data/SKSE/Plugins/FittingRoom";
-        constexpr const char* kFile = "Data/SKSE/Plugins/FittingRoom/favorites.txt";
+        const auto kDir  = BuildChannel::DataRoot();
+        const auto kFile = BuildChannel::DataPath("favorites.txt");
 
         std::mutex        g_mutex;
         FavoriteSet       g_set;                    // guarded by g_mutex
@@ -47,6 +49,24 @@ namespace OS::Favorites {
         }
         std::scoped_lock l(g_mutex);
         return g_set.Contains(a_key);
+    }
+
+    // The same pair for keys with no form behind them, sharing the mutex, the
+    // file and the g_any fast-path flag so a body star is not a second store.
+    bool IsFavoriteLine(std::string_view a_line) {
+        if (!g_any.load(std::memory_order_relaxed) || a_line.empty()) {
+            return false;  // fast path: nothing starred, no lock
+        }
+        std::scoped_lock l(g_mutex);
+        return g_set.ContainsLine(a_line);
+    }
+
+    bool ToggleLine(std::string a_line) {
+        std::scoped_lock l(g_mutex);
+        const bool now = g_set.ToggleLine(std::move(a_line));
+        WriteLocked();
+        g_any.store(g_set.Size() > 0, std::memory_order_relaxed);
+        return now;
     }
 
     bool Toggle(const StyleRefKey& a_key) {

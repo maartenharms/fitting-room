@@ -1,5 +1,4 @@
 #include "imgui.h"
-#include "OutfitTabAdd.h"
 #include "OutfitTabs.h"
 #include "ShowcaseTabs.h"
 
@@ -105,17 +104,14 @@ int main() {
         OS::ShowcaseTabs::Cycle(OS::ShowcaseTabs::kCurated, false) ==
             OS::ShowcaseTabs::kExported;
 
-    bool addLayoutOk = true;
-    for (const float tabHeight : { 18.0f, 27.5f, 44.0f }) {
-        const auto layout = OS::OutfitTabAdd::Measure(
-            tabHeight, /*textWidth*/ 9.0f, /*textHeight*/ 13.0f, /*framePaddingX*/ 10.0f);
-        addLayoutOk = addLayoutOk && layout.height == tabHeight &&
-                      layout.textY == (tabHeight - 13.0f) * 0.5f;
-    }
-    addLayoutOk = addLayoutOk &&
-                  OS::OutfitTabAdd::CornerRadius(/*resolutionScale*/ 1.0f) > 0.0f &&
-                  OS::OutfitTabAdd::IdleGrey() < 0.5f;
-    std::printf("add_affordance_tracks_tab_height=%s\n", addLayoutOk ? "true" : "false");
+    // ⚠ THE "+" LAYOUT TEST RETIRED WITH OutfitTabAdd.h ON 2026-08-12, and
+    // it is worth saying what replaced it rather than leaving a gap. That
+    // header existed to anchor the add affordance to a tab height MEASURED off
+    // a FLICK tab item, because a FUCK::Button was taller than one and would
+    // have grown the row. The strip is hand-rolled now, so there is no
+    // foreign height to track: OutfitTabStrip::Layout gives the "+" its box
+    // out of the same array as every other tab, and OutfitTabStripTests
+    // covers it there.
 
     const bool equippedForceIsOneShot =
         OS::OutfitTabs::ShouldForceEquipped(
@@ -130,7 +126,7 @@ int main() {
                    afterBounce == OS::ShowcaseTabs::kCurated &&
                    afterExportedClick == OS::ShowcaseTabs::kExported &&
                    afterControllerSwitch == OS::ShowcaseTabs::kDiscovered &&
-                   threeSourceCycle && addLayoutOk && equippedForceIsOneShot
+                   threeSourceCycle && equippedForceIsOneShot
                ? 0
                : 1;
 }

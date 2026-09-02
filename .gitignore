@@ -7,7 +7,12 @@ out/
 compile_commands.json
 tools/build.log
 tools/build_symbols.log
+tools/build_tests.log
+tools/build_body_studio_dev.log
 
 # session worktrees + release artifacts (zips are rebuilt by tools/make_fomod.sh)
 .claude/
 release/
+
+# build output from tools/make_locks_page.py
+tools/dye-locks.html

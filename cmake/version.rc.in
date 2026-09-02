@@ -1,0 +1,47 @@
+// Generated from cmake/version.rc.in by configure_file. DO NOT EDIT THE COPY IN
+// THE BUILD FOLDER.
+//
+// ⚠⚠ THIS EXISTS SO A CRASH LOG NAMES OUR BUILD. Crash Logger and Trainwreck
+// print the DLL's file version beside its name, and without this resource we
+// were the nameless line in everybody's report:
+//
+//     Experience.dll   v3.7.2
+//     FaceGenFixes.dll v1.0.3
+//     FittingRoom.dll                 <- us, before this file
+//
+// That cost real time twice on 2026-08-29: a tester confirmed a fix and nobody
+// could tell which of three same-day builds he had run, and a crash report
+// arrived that could not be tied to a version at all.
+//
+// ⚠ THE VERSION COMES FROM CMake's project(), NOT FROM A LITERAL HERE. There
+// are already four places the version has to be right; a fifth that has to be
+// remembered by hand would be wrong within one release.
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION    @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+FILEFLAGS      0
+FILEOS         VOS_NT_WINDOWS32
+FILETYPE       VFT_DLL
+FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "Mern"
+            VALUE "FileDescription",  "@PROJECT_NAME@"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "@PROJECT_NAME@"
+            VALUE "OriginalFilename", "@PROJECT_NAME@.dll"
+            VALUE "ProductName",      "@PROJECT_NAME@"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

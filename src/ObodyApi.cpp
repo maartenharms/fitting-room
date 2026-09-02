@@ -1,10 +1,17 @@
 #include "ObodyApi.h"
 
 #include "OutfitSession.h"
+#include "RaceMenuMorphApi.h"  // the Shape key, which OBody's apply takes with it
+
+#if defined(FR_BODY_STUDIO)
+#include "BodyStudioProof.h"
+#include "Settings.h"  // bRequireWornForStyles, which decides whether a style shows at all
+#endif
 
 #include <atomic>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 // The vendored header deliberately leaves the Skyrim types undefined so the
 // consumer can bind them to whatever RE layer it uses (see its own preamble).
@@ -20,6 +27,8 @@ namespace OS::ObodyApi {
     namespace {
 
         OBody::API::IPluginInterface* g_api = nullptr;
+        std::string                   g_baseline;  // player's pre-Fitting-Room preset
+        bool                          g_baselineCaptured{ false };
 
         // Written by OBody's readiness callbacks (its thread), read by the
         // editor (the Present/render thread) - hence atomic rather than a plain
@@ -128,8 +137,92 @@ namespace OS::ObodyApi {
             const auto hides  = static_cast<std::uint32_t>((policy >> 34u) & 0x3FFFFFFFu);
             return static_cast<int>(ResolveAutoORefit(
                 mode, styles, hides, WornTorsoMask(a_actor, a_changed, a_equipping),
-                g_api && g_api->IsORefitEnabled()));
+                g_api && g_api->IsORefitEnabled(),
+                Settings::GetSingleton().requireWornForStyles));
         }
+
+        // ---- keeping the Shape page's morphs across an OBody body pass -------
+        //
+        // ⚠⚠ MEASURED 2026-08-16, AND IT IS TOTAL. Toggling Hide outfit runs a
+        // body pass, and every one of them emptied Fitting Room's own morph key:
+        //
+        //   Shape: RaceMenu's store LOST 1 of 1 morph(s) ... 'Amazon' page 1.180 store 0.000
+        //   Shape: RaceMenu's store LOST 2 of 2 morph(s) ...
+        //   Shape: RaceMenu's store LOST 3 of 3 morph(s) ...
+        //
+        // n of n, every time, both directions. OBody's apply clears EVERY morph
+        // key rather than the two it owns, so a shape written under our key is
+        // collateral. RaceMenu sums keys precisely so two mods can shape one
+        // body, and that only holds while neither clears the other's.
+        //
+        // ⚠⚠ AND THE SHAPE PAGE IS NOT THE STORAGE, WHICH IS WHY THIS IS NOT A
+        // UI BUG. A Shape slider writes straight through to RaceMenu and nothing
+        // in this plugin keeps a copy, so with the page CLOSED there was nobody
+        // to notice and nobody to put it back: an outfit change carrying a body
+        // preset silently destroyed the shape for good. The page-side watch that
+        // found this only runs while the page is open.
+        //
+        // ⚠ SO THE GUARD IS HERE, AT THE CONSUMER, and not at the call sites.
+        // Four paths reach an OBody apply - the editor, the session's player and
+        // follower passes, and Body Studio - and a fix at any one of them is a
+        // fix for that one. This is the same shape the hide-outfit defect was
+        // finally fixed with: gate where the damage happens, so every caller
+        // inherits it.
+        //
+        // ⚠ IT RESTORES ONLY WHAT WAS ACTUALLY LOST. The destructor re-reads the
+        // key and does nothing when everything it held is still there, so a pass
+        // that does not wipe costs one enumeration and no refresh at all.
+        class ShapeKeeper {
+        public:
+            explicit ShapeKeeper(RE::Actor* a_actor)
+                : actor_(a_actor), held_(RaceMenuMorphApi::SnapshotShape(a_actor)) {}
+
+            ShapeKeeper(const ShapeKeeper&)            = delete;
+            ShapeKeeper& operator=(const ShapeKeeper&) = delete;
+
+            ~ShapeKeeper() {
+                if (!actor_ || held_.empty()) {
+                    return;
+                }
+                const auto now = RaceMenuMorphApi::SnapshotShape(actor_);
+                std::size_t lost = 0;
+                for (const auto& want : held_) {
+                    bool stillThere = false;
+                    for (const auto& have : now) {
+                        if (have.name == want.name && have.value == want.value) {
+                            stillThere = true;
+                            break;
+                        }
+                    }
+                    if (!stillThere) {
+                        ++lost;
+                    }
+                }
+                if (lost == 0) {
+                    return;
+                }
+                (void)RaceMenuMorphApi::ApplyShape(actor_, held_);
+                // ⚠ ONE INFO THE FIRST TIME, DEBUG AFTER. "Did this ever run" has
+                // to be answerable from an ordinary log, and a body pass happens
+                // on every outfit change, so a line per pass would drown the file.
+                static bool s_saidOnce = false;
+                if (!s_saidOnce) {
+                    s_saidOnce = true;
+                    spdlog::info(
+                        "Shape: an OBody body pass cleared {} of {} morph(s) under our key; "
+                        "put them back. This is expected and handled - OBody clears every "
+                        "morph key, not only its own.",
+                        lost, held_.size());
+                } else {
+                    spdlog::debug("Shape: put back {} of {} morph(s) after an OBody body pass.",
+                                  lost, held_.size());
+                }
+            }
+
+        private:
+            RE::Actor*                                actor_;
+            std::vector<RaceMenuMorphApi::MorphValue> held_;
+        };
 
         class ChangeListener final : public OBody::API::IActorChangeEventListener {
         public:
@@ -206,6 +299,11 @@ namespace OS::ObodyApi {
                 // unrelated edit or equipment change.
                 OutfitSession::RequestRefresh();
                 OutfitSession::RequestRefreshLoadedNpcs();
+#if defined(FR_BODY_STUDIO)
+                // Queue after the standard refresh requests. The proof adds
+                // one more task hop so custom ownership is reasserted last.
+                BodyStudioProof::OnOBodyReady();
+#endif
             }
 
             void OBodyIsNoLongerReady() override {
@@ -355,6 +453,7 @@ namespace OS::ObodyApi {
         if (!api || !a_actor) {
             return false;
         }
+        const ShapeKeeper keeper{ a_actor };
         OBody::API::AssignPresetPayload payload{};
         payload.presetName = a_presetName;
         payload.flags      = a_applyMorphsNow
@@ -363,10 +462,74 @@ namespace OS::ObodyApi {
         return api->AssignPresetToActor(a_actor, payload);
     }
 
+    bool RemovePresetMorphsForCustom(RE::Actor* a_actor) {
+        auto* api = Live();
+        if (!api || !a_actor) {
+            return false;
+        }
+        const ShapeKeeper keeper{ a_actor };
+        api->EnsureActorIsProcessed(a_actor);
+        OBody::API::AssignPresetPayload payload{};
+        payload.presetName = {};
+        payload.flags = OBody::API::AssignPresetPayload::Flags::DoNotApplyMorphs;
+        if (!api->AssignPresetToActor(a_actor, payload)) {
+            return false;
+        }
+        // OBody owns the OBody/OClothe keys and clears them itself here. Fitting
+        // Room never reaches through RaceMenu to clear either key.
+        api->RemoveOBodyMorphsFromActor(a_actor);
+        return true;
+    }
+
+    void EnsurePlayerBaselineCaptured(RE::Actor* a_actor) {
+        if (!a_actor || !a_actor->IsPlayerRef() || g_baselineCaptured) {
+            return;
+        }
+        if (auto* api = Live()) {
+            api->EnsureActorIsProcessed(a_actor);
+            g_baseline         = AssignedPreset(a_actor);
+            g_baselineCaptured = true;
+            spdlog::info("Body Studio proof: captured player baseline '{}' before custom handoff.",
+                         g_baseline.empty() ? "(none)" : g_baseline);
+        }
+    }
+
+    void ForgetPlayerBaseline() {
+        // The baseline is one character's "usual body", latched once. Across
+        // a save load it would restore the OUTGOING character's preset onto
+        // whoever was loaded (round eighteen's cross-save latch family), so
+        // the load boundary clears it and the next handoff re-captures.
+        g_baseline.clear();
+        g_baselineCaptured = false;
+    }
+
     void ForceORefit(RE::Actor* a_actor, bool a_applied) {
         if (auto* api = Live(); api && a_actor) {
             api->ForcefullyChangeORefitForActor(a_actor, a_applied);
         }
+    }
+
+    int ApplyORefitPolicy(RE::Actor* a_actor, int a_orefit,
+                          std::uint32_t a_torsoStyleMask,
+                          std::uint32_t a_torsoHideMask) {
+        SetPolicyForActor(a_actor, PackORefitPolicy(
+            a_orefit, a_torsoStyleMask, a_torsoHideMask));
+        auto* api = Live();
+        if (!api || !a_actor) {
+            return 0;
+        }
+        const int desired = DesiredORefit(a_actor);
+        switch (desired) {
+            case 1: api->ForcefullyChangeORefitForActor(a_actor, true); break;
+            case 2: api->ForcefullyChangeORefitForActor(a_actor, false); break;
+            default: RestoreDefaultORefit(*api, a_actor); break;
+        }
+        return desired;
+    }
+
+    bool ORefitApplied(RE::Actor* a_actor) {
+        auto* api = Live();
+        return api && a_actor && api->ActorHasORefitApplied(a_actor);
     }
 
     bool GlobalORefitEnabled() {
@@ -375,11 +538,6 @@ namespace OS::ObodyApi {
     }
 
     // ---- outfit glue -----------------------------------------------------
-
-    namespace {
-        std::string g_baseline;              // the actor's own preset, pre-Fitting-Room
-        bool        g_baselineCaptured{ false };
-    }
 
     std::string Baseline() { return g_baseline; }
     bool        BaselineCaptured() { return g_baselineCaptured; }

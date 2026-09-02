@@ -7,8 +7,8 @@
 // the editor. Scenes are recognized by Papyrus mod-event NAMES (SendModEvent),
 // which makes this mod-agnostic and configurable: any framework announces its
 // scene boundaries by name, and the recognized names live in the INI
-// ([Scene] sSuspendEvents / sResumeEvents; defaults cover OStim NG plus a
-// stable OutfitSlots-specific pair). A C++ plugin integrates the same way - by
+// ([Scene] sSuspendEvents / sResumeEvents; defaults cover OStim NG and SexLab
+// plus a stable OutfitSlots-specific pair). A C++ plugin integrates the same way - by
 // sending a configured mod event - so this IS the compatibility API; no
 // versioned interface is needed.
 namespace OS::SceneGuard {

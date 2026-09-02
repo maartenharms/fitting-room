@@ -1,13 +1,25 @@
 #include "BipedHooks.h"
 
+#include "ApparelPreviewSignal.h"  // stand the worn-mask shim down during a preview
 #include "BipedPost.h"
+#include "EditorWindow.h"   // the worn rule stands down for the actor the open editor stages
+#include "WeaponPreview.h"  // a conjured shield lives only while its row is up
 #include "NpcLookup.h"
+#include "OutfitDye.h"
 #include "OutfitSession.h"
 #include "REAugments.h"
+#include "MeasuredGhosts.h"  // what the dismember sweep measured about occupants
+#include "RealWorn.h"
+#include "Settings.h"
+#include "SlotClaims.h"
 #include "SlotMask.h"
+#include "StyleCoverage.h"
 #include "VersionCheck.h"
 
+#include <array>
+#include <atomic>
 #include <functional>
+#include <optional>
 
 namespace OS {
 
@@ -18,59 +30,119 @@ namespace OS {
         using VisitWorn_t = void (*)(RE::InventoryChanges*, RE::InventoryChanges::IItemChangeVisitor&);
         VisitWorn_t g_origVisitWorn = nullptr;
 
-        // The actor's REAL worn armor, captured before we diverge the biped.
-        // armo[bit] = the ARMO the actor wears in biped slot (30 + bit), or null;
-        // coverage = the OR of every worn ARMO's slot mask (the actor's real worn
-        // slots). The NPC worn-required rule (spec §3) intersects the outfit's
-        // style/hide masks against coverage; the player ignores it.
-        struct RealWorn {
-            RE::TESObjectARMO* armo[32]{};
-            std::uint32_t      coverage{ 0 };
+        // RealWorn / SnapshotRealWorn moved to RealWorn.h (Task 11 follow-up)
+        // so the rules engine's WorldWatch heartbeat can reuse the exact same
+        // one-walk-over-entryList shape instead of reintroducing the 32x
+        // GetWornArmor cost this file already profiled and abandoned. Same
+        // logic, same reasoning, verbatim - see that header for the full
+        // comment this one used to carry.
+
+        // ---- what the last styling pass ACTUALLY achieved, per actor ----
+        // The worn-mask shim runs in a different hook (24220) from the styling
+        // pass (24231) and cannot stage geometry, so it cannot find out for
+        // itself whether the engine accepted a style, or how far a hide grew
+        // once whole pieces were expanded. Both numbers must be TOLD.
+        //
+        // ⚠ DO NOT REPLACE THIS WITH A PREDICATE. Two different shortcuts have
+        // now been tried and both were wrong, from opposite directions:
+        //
+        //   * re-running our own fit check in the shim (OS-70c). FittingRoom.log
+        //     2026-07-29 15:13 on a female Nord shows ApplyArmorAddon rejecting
+        //     'Ahzidal', 'Boiled Netch Leather Helmet' and 'Bloodworm Helm'
+        //     while StyleCatalog::EvaluateFitFor passes every one of them.
+        //   * believing ApplyArmorAddon's return value (OS-84). Those same
+        //     "rejections" mostly RENDER; the bool goes false whenever a piece's
+        //     armatures cover fewer slots than its ARMO declares.
+        //
+        // So neither our fit model nor the engine's own bool answers "what is on
+        // this character". Only the pass can answer that, by reading the biped
+        // 15500 just wrote (StagedCoverageOf), and the shim runs in a different
+        // hook with no biped to read. It has to be TOLD. That is what this is.
+        //
+        // Both hooks run on the game thread, pass first, in the same rebuild
+        // (observed on every entry in that log, same millisecond). The layout
+        // below does NOT lean on that observation, and deliberately so - it
+        // held one uint32 when review accepted "stale but self-consistent";
+        // with TWO correlated numbers a torn read is no longer harmless:
+        // old styled + new hidden composes (real & ~newHidden) | oldStyled,
+        // which can claim a head slot whose geometry is gone - the exact
+        // OS-70 failure this table exists to prevent. So the pair lives in
+        // ONE atomic (a single load is always mutually consistent), and the
+        // reader re-checks the owner AFTER loading it, so a same-hash
+        // neighbour publishing in between reads as a MISS, never as this
+        // actor's numbers. A miss falls back to the vanilla mask, erring
+        // toward a VISIBLE head: a head culled over an empty slot is a
+        // broken character, a head visible under a helmet is at worst
+        // clipping.
+        struct RenderedCoverage {
+            std::atomic<std::uint32_t> actorID{ 0 };  // 0 = empty entry
+            std::atomic<std::uint64_t> packed{ 0 };   // hidden << 32 | styled
+        };
+        static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
+        constexpr std::size_t kAppliedSlots = 8;  // a crowded cell styles a handful of actors
+        std::array<RenderedCoverage, kAppliedSlots> g_applied{};
+
+        void PublishRenderedCoverage(RE::Actor* a_actor, std::uint32_t a_styled,
+                                     std::uint32_t a_hidden) noexcept {
+            if (!a_actor) {
+                return;
+            }
+            const auto id   = a_actor->GetFormID();
+            auto&      slot = g_applied[id % kAppliedSlots];
+            slot.actorID.store(0, std::memory_order_relaxed);  // invalidate while writing
+            slot.packed.store((static_cast<std::uint64_t>(a_hidden) << 32) | a_styled,
+                              std::memory_order_relaxed);
+            slot.actorID.store(id, std::memory_order_release);
+        }
+
+        struct CoveragePair {
+            std::uint32_t styled{ 0 };
+            std::uint32_t hidden{ 0 };
         };
 
-        // ONE walk over the actor's worn inventory. The old shape called
-        // Actor::GetWornArmor 32x - and each of those builds the FULL armor
-        // inventory (Actor.cpp: GetInventory + linear scan), so a styled pass
-        // paid 32 inventory builds; that does not scale to a market square of
-        // styled NPCs (spec §3). Semantically identical to the per-slot version:
-        // CommonLib's GetWornArmor(slot) returns the first worn ARMO whose slot
-        // mask covers the slot (count>0 && entry->IsWorn() && armor->HasPartOf,
-        // Actor.cpp), and every worn item necessarily owns an InventoryEntryData
-        // in entryList (ExtraWorn/ExtraWornLeft live on an entry's extra list -
-        // RE/I/InventoryEntryData.cpp::IsWorn), so walking entryList once and
-        // OR-ing each worn ARMO's GetSlotMask into the array fills all 32 slots
-        // with the same first-worn-wins result. Verified against
-        // RE/I/InventoryChanges.h (entryList/owner) + InventoryEntryData.h
-        // (object/IsWorn) + Actor.cpp (GetWornArmor). Takes the pass's own
-        // InventoryChanges* (a_changes->owner is the actor) - no extra lookup.
-        RealWorn SnapshotRealWorn(RE::InventoryChanges* a_changes) {
-            RealWorn r;
-            if (!a_changes || !a_changes->entryList) {
-                return r;
+        std::optional<CoveragePair> RenderedCoverageFor(RE::Actor* a_actor) noexcept {
+            if (!a_actor) {
+                return std::nullopt;
             }
-            for (auto* entry : *a_changes->entryList) {
-                if (!entry || !entry->object || !entry->object->IsArmor() || !entry->IsWorn()) {
-                    continue;
-                }
-                auto* armo = entry->object->As<RE::TESObjectARMO>();
-                if (!armo) {
-                    continue;
-                }
-                const auto mask = static_cast<std::uint32_t>(armo->GetSlotMask());
-                r.coverage |= mask;
-                for (std::uint32_t bit = 0; bit < 32; ++bit) {
-                    if (((mask >> bit) & 1u) && !r.armo[bit]) {
-                        // First worn ARMO seen wins the slot. GetWornArmor breaks
-                        // the same tie by the inventory map's pointer-key order,
-                        // so the winner can differ ONLY when two worn ARMOs cover
-                        // one slot - a state the engine's one-item-per-slot equip
-                        // never produces. coverage (the §3 input) is tie-order-
-                        // independent regardless.
-                        r.armo[bit] = armo;
-                    }
-                }
+            const auto  id   = a_actor->GetFormID();
+            const auto& slot = g_applied[id % kAppliedSlots];
+            if (slot.actorID.load(std::memory_order_acquire) != id) {
+                return std::nullopt;
             }
-            return r;
+            const auto packed = slot.packed.load(std::memory_order_relaxed);
+            // Owner re-check AFTER the payload load. If a same-hash neighbour
+            // (or a concurrent republish) got in between, the id no longer
+            // matches (publishes pass through 0 first) and this is a miss.
+            // A republish by the SAME actor that completes entirely inside
+            // the window reads as that actor's newer pair - still a pair,
+            // never a mixture, because the payload is one load.
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if (slot.actorID.load(std::memory_order_relaxed) != id) {
+                return std::nullopt;
+            }
+            return CoveragePair{ static_cast<std::uint32_t>(packed),
+                                 static_cast<std::uint32_t>(packed >> 32) };
+        }
+
+        // The slots a style's geometry ACTUALLY landed on. Thin engine adapter
+        // over StagedCoverageOf (SlotMask.h), which carries the full why.
+        //
+        // MUST be called immediately after ApplyArmorAddon, on the same call
+        // stack: 15500 writes objects[].addon inline before that call returns,
+        // which is the very synchronicity the honesty restore below already
+        // depends on. a_biped must be the biped the AWM staged into.
+        std::uint32_t StagedCoverageFor(RE::BipedAnim*     a_biped,
+                                        RE::TESObjectARMO* a_armo) noexcept {
+            if (!a_biped || !a_armo) {
+                return 0;
+            }
+            std::array<RE::TESObjectARMA*, Outfit::kBitCount> staged{};
+            for (std::uint32_t b = 0; b < Outfit::kBitCount; ++b) {
+                staged[b] = a_biped->objects[b].addon;
+            }
+            return StagedCoverageOf<RE::TESObjectARMA*>(
+                staged.data(), Outfit::kBitCount, a_armo->armorAddons.data(),
+                static_cast<std::uint32_t>(a_armo->armorAddons.size()));
         }
 
         // ---- Helmet Toggle 2 interop (mirrors Apparel Preview's guard) ----
@@ -105,6 +177,38 @@ namespace OS {
             return global;
         }
 
+        // ---- Apparel Preview of headgear suppresses OUR headgear -------------
+        //
+        // ⚠ THIS IS A PRESENTATION CHOICE, NOT A CORRECTNESS FIX, and it is the
+        // one place in this file where that is true. OS-141, OS-145 and OS-151
+        // each fixed a claim that had become FALSE. Nothing is false here: a
+        // style on slot 30 and a previewed piece on slot 31 are different slots,
+        // both geometries really are on the biped, and vanilla renders both. If
+        // you equipped that piece for real you would get exactly this.
+        //
+        // It is still the wrong answer to the question a preview asks. Hovering
+        // a helmet means "what does THIS look like on me", and answering with
+        // it intersecting the helmet you are already transmogged into answers
+        // nothing. So for the length of the hover, ours steps aside.
+        //
+        // ⚠ HEADGEAR ONLY, AND THE GROUPING IS THE ONE OS-148 ALREADY EARNED.
+        // Slots 30, 31, 42 and 43 are mutually exclusive in practice, which is
+        // precisely why a helmet ARMO declares all four at once. Nothing else
+        // groups like that: a cuirass and a cloak genuinely layer, so previewing
+        // one must not strip the other. Do not "generalise" this to every slot.
+        //
+        // ⚠ SUPPRESSES THE WHOLE GROUP, NOT THE PREVIEWED SLOT. Suppressing only
+        // the slot the preview occupies is already what happens by itself, since
+        // AP replaces the geometry there, and it is exactly what leaves a
+        // slot-30 style sitting inside a slot-31 preview.
+        std::uint32_t PreviewSuppressedHeadgear() noexcept {
+            // Zero when no preview is live OR when this Apparel Preview is too
+            // old to name its slots. Unknown must change nothing, which is the
+            // same fail-safe direction the dye walk takes.
+            return (ApparelPreviewKnownSlots() & kHeadgearSlotMask) ? kHeadgearSlotMask
+                                                                    : 0u;
+        }
+
         bool HT2HidesHeadgear() noexcept {
             auto* g = HT2StateGlobal();
             return g && g->value > 0.0f;
@@ -130,6 +234,34 @@ namespace OS {
                 return nullptr;  // foreign/wrapped visitor - cannot identify the pass
             }
             return *reinterpret_cast<RE::BipedAnim**>(base + 0x18);
+        }
+
+        // Whether the look on this actor right now is a PREVIEW: the editor is
+        // open and this is the actor it is staging, the player or the follower
+        // under edit alike. Read by the style gate so the worn rule
+        // (bRequireWornForStyles) can stand down for a picture the player asked
+        // to see, the way ShieldStyleMayConjure's second term already does for
+        // the shield (field 2026-09-02: in lore friendly a preset click drew
+        // nothing on a character wearing only skin, every piece refused for
+        // having no real gear under it, while the page said "Trying on").
+        //
+        // The close edge needs no hook of its own. SetOpen flips IsOpen() to
+        // false BEFORE EditorUI::OnClose runs, and OnClose discards the
+        // staging, which kicks RequestRefresh / RequestRefreshActor for exactly
+        // this actor; the rebuild that follows a close reads false here and the
+        // rule is back, applied or not.
+        //
+        // StagingTarget takes the session lock, which this pass already takes
+        // on the same stack through Display() and BareBodyHideMask(); nothing
+        // here runs under it.
+        bool PreviewingActor(const OutfitSession& a_session, RE::ActorHandle a_handle) {
+            if (!EditorWindow::IsOpen()) {
+                return false;
+            }
+            // Not const: this CommonLib's native_handle() is a non-const member.
+            auto target = a_session.StagingTarget();
+            return target.has_value() &&
+                   target->native_handle() == a_handle.native_handle();
         }
 
         // The shared post-pass styling body (steps 4-7), factored out of
@@ -158,7 +290,7 @@ namespace OS {
                              const DisplaySet&                         a_display,
                              const RealWorn&                           a_real,
                              EmitStyles&&                              a_emitStyles,
-                             std::uint32_t                             a_ht2Suppressed,
+                             std::uint32_t                             a_suppressedSlots,
                              RE::ActorHandle                           a_handle) {
             RE::BipedAnim* biped = a_holder.get();
 
@@ -171,6 +303,15 @@ namespace OS {
                 // actor just keeps the vanilla pass's result, unstyled.
                 return;
             }
+            // ⚠ THE PER-PASS `masks:` DUMP LIVED HERE and is gone as of
+            // 2026-08-04, the hide behaviour having held for a session. It
+            // printed styleMask/hideMask/hiddenBodySkinMask/hiddenAttachmentMask
+            // on EVERY pass, which is 543 lines in a normal play session, and it
+            // did its job: paired with the cull path's own logging it settled
+            // the "hiding a helmet does nothing" report, because the cull only
+            // logs when it FLIPS a node's flag, so a hide that never reaches it
+            // leaves no trace and an empty log cannot be told from a mask that
+            // was never set. Put it back verbatim if that ambiguity returns.
             const bool  isFemale  = base && base->IsFemale();
             auto* const nakedSkin = REAug::GetActorSkin(a_actor);
             auto* const awm       = reinterpret_cast<REAug::ActorWeightModel*>(
@@ -222,30 +363,233 @@ namespace OS {
             //     skin re-applied in (4)). ApplyArmorAddon writes objects[]
             //     synchronously via 15500. Track the styles' FULL slot coverage:
             //     a multi-slot style ARMO stages .item into every covered slot,
-            //     and each one needs the honesty restore. a_ht2Suppressed is 0
+            //     and each one needs the honesty restore. a_suppressedSlots is 0
             //     for NPCs (Helmet Toggle 2's GLOB is player-only, §3), so the
             //     suppression check short-circuits away entirely for them.
             std::uint32_t styledCoverage = 0;
+            // Whichever style MEASURED onto slot 30 this pass, for the head
+            // displacement rule below. Last one wins, which matches the
+            // staging: 15500 is last-wins per slot, so the final writer of
+            // objects[0] is the piece actually on the head.
+            RE::TESObjectARMO* headStyleArmo = nullptr;
+            // Hoisted out of the per-slot lambda: one settings read per biped
+            // pass rather than one per biped object.
+            const bool requireWorn = Settings::GetSingleton().requireWornForStyles;
+            // And one lock per pass for the preview question, asked only when
+            // the rule it relaxes is on. See PreviewingActor.
+            const bool previewing =
+                requireWorn && PreviewingActor(OutfitSession::GetSingleton(), a_handle);
             auto          applyStyle = [&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
-                if (!CanApplyStyleBit(a_bit, a_real.coverage)) {
-                    return;  // shield style requires a real equipped shield
+                // ⚠⚠ THE DISPLAYSET'S styleMask IS HONOURED HERE, AT THE
+                // CONSUMER, and it was not before. The player emitter is
+                // session.VisitStyles, which recomputes the allowed mask from
+                // EffectiveLocked on its own; the follower emitter filters on
+                // display.styleMask before it ever calls this. So a DisplaySet
+                // amended AFTER ComputeDisplaySet - the bare view clearing
+                // styleMask - reached the follower and never the player. Field
+                // log 2026-08-16 18:08:21.203: "bare: ... (styles off)" and,
+                // the same millisecond, five "style bit N inject" lines. Two
+                // readers of one answer, drifting in the gap; one gate on the
+                // consumer closes it for every emitter at once.
+                if (((a_display.styleMask >> a_bit) & 1u) == 0) {
+                    return;  // the DisplaySet says no; whoever emitted this is behind it
                 }
-                if (a_ht2Suppressed &&
-                    (static_cast<std::uint32_t>(a_armo->GetSlotMask()) & a_ht2Suppressed)) {
-                    spdlog::debug("  style bit {} '{}' skipped: Helmet Toggle hides this slot.",
+                // The gate asks about the style's whole coverage, not the slot
+                // it is anchored to, because that is what gets staged below.
+                // Declared (not measured) coverage on purpose: the staging does
+                // not exist yet to be measured, and a superset never refuses a
+                // style wrongly. Same reasoning as the 1P pass.
+                // ⚠ THE SHIELD TERM IS MEASURED OFF THIS BIPED, EVERY CALL.
+                // Object 9 is shared with the off-hand weapon, and an off-hand
+                // WEAPON is not in the actor's armour worn-mask at all, so the
+                // mask cannot answer "is it free" and only objects[9] can. It
+                // is read here rather than hoisted because the staging above
+                // can fill it: a style that already landed on 9 this pass must
+                // not let a second one conjure over it.
+                const bool shieldConjurable = ShieldStyleMayConjure(
+                    biped && biped->objects[kBitShield].item == nullptr,
+                    WeaponPreview::ShieldRowActive());
+                if (!CanApplyStyleBit(a_bit, a_real.coverage, StyleCoverageOf(a_armo),
+                                      requireWorn, shieldConjurable, previewing)) {
+                    return;  // shield over an occupied object 9; any covered slot
+                             // when bRequireWornForStyles is on and nobody is
+                             // previewing this actor
+                }
+                if (a_suppressedSlots &&
+                    (static_cast<std::uint32_t>(a_armo->GetSlotMask()) & a_suppressedSlots)) {
+                    spdlog::debug("  style bit {} '{}' skipped: something else owns this slot "
+                                  "right now (Helmet Toggle, or an Apparel Preview "
+                                  "of headgear).",
                                   a_bit, a_armo->GetName());
                     return;
                 }
                 const bool ok = REAug::ApplyArmorAddon(a_armo, race, awm, isFemale);
-                styledCoverage |= static_cast<std::uint32_t>(a_armo->GetSlotMask());
-                for (auto* arma : a_armo->armorAddons) {
-                    if (arma) {
-                        styledCoverage |= static_cast<std::uint32_t>(arma->GetSlotMask());
-                    }
+                // ⚠ COUNT WHAT IS ON THE BIPED, NOT WHAT THE CALL RETURNED.
+                // OS-84, settled in the field 2026-07-30: ApplyArmorAddon's bool
+                // is NOT a render signal. It returned false for 'Steel Spell
+                // Knight Helmet' - ARMO declaring 30/31/42/43, race-valid
+                // armature declaring 30 with both sex meshes - while the helmet
+                // rendered on screen, and it does that for any piece whose
+                // armatures cover fewer slots than its ARMO advertises, which is
+                // 59% of head-slot injections in that log.
+                //
+                // Gating on the bool therefore claimed NO coverage for pieces
+                // that were visibly worn: the head bit stayed clear and the head
+                // drew inside the helmet (OS-86), and the hair bit stayed clear
+                // so hair was never hidden (OS-87).
+                //
+                // The measurement below still refuses the case the bool-gate was
+                // added for (OS-70b, 'Boiled Netch Leather Helmet'): a style that
+                // staged nothing owns no slot, so nothing claims a head slot with
+                // an empty slot underneath. One rule now covers both directions.
+                const auto staged = StagedCoverageFor(biped, a_armo);
+                styledCoverage |= staged;
+                if (staged & MaskForEditorSlot(30)) {
+                    headStyleArmo = a_armo;
                 }
-                spdlog::debug("  style bit {} inject '{}' -> {}", a_bit, a_armo->GetName(), ok);
+                if (!staged) {
+                    // Not on the biped at all, so it covers nothing - and the
+                    // user picked this style and it is not going to appear, so
+                    // say so. This is the OS-70b direction.
+                    spdlog::debug("  style bit {} '{}' renders nothing: staged no geometry.",
+                                  a_bit, a_armo->GetName());
+                } else if (!ok) {
+                    // The ordinary ARMO/ARMA slot mismatch. Kept at debug and
+                    // deliberately NOT a warning: it fired 568 times in one
+                    // session before it was understood.
+                    spdlog::debug("  style bit {} '{}' staged 0x{:X} although ApplyArmorAddon "
+                                  "returned false (declared 0x{:X}).",
+                                  a_bit, a_armo->GetName(), staged,
+                                  static_cast<std::uint32_t>(a_armo->GetSlotMask()));
+                }
+                spdlog::debug("  style bit {} inject '{}' -> {} staged=0x{:X}", a_bit,
+                              a_armo->GetName(), ok, staged);
             };
             a_emitStyles(applyStyle);
+
+            // (5b) HEAD DISPLACEMENT. A style that MEASURED onto slot 30 takes
+            //      the real piece on slot 31 with it, because two head pieces
+            //      on one head is the "both render" report (field 2026-08-11).
+            //
+            // ⚠ THE RULE ITSELF IS HeadDisplacementCull IN SlotMask.h AND ALL
+            // OF IT IS GUARDS. Read its header before touching this block:
+            // three independent reviews refuted the unguarded version, twice
+            // with a path to a WORSE defect than the one being fixed. Nothing
+            // here may be inlined into a condition - the rule lives in the pure
+            // header because nothing compiles this file, which is also why the
+            // decline below is logged rather than silent.
+            //
+            // ⚠ AND WHY THE MASK TERM COMES WITH THE CULL, NOT AFTER IT. If the
+            // 31-piece's geometry goes but its bit stays in the published mask,
+            // 24220 culls the hair head-part for a hood that is no longer there
+            // and the character goes bald. Folding headDisplaced into lostMask
+            // clears the bit, and over-claiming `hidden` errs toward VISIBLE,
+            // which is this file's stated fail-safe direction.
+            std::uint32_t headDisplaced = 0;
+            if (headStyleArmo) {
+                auto* const wornHair = a_real.armo[kBitHair];
+                if (!wornHair) {
+                    spdlog::debug("  head displace: style '{}' on slot 30, nothing worn on "
+                                  "slot 31; nothing to displace.",
+                                  headStyleArmo->GetName());
+                } else {
+                    const auto wornStaged   = StagedCoverageFor(biped, wornHair);
+                    const auto wornDeclared = StyleCoverageOf(wornHair);
+                    const bool shared =
+                        SharesAnyArmature<RE::TESObjectARMA*>(headStyleArmo, wornHair);
+                    headDisplaced = HeadDisplacementCull(styledCoverage, wornStaged,
+                                                         wornDeclared, shared);
+                    if (headDisplaced) {
+                        spdlog::debug("  head displace: style '{}' on slot 30 displaces worn "
+                                      "'{}' -> cull 0x{:X} (staged 0x{:X}).",
+                                      headStyleArmo->GetName(), wornHair->GetName(),
+                                      headDisplaced, wornStaged);
+                    } else if (shared) {
+                        // The enchanted-variant collision. Declining is correct
+                        // and the pieces look identical anyway, so the visible
+                        // result is right even though the rule stood down.
+                        spdlog::debug("  head displace: DECLINED, style '{}' and worn '{}' "
+                                      "share an armature; the measurement cannot tell them "
+                                      "apart, so culling would take the style's own clone.",
+                                      headStyleArmo->GetName(), wornHair->GetName());
+                    } else if ((wornDeclared & ~kHeadgearSlotMask) != 0) {
+                        spdlog::debug("  head displace: DECLINED, worn '{}' declares 0x{:X} "
+                                      "which reaches outside the headgear group; it is a "
+                                      "robe or similar, not a helmet.",
+                                      wornHair->GetName(), wornDeclared);
+                    } else {
+                        spdlog::debug("  head displace: DECLINED, worn '{}' holds no "
+                                      "headgear geometry the style does not already own "
+                                      "(staged 0x{:X}, styled 0x{:X}).",
+                                      wornHair->GetName(), wornStaged, styledCoverage);
+                    }
+                }
+            }
+
+            // The groin, and it is the same shape of problem as the head above:
+            // a style landing where the ENGINE still reads bare skin. TNG and
+            // SOS choose their slot-52 mesh from the armour actually equipped
+            // on 32, so a transmogged cuirass is invisible to them and the bare
+            // piece comes through it. The rule and every guard on it live in
+            // GenitalDisplacementCull; see there for why real worn body gear
+            // declines and why a revealing style is a known exception.
+            //
+            // ⚠ THE OBJECT, NOT THE WORN ARMO. See the rule's own header: TNG
+            // reaches slot 52 through the SKIN, which is never worn inventory.
+            const bool genitalObject =
+                biped && biped->objects[kBitGenitals].item != nullptr;
+            const std::uint32_t genitalDisplaced = GenitalDisplacementCull(
+                styledCoverage, a_real.armo[kBitBody] != nullptr, genitalObject);
+            if (genitalDisplaced) {
+                spdlog::debug("  groin displace: body style over a bare body slot, "
+                              "culling slot 52 (styled 0x{:X}).",
+                              styledCoverage);
+            } else if ((styledCoverage & MaskForEditorSlot(32)) != 0) {
+                // ⚠ NAME THE GUARD THAT REFUSED. A rule that declines silently
+                // and a rule that never ran read identically in a log, and the
+                // first round of this fix was lost to exactly that: zero lines
+                // said nothing about which of three conditions said no.
+                spdlog::debug("  groin displace: DECLINED, bodyWorn={} genitalObject={} "
+                              "(styled 0x{:X}).",
+                              a_real.armo[kBitBody] != nullptr, genitalObject,
+                              styledCoverage);
+            }
+
+            // Hand the shim the truth. It runs next, in a different hook, and
+            // has no other way to learn which of these styles the engine took.
+            //
+            // H3: a hide lands on a whole worn piece, not one of its slots. The
+            // per-slot coverage table is built from the REAL worn gear so
+            // ExpandHideOverCoverage can find the piece occupying each hidden
+            // slot regardless of which of its slots the user clicked.
+            //
+            // A STYLE displaces worn gear too, but only its HEAD-slot landings
+            // count here, and the scoping is evidence, not caution: the Krosis
+            // field report proves a style taking one head slot of a worn
+            // 30+31 mask leaves the head bare (the piece's geometry is gone,
+            // so its head bit must fall out of the mask or the engine culls a
+            // head nothing covers) - while OS-83's gauntlet report implies the
+            // OPPOSITE for body gear, residue left attached. Until 15500
+            // settles which is general, the style-displacement claim stays on
+            // the two bits the consumer reads and the field has proven.
+            // Dropping this term regresses the original Krosis repro; it is
+            // exactly the style half of the old DisplacedRealCoverage.
+            // Nothing hidden and no head slot styled -> the expansion is
+            // Expand(0) == 0 by definition, so skip building the 32-entry
+            // coverage table. This file's own doctrine: a styled market
+            // square pays this site per actor per rebuild, and the common
+            // outfit touches neither.
+            const auto    lostMask =
+                a_display.hideMask | (styledCoverage & kHeadPartMask) | headDisplaced;
+            std::uint32_t hiddenCoverage = 0;
+            if (lostMask) {
+                std::array<std::uint32_t, Outfit::kBitCount> wornCoverage{};
+                for (std::uint32_t b = 0; b < Outfit::kBitCount; ++b) {
+                    wornCoverage[b] = StyleCoverageOf(a_real.armo[b]);
+                }
+                hiddenCoverage = ExpandHideOverCoverage(lostMask, wornCoverage);
+            }
+            PublishRenderedCoverage(a_actor, styledCoverage, hiddenCoverage);
 
             // (6) Gameplay honesty. objects[] was written inline by 15500 on this
             //     very call stack, so restoring here has a zero race window.
@@ -269,9 +613,70 @@ namespace OS {
             //     sweep (scoped to THIS actor's handle) catches clones the
             //     BSTaskPool attaches late. Hair/head-part regrowth stays the
             //     mask shim's job.
-            if (a_display.hiddenAttachmentMask) {
-                BipedPost::CullNodes(biped, a_display.hiddenAttachmentMask);
-                BipedPost::QueueNodeCull(a_handle, a_display.hiddenAttachmentMask);
+            // ⚠ SHOW BEFORE CULL, EVERY PASS, NOT ONLY WHEN SOMETHING IS HIDDEN.
+            // Un-hiding a slot cleared the mask but left NiAVObject::kHidden set
+            // on the clone, so the piece never came back (field 2026-08-04:
+            // hide a helmet, unhide it, it stays gone while the gear is
+            // transmogged). BipedPost's own header already records the cause for
+            // the Presets preview: "Skyrim may reuse the same partClone across a
+            // refresh, so leaving Presets must clear kHidden explicitly rather
+            // than assume a rebuild replaces the clone." The preview got a
+            // symmetric restore; this path never did. Transmog is what makes it
+            // visible, because a styled slot is precisely where the clone
+            // survives the refresh.
+            //
+            // ⚠ SCOPED TO WHAT THIS SYSTEM CAN CULL. Clearing kHidden across all
+            // 32 armour objects would fight two other owners: the body-class
+            // slots are hidden by re-staging skin rather than by a flag, and the
+            // shield's object is culled by the Presets preview, whose suppressed
+            // set is (1 << kBitShield) | weapons. kNeverHideMask is exactly the
+            // shield, so subtracting both leaves only the slots a hide here can
+            // ever have flagged.
+            constexpr std::uint32_t kCullableAttachments =
+                ~(kBodySkinMask | kNeverHideMask);
+            // headDisplaced joins the explicit hides here and NOT in the
+            // DisplaySet, because it is measured off this pass's biped and so
+            // cannot be known when the DisplaySet is computed. It is bounded to
+            // kHeadgearSlotMask by its own guard, and all four of those bits
+            // are inside kCullableAttachments - so unlike a body-class bit it
+            // is always restorable by the show sweep above once the style goes.
+            // ⚠ genitalDisplaced rides here for headDisplaced's exact reason:
+            // it is measured off THIS pass's worn state, so the DisplaySet
+            // cannot know it. Bit 22 is inside kCullableAttachments (the body
+            // skin mask is 32/33/37 and kNeverHideMask is the shield), so the
+            // show sweep above restores it by itself the moment the style goes.
+            const std::uint32_t cullMask =
+                a_display.hiddenAttachmentMask | headDisplaced | genitalDisplaced;
+            const std::uint32_t showMask = kCullableAttachments & ~cullMask;
+            BipedPost::ShowObjectNodes(biped, showMask);
+            BipedPost::QueueObjectNodeShow(a_handle, showMask);
+            if (cullMask) {
+                BipedPost::CullNodes(biped, cullMask);
+                BipedPost::QueueNodeCull(a_handle, cullMask);
+            }
+
+            // (8) HIDE, the SKIN half, for the headgear group. Culling the
+            //     helmet's node does not undo the skin partition its armature
+            //     suppressed, so the ears stay gone and the player sees the gap
+            //     the helmet used to cover. See RestoreDismemberPartitions.
+            //
+            // ⚠ FROM THE HIDE ALONE, NEVER FROM hiddenCoverage. That mask also
+            // carries the head bits a STYLE displaced, and a style covering the
+            // ears has its own geometry there: putting the skin back under it
+            // would push the ears through whatever the player chose to wear.
+            // Expanded separately for the same reason ExpandHideOverCoverage
+            // exists at all - a hide lands on a whole worn piece - and skipped
+            // outright when no headgear is hidden, which is the common outfit.
+            if ((a_display.hideMask & kHeadgearSlotMask) != 0) {
+                std::array<std::uint32_t, Outfit::kBitCount> wornCoverage{};
+                for (std::uint32_t b = 0; b < Outfit::kBitCount; ++b) {
+                    wornCoverage[b] = StyleCoverageOf(a_real.armo[b]);
+                }
+                const auto hiddenPieces =
+                    ExpandHideOverCoverage(a_display.hideMask, wornCoverage);
+                const auto restore = hiddenPieces & kHeadgearSlotMask & ~styledCoverage;
+                BipedPost::RestoreDismemberPartitions(a_actor, restore);
+                BipedPost::QueueRestoreDismemberPartitions(a_handle, restore);
             }
         }
 
@@ -302,19 +707,27 @@ namespace OS {
             // Helmet Toggle 2 parity with the 3P pass: a piece suppressed there
             // (overlapping a hidden worn head slot) must not sneak in here, or
             // the two views would disagree about the same style.
-            std::uint32_t ht2Suppressed = 0;
+            std::uint32_t suppressedSlots = 0;
             if (HT2HidesHeadgear()) {
                 for (auto* wornArmo : a_real.armo) {
                     if (wornArmo) {
-                        ht2Suppressed |=
+                        suppressedSlots |=
                             static_cast<std::uint32_t>(wornArmo->GetSlotMask()) &
                             kHT2HeadSlots;
                     }
                 }
             }
+            // Player-only, like HT2's own global: Apparel Preview previews on
+            // the player alone. See PreviewSuppressedHeadgear.
+            suppressedSlots |= PreviewSuppressedHeadgear();
 
-            const auto display =
-                OutfitSession::GetSingleton().Display();
+            // The 1P arms get the same answer as the 3P body. A player who
+            // undressed to look at a body and then sheathed would otherwise
+            // find their own hands still in gauntlets.
+            auto&      session1p = OutfitSession::GetSingleton();
+            const auto display   = BareBodyDisplay(
+                session1p.Display(),
+                session1p.BareBodyHideMask(a_player, a_real.coverage));
             const auto hiddenBodySkin =
                 FirstPersonBodySkinHideMask(display.hiddenBodySkinMask);
             if (hiddenBodySkin) {
@@ -361,29 +774,54 @@ namespace OS {
             }
 
             std::uint32_t styled = 0;
+            const bool    requireWorn1P = Settings::GetSingleton().requireWornForStyles;
+            // The 1P arms get the 3P body's answer to the preview question too,
+            // or the sleeves of a previewed robe would vanish in first person.
+            const bool previewing1P =
+                requireWorn1P && PreviewingActor(session1p, a_player->GetHandle());
             OutfitSession::GetSingleton().VisitStyles(
                 [&](std::uint32_t a_bit, RE::TESObjectARMO* a_armo) {
-                    if (!CanApplyStyleBit(a_bit, a_real.coverage)) {
-                        return;  // no first-person shield without real slot 39 gear
+                    // Same consumer-side gate as ApplyStyledPass's applyStyle,
+                    // and for the same reason: VisitStyles emits from its own
+                    // mask, and the DisplaySet this pass was handed can be
+                    // narrower than that. The 1P arms must agree with the 3P
+                    // body about whether a style is on.
+                    if (((display.styleMask >> a_bit) & 1u) == 0) {
+                        return;
                     }
-                    auto coverage = static_cast<std::uint32_t>(a_armo->GetSlotMask());
-                    for (auto* arma : a_armo->armorAddons) {
-                        if (arma) {
-                            coverage |= static_cast<std::uint32_t>(arma->GetSlotMask());
-                        }
+                    const auto coverage = StyleCoverageOf(a_armo);
+                    // Coverage, not the anchor slot: one ARMO can dress several
+                    // slots and the engine stages it across all of them.
+                    // Measured off the 1P biped for the 3P pass's reason: the
+                    // first-person rig renders the shield too (it is in
+                    // kFirstPersonArmorMask), and it has its own object 9.
+                    const bool shieldConjurable1P = ShieldStyleMayConjure(
+                        biped1p && biped1p->objects[kBitShield].item == nullptr,
+                        WeaponPreview::ShieldRowActive());
+                    if (!CanApplyStyleBit(a_bit, a_real.coverage, coverage,
+                                          requireWorn1P, shieldConjurable1P, previewing1P)) {
+                        return;  // shield over an occupied object 9; any covered
+                                 // slot when bRequireWornForStyles is on and
+                                 // nobody is previewing the player
                     }
                     if ((coverage & kFirstPersonArmorMask) == 0) {
                         return;  // nothing the 1P model renders
                     }
-                    if (ht2Suppressed && (coverage & ht2Suppressed)) {
+                    if (suppressedSlots && (coverage & suppressedSlots)) {
                         spdlog::debug("  1p style bit {} '{}' skipped: Helmet Toggle hides this slot.",
                                       a_bit, a_armo->GetName());
                         return;
                     }
                     const bool ok = REAug::ApplyArmorAddon(a_armo, race, awm, isFemale);
-                    styled |= coverage;
-                    spdlog::debug("  1p style bit {} inject '{}' -> {}", a_bit,
-                                  a_armo->GetName(), ok);
+                    // Measured off the 1P biped, same rule as the 3P pass: the
+                    // return value is not a render signal (OS-84). `coverage`
+                    // above stays DECLARED because it gates work that has to
+                    // happen before the staging exists to be measured, and it is
+                    // a superset, so it never skips a style wrongly.
+                    const auto staged = StagedCoverageFor(biped1p, a_armo);
+                    styled |= staged;
+                    spdlog::debug("  1p style bit {} inject '{}' -> {} staged=0x{:X}", a_bit,
+                                  a_armo->GetName(), ok, staged);
                 });
 
             // Same honesty restore as the 3P pass: every hidden or styled 1P
@@ -438,8 +876,14 @@ namespace OS {
                         return;
                     }
 
-                    const auto display = session.Display();
-                    const auto real    = SnapshotRealWorn(a_changes);
+                    const auto real = SnapshotRealWorn(a_changes);
+                    // ⚠ AFTER SnapshotRealWorn AND NOT BEFORE. The bare view is
+                    // bounded by what the actor MEASURABLY wears; see
+                    // BareBodyDisplay for what a hide bit on an empty slot does
+                    // to the head.
+                    const auto display = BareBodyDisplay(
+                        session.Display(),
+                        session.BareBodyHideMask(player, real.coverage));
 
                     // (1) Worn pass - ALWAYS with the engine's own visitor, never
                     //     a proxy: co-hooked mods on the shared 24231 chain read
@@ -485,16 +929,22 @@ namespace OS {
                     // survives a hidden hood covering 30/31). PLAYER-ONLY: the
                     // GLOB describes the player, not followers (spec §3); the NPC
                     // path passes 0 and worn-required covers followers.
-                    std::uint32_t ht2Suppressed = 0;
+                    std::uint32_t suppressedSlots = 0;
                     if (HT2HidesHeadgear()) {
                         for (auto* wornArmo : real.armo) {
                             if (wornArmo) {
-                                ht2Suppressed |=
+                                suppressedSlots |=
                                     static_cast<std::uint32_t>(wornArmo->GetSlotMask()) &
                                     kHT2HeadSlots;
                             }
                         }
                     }
+                    // ⚠ THE 1P PASS DOES THE IDENTICAL THING AND THAT MATTERS.
+                    // A style suppressed in one view and not the other means
+                    // first and third person disagree about the same helmet,
+                    // which is the parity the HT2 term above already exists to
+                    // keep. See PreviewSuppressedHeadgear.
+                    suppressedSlots |= PreviewSuppressedHeadgear();
 
                     // Style source: session.VisitStyles (the player's own allowed
                     // mask, unconditional - the player is styled everywhere the
@@ -506,7 +956,41 @@ namespace OS {
                         [&](const std::function<void(std::uint32_t, RE::TESObjectARMO*)>& a_apply) {
                             session.VisitStyles(a_apply);
                         },
-                        ht2Suppressed, player->GetHandle());
+                        suppressedSlots, player->GetHandle());
+
+                    // (8) DYE. This is the seam that makes a dye survive a
+                    //     rebuild Fitting Room did not ask for. Until now
+                    //     OutfitDye::Repaint had exactly one caller, at the tail
+                    //     of REAug::RefreshActor, so a persisted dye reached the
+                    //     screen only when our OWN refresh happened to run: a
+                    //     save load, a re-equip, a cell change and a race-menu
+                    //     exit each rebuild the biped through the engine and
+                    //     left the armour undyed (B1, 2026-07-31 review). Every
+                    //     one of those rebuilds passes through THIS pass, which
+                    //     is why the arm belongs here and not in a fourth event
+                    //     sink.
+                    //
+                    //     Queued rather than painted inline, for the same
+                    //     measured reason step (7) queues its cull: UpdateEquipment
+                    //     has only just written .addon and .part on this stack
+                    //     and BSTaskPool attaches .partClone later, so a
+                    //     synchronous walk here would find a null clone on every
+                    //     slot whose model was not already cached (B2). The chain
+                    //     re-arms while any dyed slot is still waiting.
+                    //
+                    //     Unconditional: Repaint also refreshes the shape
+                    //     snapshot the editor labels its channels from, and the
+                    //     moment the user needs those labels is exactly when the
+                    //     slot has no dye yet. QueueRepaint resolves the outfit
+                    //     itself and does nothing when there is none, so a
+                    //     dye-free session costs one task and a lookup.
+                    //
+                    //     The player's arm. The follower's is the matching call
+                    //     at the tail of the NPC branch below, on lk.actor's
+                    //     handle and deliberately not inside ApplyStyledPass,
+                    //     which would arm a chain per styled NPC per rebuild in
+                    //     a crowded cell (OS-128).
+                    OutfitDye::QueueRepaint(player->GetHandle());
                     return;
                 }
 
@@ -555,8 +1039,14 @@ namespace OS {
                 // gameplay helmet). Hide remains worn-required. The derived
                 // hide submasks stay consistent through WornRequiredDisplay.
                 // Forms were pre-resolved - the hook never resolves one.
-                const DisplaySet display =
-                    NpcResolve::WornRequiredDisplay(entry.display, real.coverage);
+                // ⚠ THE BARE VIEW GOES ON AFTER THE WORN-REQUIRED MASKING, not
+                // before it. WornRequiredDisplay rebuilds a fresh DisplaySet
+                // field by field, so anything folded in first would be dropped
+                // on the floor here and nowhere else - the follower half of the
+                // bug that struct's own header warns about.
+                const DisplaySet display = BareBodyDisplay(
+                    NpcResolve::WornRequiredDisplay(entry.display, real.coverage),
+                    session.BareBodyHideMask(lk.actor, real.coverage));
 
                 // The NPC pass does NOT bump g_playerWornPass (the tripwire stays
                 // player-scoped, spec §3). Style source: the snapshot's resolved
@@ -572,7 +1062,21 @@ namespace OS {
                             }
                         }
                     },
-                    /*ht2Suppressed*/ 0u, lk.actor->GetHandle());
+                    /*suppressedSlots*/ 0u, lk.actor->GetHandle());
+
+                // OS-128. Her dye rides the same rebuild her styles do, exactly
+                // as the player's does at the tail of his branch above.
+                //
+                // ⚠ HERE, NOT INSIDE ApplyStyledPass. Inside, a crowded cell
+                // arms one chain per styled NPC per rebuild instead of one
+                // chain per rebuild. This site was named as the follower arm
+                // point before followers had dye at all.
+                //
+                // QueueRepaint takes only its own lock, writes a retry budget
+                // and posts, so it never reaches lock_ from inside this
+                // noexcept thunk. It resolves the outfit later on the task
+                // drain and does nothing when there is none.
+                OutfitDye::QueueRepaint(lk.actor->GetHandle());
             } catch (...) {
                 // Never unwind into the engine. If we threw BEFORE the worn pass
                 // ran, run the vanilla pass so the actor isn't left naked; a later
@@ -592,12 +1096,141 @@ namespace OS {
         }
 
         // ---- 24220+0x7C: InventoryChanges::GetWornMask ----
-        // 24220 is the mask's ONLY consumer; it uses it solely to set/clear
-        // NiAVObject::kHidden on hair/head-part nodes. So: add the bits our
-        // styled gear occupies (a styled helmet must still hide hair) and clear
-        // the bits of head-part slots we are hiding (a hidden helmet frees hair).
+        // 24220 is the mask's ONLY consumer, and it reads exactly two bits of
+        // it: RACE_DATA::headObject (slot 30) toggles kHidden on the FaceGen
+        // HEAD node, RACE_DATA::hairObject (slot 31) on the hair head-part.
+        // See kHeadPartMask in SlotMask.h for the verified disassembly.
+        //
+        // The raw mask answers "what is EQUIPPED". After our pass that is no
+        // longer the same question as "what is RENDERED", and the engine is
+        // asking the second one. So the shim rebuilds the mask from what we
+        // actually put on the biped: real worn coverage, minus everything the
+        // pass measured as hidden, plus the coverage of the styles that were
+        // really applied. RenderedWornMask is that expression.
+        //
+        // The old shim was `(real | styleMask) & ~(hideMask & kHeadPartMask)`
+        // with slot 30 absent from kHeadPartMask, so the head bit could never
+        // be cleared: hide or restyle a dragon priest mask (slots 30+31) and
+        // its geometry went away while the head stayed culled. That is the
+        // Krosis/Ahzidal "invisible head" report and OS-70.
         using GetWornMask_t = std::uint32_t (*)(RE::InventoryChanges*);
         GetWornMask_t g_origGetWornMask = nullptr;
+
+        // The rendered mask for one actor. Everything the engine's head/hair
+        // culling needs was measured by the styling pass and published; nothing
+        // is re-derived here. Predicting the engine's accept/reject was proven
+        // wrong in OS-70c, and inferring which worn piece a style displaced was
+        // the DisplacedRealCoverage heuristic this replaces. A miss (no pass
+        // yet, or another actor evicted the entry) leaves the vanilla mask,
+        // which errs toward a VISIBLE head: a head culled over an empty slot is
+        // a broken character, a head visible under a helmet is at worst
+        // clipping.
+        // The head-part bits whose biped slot is occupied yet staged NOTHING.
+        // .item with .addon and .part both empty is the ghost's synchronous
+        // mark (15500 writes all three on this stack, DyeGate.h); partClone is
+        // deferred and deliberately NOT consulted - a legit helmet mid-attach
+        // keeps its bit. See DropGhostHeadPartBits in SlotMask.h for why this
+        // exists and which war it ends.
+        std::uint32_t GhostHeadPartMask(RE::Actor* a_actor) noexcept {
+            auto* const biped = a_actor ? a_actor->GetCurrentBiped().get() : nullptr;
+            if (!biped) {
+                return 0;
+            }
+            std::uint32_t ghost = 0;
+            for (const auto bit : { kBitHead, kBitHair }) {
+                const auto& obj = biped->objects[bit];
+                if (obj.item && !obj.addon && !obj.part) {
+                    ghost |= 1u << bit;
+                }
+            }
+            // ⚠⚠ AND WHAT THE SWEEP MEASURED, WHICH IS THE HALF THE TEST ABOVE
+            // CANNOT SEE. r28 named the liar: the occupant on slot 31 answers
+            // `addon=set part=set partClone=null`, so the synchronous marks call
+            // it a real helmet while it draws nothing, and the engine hid the
+            // hair behind it on every head build (`worn 0x108E drawn 0x8C`,
+            // `re-enabled 0x2` at repaint, at settle+4s and again at
+            // settle+10s - one bald flash each). BipedPost's sweep already
+            // walks the biped and gets this right; MeasuredGhosts carries its
+            // answer here.
+            //
+            // ⚠ ADDITIVE, AND A MISS CHANGES NOTHING. Until an actor has been
+            // swept there is no measurement, and the strict test above stands
+            // alone - so a genuine helmet still hides hair from the frame it is
+            // worn, and nothing here can invent a ghost for a piece that is
+            // merely mid-attach.
+            if (std::uint32_t measured = 0;
+                MeasuredGhosts::Read(a_actor ? a_actor->GetFormID() : 0u, measured)) {
+                ghost |= measured & kHeadPartMask;
+            }
+            // ⚠ THE NEAR MISS IS THE INTERESTING CASE, AND r27 IS WHY. The field
+            // round dropped the HEAD bit and left the HAIR bit standing, while
+            // the ladder in the same second reported slot 31's Iron Helmet as
+            // staging no geometry and re-enabled 0x2 behind it - one bald flash
+            // per build, exactly the war this filter was meant to end. So the
+            // occupant on 31 carries an addon or a part that renders nothing,
+            // and relaxing the test blind would let a REAL helmet's hair-hide
+            // slip mid-attach. This says which of the four marks is lying, so
+            // the next round names the mechanism instead of guessing at it.
+            for (const auto bit : { kBitHead, kBitHair }) {
+                const auto& obj = biped->objects[bit];
+                if (!obj.item || (ghost & (1u << bit)) != 0) {
+                    continue;
+                }
+                static std::uint32_t s_lastNearMiss = 0;
+                const std::uint32_t  key =
+                    (a_actor ? a_actor->GetFormID() : 0u) ^ (bit << 28) ^
+                    (obj.addon ? 0x4000000u : 0u) ^ (obj.part ? 0x8000000u : 0u) ^
+                    (obj.partClone ? 0x10000000u : 0u);
+                if (key == s_lastNearMiss) {
+                    continue;
+                }
+                s_lastNearMiss = key;
+                spdlog::info(
+                    "wornmask: actor {:08X} head-part slot {} is OCCUPIED and kept "
+                    "its bit - addon={} part={} partClone={}. If the ladder calls "
+                    "this slot a ghost in the same second, the mark that is set "
+                    "here is the one that lies.",
+                    a_actor ? a_actor->GetFormID() : 0, bit == kBitHead ? 30 : 31,
+                    obj.addon ? "set" : "null", obj.part ? "set" : "null",
+                    obj.partClone ? "set" : "null");
+            }
+            return ghost;
+        }
+
+        // One line when the answer CHANGES, not one per engine ask - the mask
+        // is read on every head build and a steady ghost would flood the log.
+        void LogGhostDrop(RE::Actor* a_actor, std::uint32_t a_ghost) {
+            static std::uint32_t s_lastKey = 0;
+            const std::uint32_t  key =
+                a_actor ? (a_actor->GetFormID() ^ (a_ghost << 24)) : 0;
+            if (key == s_lastKey) {
+                return;
+            }
+            s_lastKey = key;
+            if (a_ghost != 0) {
+                spdlog::info(
+                    "wornmask: actor {:08X} ghost occupant on head-part slot(s) "
+                    "{:08X} (worn, stages nothing) - bits dropped before the engine "
+                    "reads them; the hide never fires.",
+                    a_actor ? a_actor->GetFormID() : 0, a_ghost);
+            }
+        }
+
+        std::uint32_t ShimmedWornMask(std::uint32_t a_real, const DisplaySet& a_display,
+                                      RE::Actor* a_actor) {
+            auto mask = a_real;
+            if (const auto cov = RenderedCoverageFor(a_actor)) {
+                mask = RenderedWornMask(a_real, cov->hidden, cov->styled);
+                spdlog::debug("wornmask real={:08X} -> {:08X} (hidden={:08X} styled={:08X})",
+                              a_real, mask, cov->hidden, cov->styled);
+            }
+            // Ghosts fall BEFORE the hair mode so an explicit kHide - the
+            // player's own "hide my hair" - still lands on the engine.
+            const auto ghost = GhostHeadPartMask(a_actor);
+            LogGhostDrop(a_actor, ghost);
+            mask = DropGhostHeadPartBits(mask, ghost);
+            return ApplyHairMode(mask, a_display.hair);
+        }
 
         // noexcept: called from the engine's 24220 frame. Compute the vanilla
         // mask first so the catch can always fall back to it; on ANY throw
@@ -613,23 +1246,81 @@ namespace OS {
                 }
 
                 if (player && owner == player) {
-                    // ---- PLAYER PATH (behavior-identical to HEAD) -----------
+                    // ---- PLAYER PATH ---------------------------------------
+                    // ⚠ STAND DOWN WHILE APPAREL PREVIEW OWNS THE LOOK. AP
+                    // shims this same call above us and unions the previewed
+                    // piece's coverage onto whatever we return, so our styled
+                    // bits would survive into a mask describing geometry that
+                    // is no longer on the biped - a slot-30 style plus a
+                    // previewed helmet left the player headless. Answering
+                    // vanilla lets AP union onto reality instead. The whole
+                    // derivation, with the two log lines that show the chain,
+                    // is in ApparelPreviewSignal.h.
+                    //
+                    // Player-only on purpose: AP previews on the player alone,
+                    // so a follower's head and hair culling is untouched by a
+                    // preview and must keep its own shim.
+                    if (ApparelPreviewActive()) {
+                        // ⚠ CONFIRMED IN THE FIELD 2026-08-06, and this is the
+                        // line that proves it:
+                        //
+                        //   APStandDown: returning real=0000108E instead of
+                        //   0000108C (hairMode=1 hairBitReal=true
+                        //   hairBitWould=false)
+                        //
+                        // hairMode 1 is kShow, so the player had asked for hair
+                        // visible under headgear. Bit 31 (slot 31, the hair
+                        // head-part) is SET in real and CLEAR in what we would
+                        // have returned, so standing down handed the engine the
+                        // real helmet's hair bit and 24220 culled her hair.
+                        //
+                        // ⚠ SO THE STAND-DOWN KEEPS ApplyHairMode AND DROPS ONLY
+                        // THE COVERAGE. Those are two different kinds of claim
+                        // sharing one function. RenderedWornMask says which slots
+                        // OUR geometry covers, and Apparel Preview may have
+                        // replaced that geometry, so it must not survive. The
+                        // hair mode says what the PLAYER asked for, and a hover
+                        // preview cannot make that untrue, so it must.
+                        //
+                        // The fail-safe direction is unchanged: styled coverage
+                        // still stands down, so a head culled over nothing is
+                        // still impossible. See ApparelPreviewSignal.h.
+                        //
+                        // ⚠ AND A THIRD CLAIM, FOUND THE SAME WAY (field
+                        // 2026-08-06: "hair disappears when I preview helmets,
+                        // and it happens when we have a hidden helmet slot").
+                        // The HIDE has to survive too. This used to return the
+                        // raw mask, which still carries a hidden helmet's bits,
+                        // because hiding removes the GEOMETRY and leaves the
+                        // item equipped. So the engine culled hair for a helmet
+                        // nobody could see.
+                        //
+                        // Coverage and hide are opposite kinds of statement and
+                        // that is why they part company here. "Our geometry
+                        // covers this slot" is exactly what Apparel Preview may
+                        // have made false. "The real gear on this slot is gone"
+                        // is not something a preview can undo: it does not put
+                        // the hidden helmet back.
+                        //
+                        // AP unions its own preview coverage onto the answer
+                        // afterwards, so a previewed helmet still hides hair -
+                        // by the piece actually on the biped rather than by the
+                        // one we took off. The derivation is on
+                        // PreviewStandDownMask in SlotMask.h.
+                        const auto cov = RenderedCoverageFor(player);
+                        return ApplyHairMode(
+                            PreviewStandDownMask(real, cov ? cov->hidden : 0u),
+                            session.Display().hair);
+                    }
                     if (!session.IsActive()) {
                         return real;
                     }
-                    const auto d = session.Display();
-                    // Helmet Toggle 2: hidden worn head slots contribute no style
-                    // bits - the styled piece is suppressed in the pass above, and
-                    // keeping the bit here would leave the character bald-with-
-                    // hidden-hair (hair must regrow exactly as HT2 expects).
-                    auto styleMask = d.styleMask;
-                    if (HT2HidesHeadgear()) {
-                        styleMask &= ~(kHT2HeadSlots & real);
-                    }
-                    const auto shimmed = (real | styleMask) & ~d.hiddenHeadPartMask;
-                    spdlog::debug("wornmask real={:08X} -> {:08X} (style={:04X} hideHead={:04X})",
-                                  real, shimmed, d.styleMask, d.hiddenHeadPartMask);
-                    return shimmed;
+                    // Helmet Toggle 2 needs no handling here any more. The pass
+                    // already skips styles overlapping the slots HT2 hides, so
+                    // they never reach the published coverage - the mask cannot
+                    // claim a helmet HT2 is hiding, and hair regrows as HT2
+                    // expects, without this hook re-deriving the intersection.
+                    return ShimmedWornMask(real, session.Display(), player);
                 }
 
                 // ---- NPC PATH (un-gated Task 3) -----------------------------
@@ -640,15 +1331,12 @@ namespace OS {
                 if (!lk.entry) {
                     return real;
                 }
-                // Hide is worn-required against the engine's own mask. Styles
-                // remain intact and are ORed in here, so an injected follower
-                // helmet still hides the appropriate hair/head-part nodes even
-                // when no gameplay helmet is equipped underneath it.
+                // Hide is worn-required against the engine's own mask; styles
+                // may fill an unworn slot, exactly as in the styling pass, so an
+                // injected follower helmet still hides hair with no real helmet
+                // underneath it. Forms were pre-resolved - never resolve here.
                 const DisplaySet d = NpcResolve::WornRequiredDisplay(lk.entry->display, real);
-                const auto shimmed = (real | d.styleMask) & ~d.hiddenHeadPartMask;
-                spdlog::debug("wornmask NPC {:08X} real={:08X} -> {:08X} (hideHead={:04X})",
-                              lk.baseFormID, real, shimmed, d.hiddenHeadPartMask);
-                return shimmed;
+                return ShimmedWornMask(real, d, lk.actor);
             } catch (...) {
                 return real;
             }

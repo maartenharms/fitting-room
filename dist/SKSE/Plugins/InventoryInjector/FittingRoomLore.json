@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Exit-9B/InventoryInjector/main/docs/InventoryInjector.schema.json",
+  "rules": [
+    {
+      "match": {
+        "formType": "MiscItem",
+        "formId": "FittingRoomLore.esp|805"
+      },
+      "assign": {
+        "subTypeDisplay": "Seamstone",
+        "iconLabel": "misc_soulgem",
+        "iconColor": "#A88FF0"
+      }
+    }
+  ]
+}

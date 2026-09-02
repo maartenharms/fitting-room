@@ -3,6 +3,8 @@
 #include "BipedPost.h"
 #include "BipedHooks.h"
 #include "CrashGuard.h"
+#include "HairColor.h"
+#include "OutfitDye.h"
 #include "OutfitSession.h"
 #include "PresetPreviewPolicy.h"
 #include "WeaponHooks.h"
@@ -165,16 +167,17 @@ namespace OS::REAug {
                 }
                 const char* const parent =
                     obj.partClone->parent->name.c_str();
-                if (PreserveDrawnWeaponPlacement(
-                        false, parent ? std::string_view{ parent }
-                                      : std::string_view{})) {
+                const bool drawnNode = PreserveDrawnWeaponPlacement(
+                    false, parent ? std::string_view{ parent }
+                                  : std::string_view{});
+                if (drawnNode) {
                     return true;
                 }
             }
             return false;
         }
 
-        [[nodiscard]] std::uint8_t CaptureDrawnWeaponHands(
+        [[nodiscard]] DrawnWeaponHands CaptureDrawnWeaponHands(
             RE::Actor* a_actor) {
             constexpr std::uint8_t kRight = 1u << 0;
             constexpr std::uint8_t kLeft  = 1u << 1;
@@ -182,7 +185,7 @@ namespace OS::REAug {
                 a_actor->AsActorState()->IsWeaponDrawn();
             const bool isPlayer =
                 RE::PlayerCharacter::GetSingleton() == a_actor;
-            std::uint8_t result = 0;
+            DrawnWeaponHands result;
             for (const bool leftHand : { false, true }) {
                 auto* const weapon = a_actor->GetEquippedObject(leftHand);
                 if (!weapon || !weapon->IsWeapon()) {
@@ -190,15 +193,38 @@ namespace OS::REAug {
                 }
                 const auto side = leftHand ? WeaponPartSide::kOffHand
                                            : WeaponPartSide::kMainHand;
-                const bool visuallyDrawn =
-                    WeaponPartWasDrawn(
-                        a_actor->GetBiped1(false).get(), weapon, side) ||
-                    (isPlayer &&
-                     WeaponPartWasDrawn(
-                         a_actor->GetBiped1(true).get(), weapon, side));
-                if (PreserveDrawnWeaponPlacement(
-                        stateDrawn, visuallyDrawn ? "WEAPON" : "")) {
-                    result |= leftHand ? kLeft : kRight;
+                // ⚠ Per biped, NEVER OR'd together. This used to be one flag
+                // fed by `third || first`, and that is the whole dual-wield
+                // bug (field 2026-08-01): the FIRST-person rig has no hip
+                // sheath, so an off-hand weapon's 1P clone sits on SHIELD -
+                // the left-HAND node - whether it is drawn or sheathed. Asking
+                // 1P therefore always answered "drawn" for the off hand, and
+                // the answer was then used to yank the THIRD-person clone off
+                // its hip and into the hand. The log line that pinned it:
+                //
+                //   part scan off slot 9 parent='WeaponSwordLeft' -> false
+                //   part scan off slot 9 parent='SHIELD'          -> true
+                //   capture off hand - stateDrawn=false visuallyDrawn=true
+                //
+                // Two scans of ONE slot, disagreeing, because they are two
+                // different rigs. Each biped's clone is now repaired from its
+                // own placement. stateDrawn stays shared: it is a property of
+                // the actor, so when it is true both rigs really are drawn.
+                const bool drawnThird =
+                    WeaponPartWasDrawn(a_actor->GetBiped1(false).get(), weapon, side);
+                const bool drawnFirst =
+                    isPlayer &&
+                    WeaponPartWasDrawn(a_actor->GetBiped1(true).get(), weapon, side);
+                const std::uint8_t bit = leftHand ? kLeft : kRight;
+                const bool preserveThird =
+                    PreserveDrawnWeaponPlacement(stateDrawn, drawnThird ? "WEAPON" : "");
+                const bool preserveFirst =
+                    PreserveDrawnWeaponPlacement(stateDrawn, drawnFirst ? "WEAPON" : "");
+                if (preserveThird) {
+                    result.third |= bit;
+                }
+                if (preserveFirst) {
+                    result.first |= bit;
                 }
             }
             return result;
@@ -343,8 +369,106 @@ namespace OS::REAug {
         }
     }  // namespace
 
+    void AttachWeaponForPreview(RE::Actor* a_actor, RE::TESForm* a_weapon,
+                                bool a_leftHand) {
+        if (!a_actor || !a_weapon) {
+            return;
+        }
+        // Straight through to the engine's own equip-path entry point. There
+        // is deliberately no detach first: the caller has proven the slot is
+        // empty, so the change-detect documented on RestyleEquippedWeapons
+        // below cannot fire, and the part loader - and with it our own weapon
+        // styling hook - runs on the way in.
+        AttachWeapon(a_actor, a_weapon, a_leftHand);
+    }
+
+    void DrawStagedWeapon(RE::Actor* a_actor, RE::TESForm* a_weapon,
+                          WeaponClass a_class) {
+        if (!a_actor || !a_weapon || a_weapon->IsAmmo()) {
+            return;  // a quiver has no hip-to-hand move
+        }
+        auto* const weap = a_weapon->As<RE::TESObjectWEAP>();
+        if (!weap) {
+            return;
+        }
+        UpdateWeaponNode(a_actor, weap, true, false);
+        // ⚠ MEASURED, NOT ASSUMED. 0xB4 is documented against a weapon the
+        // actor has EQUIPPED, and a preview piece is staged on the biped
+        // without being equipped, so whether the engine finds it is the open
+        // question this line answers. "WEAPON" or "SHIELD" is the hand; the
+        // class's own sheath node name means the move did not take.
+        const auto node =
+            WeaponParentNodeName(a_actor, a_class, WeaponHand::Right);
+        spdlog::debug("weapon preview: asked '{}' into the hand, it is on '{}'.",
+                      weap->GetName() ? weap->GetName() : "?",
+                      node.empty() ? "<none>" : node.c_str());
+    }
+
+    void ClearWeaponPart(RE::BipedAnim* a_biped, std::uint32_t a_slot) {
+        if (!a_biped || a_slot >= 42u) {
+            return;
+        }
+        auto& obj = a_biped->objects[a_slot];
+        if (!obj.partClone) {
+            // Nothing parented. ClearBipedPart would early-return anyway; say
+            // so rather than let an empty log read as "the teardown ran".
+            spdlog::debug("preview teardown: slot {} has no partClone.", a_slot);
+            return;
+        }
+        ClearBipedPart(a_biped, &obj);
+        // ⚠ AFTER ClearBipedPart, NEVER BEFORE. The teardown above needs
+        // item->formType to reach its weapon branch and take the scabbard with
+        // it. Clearing it here is what makes the slot read EMPTY again, which
+        // is the state the preview found it in and the state ShouldShow's
+        // occupancy guard tests on the next pass.
+        obj.item = nullptr;
+    }
+
+    void AttachAmmoForPreview(RE::Actor* a_actor, RE::TESForm* a_ammo) {
+        if (!a_actor || !a_ammo) {
+            return;
+        }
+        const bool isPlayer = RE::PlayerCharacter::GetSingleton() == a_actor;
+        if (auto* const b3 = a_actor->GetBiped1(false).get()) {
+            AttachAmmoPart(b3, a_ammo);
+        }
+        if (isPlayer) {
+            if (auto* const b1 = a_actor->GetBiped1(true).get()) {
+                AttachAmmoPart(b1, a_ammo);
+            }
+        }
+    }
+
+    void RestoreDisplacedWeapon(RE::Actor* a_actor, RE::TESForm* a_weapon,
+                                bool a_wasDrawn) {
+        if (!a_actor || !a_weapon) {
+            return;
+        }
+        // ⚠ AMMO GOES BACK THE WAY IT CAME OFF. Handing a quiver to
+        // Actor::AttachWeapon is a silent no-op - it rejects kAmmo on its first
+        // instruction - so a restore that did not split here would put the
+        // player's arrows nowhere and never say why.
+        if (a_weapon->IsAmmo()) {
+            AttachAmmoForPreview(a_actor, a_weapon);
+            return;  // a quiver has no hip-to-hand move to repair
+        }
+        // The weapon never stopped being EQUIPPED - only its 3D was taken down
+        // - so the engine's own entry point restages it exactly as an equip
+        // would, and the styling hook runs on the way in so it comes back
+        // wearing whatever style the outfit gives it.
+        AttachWeapon(a_actor, a_weapon, false);
+        if (!a_wasDrawn) {
+            return;  // it was on its sheath node and that is where it landed
+        }
+        if (auto* const weap = a_weapon->As<RE::TESObjectWEAP>()) {
+            UpdateWeaponNode(a_actor, weap, true, false);
+            spdlog::debug("preview restore: '{}' put back and re-drawn.",
+                          weap->GetName() ? weap->GetName() : "?");
+        }
+    }
+
     void RestyleEquippedWeapons(
-        RE::Actor* a_actor, std::uint8_t a_preserveDrawnHands) {
+        RE::Actor* a_actor, DrawnWeaponHands a_preserveDrawnHands) {
         if (!a_actor) {
             return;
         }
@@ -419,9 +543,12 @@ namespace OS::REAug {
             // defaults. The right can use virtual 0xB4. The left uses its exact
             // offhand biped clone, because 0xB4's child selection is ambiguous
             // when both hands use the same WEAP form.
-            const bool preserveDrawn =
-                (a_preserveDrawnHands & (leftHand ? 1u << 1 : 1u << 0)) != 0;
-            switch (DrawnWeaponRepairFor(preserveDrawn, leftHand)) {
+            const std::uint8_t bit = leftHand ? 1u << 1 : 1u << 0;
+            const bool preserveThird = (a_preserveDrawnHands.third & bit) != 0;
+            const bool preserveFirst = (a_preserveDrawnHands.first & bit) != 0;
+            // Either rig wanting its placement kept is enough to enter the
+            // repair; WHICH rig gets touched is then decided per biped below.
+            switch (DrawnWeaponRepairFor(preserveThird || preserveFirst, leftHand)) {
                 case DrawnWeaponRepair::ReparentRight:
                     if (auto* const weap =
                             weapon->As<RE::TESObjectWEAP>()) {
@@ -433,10 +560,18 @@ namespace OS::REAug {
                     }
                     break;
                 case DrawnWeaponRepair::ReparentLeftClone:
-                    RestoreOffHandWeaponPart(
-                        a_actor->GetBiped1(false).get(), weapon,
-                        "third-person");
-                    if (isPlayer) {
+                    // Each rig repaired only if ITS OWN clone was hand-placed
+                    // before the rebuild. The third-person guard is the fix for
+                    // the dual-wield bug: with both swords sheathed its clone
+                    // sits on WeaponSwordLeft, preserveThird is false, and it
+                    // now stays on the hip instead of being dragged to SHIELD
+                    // on the first-person rig's say-so.
+                    if (preserveThird) {
+                        RestoreOffHandWeaponPart(
+                            a_actor->GetBiped1(false).get(), weapon,
+                            "third-person");
+                    }
+                    if (isPlayer && preserveFirst) {
                         RestoreOffHandWeaponPart(
                             a_actor->GetBiped1(true).get(), weapon,
                             "first-person");
@@ -463,9 +598,39 @@ namespace OS::REAug {
                         continue;
                     }
                     auto* const visual = b3->objects[slot].item;
-                    if (!visual || !visual->IsWeapon() ||
-                        visual == equippedRight || visual == equippedLeft ||
-                        !b3->objects[slot].partClone) {
+                    // ⚠ SAYS WHICH TEST REFUSED, because "nothing happened" is
+                    // what a field report of this looks like and the four
+                    // conditions below want four different fixes. Jenassa's bow
+                    // produced ZERO lines from this whole block (field
+                    // 2026-08-07), which proves the loop is reached and every
+                    // candidate refused, and says nothing at all about WHY.
+                    //
+                    // Debug rather than info: it runs per refresh per slot for
+                    // every follower, and the answer is only wanted while a
+                    // report is open.
+                    if (!visual) {
+                        spdlog::debug("restyle: biped slot {} holds no item.", slot);
+                        continue;
+                    }
+                    const char* const vname = visual->GetName() ? visual->GetName() : "?";
+                    if (!visual->IsWeapon()) {
+                        spdlog::debug("restyle: biped slot {} holds '{}', which is not a "
+                                      "weapon (formType {}).",
+                                      slot, vname,
+                                      static_cast<int>(visual->GetFormType()));
+                        continue;
+                    }
+                    if (visual == equippedRight || visual == equippedLeft) {
+                        spdlog::debug("restyle: biped slot {} holds '{}', which IS the "
+                                      "equipped {} weapon, so the loop above owns it.",
+                                      slot, vname,
+                                      visual == equippedRight ? "right" : "left");
+                        continue;
+                    }
+                    if (!b3->objects[slot].partClone) {
+                        spdlog::debug("restyle: biped slot {} holds '{}' with no partClone, "
+                                      "so there is no attached node to rebuild.",
+                                      slot, vname);
                         continue;
                     }
                     if (DetachWeaponFrom(
@@ -511,9 +676,10 @@ namespace OS::REAug {
                 // the quiver 3D - so a re-attach mid-draw could plausibly disturb
                 // it. Nothing on the binaries settles that, so field-test it with a
                 // bow drawn and an arrow nocked, and read this line when reporting.
-                spdlog::debug("restyle: quiver re-attached '{}' (drawn={}).",
-                              ammo->GetName() ? ammo->GetName() : "?",
-                              a_preserveDrawnHands != 0);
+                spdlog::debug(
+                    "restyle: quiver re-attached '{}' (drawn={}).",
+                    ammo->GetName() ? ammo->GetName() : "?",
+                    (a_preserveDrawnHands.third | a_preserveDrawnHands.first) != 0);
             }
         }
     }
@@ -559,6 +725,21 @@ namespace OS::REAug {
             }
             return;
         }
+
+        // ⚠ PUT THE DYED MATERIALS BACK BEFORE THE REBUILD, NOT AFTER IT.
+        // Skyrim may reuse a partClone across a refresh, so a swapped material
+        // can survive one. Restoring first is what makes a CLEARED dye
+        // deterministic: without it, whether the old colour disappears depends
+        // on whether the engine happened to rebuild that particular clone.
+        //
+        // Below the loaded gate above rather than at the very top of the
+        // function, on purpose. Restore now decides for itself whether a record
+        // is still attached (it walks the geometry up to Get3D and skips
+        // anything that no longer reaches it), so calling it for an unloaded
+        // actor would drop every record as stale and lose the swap this
+        // function has not yet undone. An entry left behind by an actor that
+        // unloaded is picked up by the Restore inside the next Repaint instead.
+        OutfitDye::Restore(a_actor);
 
         // Proven on 1.5.97 (checkpoint 2): this synchronous rebuild runs even
         // while Container/Barter pause the game - unchanged for NPCs, same
@@ -654,6 +835,57 @@ namespace OS::REAug {
                          w1 - w0);
         }
 
+        // Paint the hair colour onto the live geometry. UpdateEquipment above
+        // cannot do it: the only engine code that paints hair sits behind the
+        // kHead|kFace reset flags and this refresh passes kModel alone, so the
+        // colour sits correct on the actor base and unseen on screen. See
+        // HairColor::Repaint for the full mechanism.
+        //
+        // Here rather than in HairColor::Apply because Apply runs on the FUCK
+        // present thread before the refresh is even queued, and because this is
+        // the one site the player and follower paths both converge on, so a
+        // single call covers RequestRefresh and RequestRefreshActor together.
+        // Unconditional: it is one scenegraph walk, it is a no-op for an actor
+        // with no hair-tint material, and gating it on "did the colour change"
+        // would silently skip the repaint after any rebuild that reset the tint.
+        HairColor::Repaint(a_actor);
+
+        // Paint the outfit's dye onto the same live geometry, for the same
+        // reason and at the same seam: UpdateEquipment installs fresh materials
+        // straight out of the nif, so every rebuild wipes the swap and every
+        // rebuild has to redo it. Unconditional for the same reason too, and
+        // gating it on "did the colour change" would silently skip the repaint
+        // after any rebuild that reset it.
+        //
+        // Unlike hair there is no actor base to read the colour back from, so
+        // the seam has to supply the outfit. As of OS-128, ActiveOutfitFor also
+        // answers for an assigned follower, so this runs on her as well as on
+        // the player, and the Restore above is what keeps a cleared dye
+        // deterministic on both.
+        //
+        // Called even when that outfit sets no dye at all: Repaint also refreshes
+        // the shape snapshot the editor reads its channel labels out of, and the
+        // moment the user needs those labels is precisely the moment the slot has
+        // no dye yet.
+        if (const auto dyed = OutfitSession::GetSingleton().ActiveOutfitFor(a_actor)) {
+            OutfitDye::Repaint(a_actor, *dyed);
+            // ⚠ THE SYNCHRONOUS CALL ABOVE CANNOT FINISH THE JOB, and that is a
+            // measurement rather than caution. UpdateEquipment above wrote
+            // objects[bit].addon and .part on this stack, but the 3D attach that
+            // fills .partClone runs deferred off BSTaskPool - BipedPost.h
+            // records every dump at this point showing partClone == 0x0. So the
+            // walk above misses any slot whose model was not already cached, and
+            // the queued chain is what catches it a frame or two later.
+            //
+            // The primary arm is the worn-pass hook, which UpdateEquipment has
+            // already driven; this second call therefore usually just refreshes
+            // that chain's budget rather than starting one. It is here for the
+            // case the tripwire above warns about - the pass not running at all,
+            // where the sync paint is the only paint - and it is a single lookup
+            // when a chain is already in flight.
+            OutfitDye::QueueRepaint(a_actor->GetHandle());
+        }
+
         if (a_sceneKick) {
             // Container/Barter pause the game; kick the actor's scene graph so
             // the rebuilt biped renders immediately (0x2000 flag from IED).
@@ -693,6 +925,67 @@ namespace OS::REAug {
         }
         auto* race = a_actor->GetRace();
         return race ? race->skin : nullptr;
+    }
+
+    std::string WeaponParentNodeName(RE::Actor* a_actor, WeaponClass a_class,
+                                     WeaponHand a_hand) {
+        if (!a_actor) {
+            return {};
+        }
+        // ⚠ THE THIRD-PERSON BIPED, ALWAYS. The first-person rig keeps the off
+        // hand on the left-HAND node whether drawn or sheathed, which is the
+        // trap CaptureDrawnWeaponHands documents: two scans of one slot,
+        // disagreeing, because they are two different rigs. The camera is
+        // looking at the third-person one.
+        auto* biped = a_actor->GetBiped1(false).get();
+        if (!biped) {
+            return {};
+        }
+        const auto kQuiver = static_cast<std::size_t>(RE::BIPED_OBJECTS::kQuiver);
+
+        // ⚠ THE FORM, NOT JUST THE SLOT, AND THIS IS THE WHOLE FIX. The
+        // off-hand domain is every slot below 32, which is every ARMOUR slot
+        // too, and armour's clone parents to the ACTOR ROOT. Trusting the slot
+        // matched armour at slot 0 and answered `skeleton_female.nif`, so Menu
+        // Studio measured 23 pieces at radius 73 and framed the whole
+        // character on every weapon row (field 2026-08-07). Ammo counts: the
+        // quiver holds a TESAmmo and never a weapon.
+        const auto nodeAt = [&](std::size_t a_slot) -> std::string {
+            if (a_slot > kQuiver) {
+                return {};
+            }
+            const auto& obj = biped->objects[a_slot];
+            if (!obj.item || !(obj.item->IsWeapon() || obj.item->IsAmmo())) {
+                return {};
+            }
+            if (!obj.partClone || !obj.partClone->parent) {
+                return {};
+            }
+            const char* const parent = obj.partClone->parent->name.c_str();
+            return (parent && *parent) ? std::string{ parent } : std::string{};
+        };
+
+        const auto search = WeaponNodeSearchFor(a_hand);
+        // The main hand and the quiver both stage in the class's OWN slot, so
+        // this is exact and needs no scan: an empty slot here means nothing of
+        // that class is equipped, which the caller reads as "leave the shot
+        // where the player put it".
+        if (search.tryClassSlot) {
+            if (auto node = nodeAt(BipedSlotForClass(a_class)); !node.empty()) {
+                return node;
+            }
+        }
+        // The off hand has no per-class slot, so it is a scan. Only one
+        // off-hand weapon can exist at a time, which is what makes the first
+        // weapon found the right answer.
+        if (search.tryOffHand) {
+            for (std::size_t s = 0; s < 32; ++s) {
+                if (auto node = nodeAt(s); !node.empty()) {
+                    return node;
+                }
+            }
+        }
+        return {};
     }
 
 }  // namespace OS::REAug

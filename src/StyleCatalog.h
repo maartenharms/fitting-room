@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Outfit.h"
+#include "PreviewGrid.h"  // TextureSwapEntry (pure)
 
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace OS {
@@ -33,16 +35,46 @@ namespace OS {
         std::string         name;
         std::string         source;      // plugin filename
         std::uint32_t       slotMask{ 0 };
-        std::uint32_t       primaryBit{ 0 };  // lowest covered bit: the ONE slot it lists under
+        std::uint32_t       primaryBit{ 0 };  // the ONE slot row it lists under (SlotMask.h)
         std::uint8_t        armorType{ 0 };   // 0 light, 1 heavy, 2 clothing
         bool                fitsBody{ true };  // false = won't render (see fitReason)
         FitReason           fitReason{ FitReason::kFits };
         bool                isRecent{ false };  // source plugin newly added this launch (OS-26)
         std::string         edid;  // best-effort; empty on runtimes without EDID retention
 
+        // Every OTHER record that collapsed into this one look during Build -
+        // the enchanted variants, the WACCF/mod re-issues, anything sharing
+        // this look's addon set (armor) or class+model+texture-swap (weapons).
+        // `form` is only the lowest-FormID REPRESENTATIVE of that group.
+        //
+        // Load-bearing for the Collection filter: ownership is recorded per
+        // RECORD, so a player who owns only "Magecore Robes of Destruction"
+        // has never owned the plain record this row shows. Testing the
+        // representative alone therefore hid the whole look (the reporter's
+        // "it will not appear unless I have a copy of the unenchanted
+        // version"). Ask LookCollected/IsLookCollected, never Knows(form).
+        std::vector<RE::FormID> variantIds;
+
         // Weapon dimension (see WeaponSlots.h). Set = this is a WEAP/AMMO
         // style listing under that class instead of an armor slot bit.
         std::optional<WeaponClass> weaponClass;
+
+        // The resolved model paths, cached OFF the render thread so a preview
+        // build never walks the form graph. Weapons fill exactly one at
+        // Build() (TESModelTextureSwap::GetModel is the whole resolution).
+        // Armour fills zero to N during the FIT WALK (RefreshFitFor), because
+        // the answer depends on the target's race and sex and Build() runs
+        // before either is known; an unfit style keeps an empty list and its
+        // card draws the cross.
+        std::vector<std::string> modelPaths;
+
+        // The paths' texture swaps (OS-192), parallel to modelPaths when
+        // present and EMPTY when no path carries any, which is what keeps a
+        // swap-less disk key byte-identical (the pinned rule). Filled where
+        // modelPaths is filled, from the same model subobjects.
+        std::vector<std::vector<PreviewGrid::TextureSwapEntry>> swaps;
+
+        [[nodiscard]] bool HasPreviewScene() const { return !modelPaths.empty(); }
 
         [[nodiscard]] bool IsWeapon() const { return weaponClass.has_value(); }
 
@@ -101,8 +133,8 @@ namespace OS {
         // again - same fitsBody-unsynchronized contract as EnsureFitCurrent.
         void RefreshFitFor(RE::TESRace* a_race, int a_sexIdx);
 
-        // RefreshFit() only if the PLAYER's race changed since the last
-        // evaluation (RaceMenu race swaps mid-save) AND the fit cache's
+        // RefreshFit() only if the PLAYER's race OR SEX changed since the last
+        // evaluation (RaceMenu swaps mid-save) AND the fit cache's
         // current subject IS the player. That second condition matters once
         // the editor can target an NPC via RefreshFitFor(): without it, this
         // would clobber a deliberately-cached follower fit back to the
@@ -123,6 +155,18 @@ namespace OS {
         // unless CrashGuard flags them.
         [[nodiscard]] static FitReason EvaluateFitFor(RE::TESObjectARMO* a_armo,
                                                        RE::TESRace* a_race, int a_sexIdx);
+
+        // Every addon of a_armo that passes the same race test EvaluateFitFor
+        // applies (including the RNAM armorParentRace fallback) AND has a
+        // mesh for a_sexIdx, in addon order. The multi-addon rule, decided in
+        // the spec: render them all, one merged scene. Empty for an unfit
+        // style, which is exactly "no scene". a_swaps fills in lockstep from
+        // the SAME per-sex model subobject each path came from (OS-192), and
+        // comes back EMPTY, not sized, when no addon carries any.
+        static void CollectArmourPaths(
+            RE::TESObjectARMO* a_armo, RE::TESRace* a_race, int a_sexIdx,
+            std::vector<std::string>& a_out,
+            std::vector<std::vector<PreviewGrid::TextureSwapEntry>>& a_swaps);
 
         // Player-facing convenience: EvaluateFitFor(a_armo, player's race,
         // player's sex). Unchanged signature/behavior from before the
@@ -169,10 +213,28 @@ namespace OS {
         // Bitmask of primary slots that have at least one item matching the
         // search - drives the slot-list highlight while searching. ARMOR only
         // (it returns armor slot bits), so weapon styles never light a bit.
+        //
+        // ⚠⚠ a_hideUnfit MUST BE THE BROWSER'S OWN SETTING. Gold promises
+        // "click here and it is in there", so this has to ask the question the
+        // LIST asks, not a looser one: the browser drops body-unfit rows when
+        // bBrowserHideUnfit is on (its default), and a mask that counted them
+        // lit a slot whose pane then opened empty (field 2026-08-27). This is
+        // the same rule HeadListHasSearchHit carries, on the dimension that
+        // never got it.
         [[nodiscard]] std::uint32_t MatchMask(std::string_view a_search, bool a_collectedOnly,
-                                              int a_armorType, bool a_favoritesOnly) const;
+                                              int a_armorType, bool a_favoritesOnly,
+                                              bool a_hideUnfit) const;
 
         [[nodiscard]] std::size_t Size() const { return items_.size(); }
+
+        // Has the player owned ANY record of the look a_formID belongs to?
+        // a_formID may be the representative or any collapsed variant. Forms
+        // outside the catalog fall back to a plain Collection lookup, so a
+        // preset naming a piece the catalog dropped still answers honestly.
+        // The one collection question callers outside the browser should ask -
+        // Collection::Knows alone is record-scoped and under-reports (see
+        // StyleItem::variantIds).
+        [[nodiscard]] bool IsLookCollected(RE::FormID a_formID) const;
 
         // All indexed items - read on the main thread (auto-preset generation
         // runs there, same discipline as Query). Do not hold across a Build().
@@ -181,6 +243,12 @@ namespace OS {
     private:
         StyleCatalog() = default;
         std::vector<StyleItem> items_;
+
+        // Every form the catalog knows - representatives AND the variants
+        // collapsed into them - mapped to its look's index in items_. Built
+        // at the end of Build(), after items_ has settled, so the indices
+        // cannot go stale within a build.
+        std::unordered_map<RE::FormID, std::size_t> lookIndex_;
 
         // The fit cache's current SUBJECT: whose race+sex fitsBody/fitReason
         // were last evaluated against. Player by default; an NPC target
@@ -195,5 +263,24 @@ namespace OS {
         int          fitSexIdx_{ RE::SEXES::kMale };
         bool         fitSubjectIsPlayer_{ true };
     };
+
+    // ---- the newly-found mark, asked of the whole collapsed look ----------
+    //
+    // ⚠⚠ THEY LIVE BESIDE LookCollected FOR THE REASON StyleItem::variantIds
+    // ALREADY GIVES. Ownership is recorded per RECORD, and one row can stand
+    // for a dozen of them, so asking Collection::Knows about the representative
+    // alone is the bug that once hid whole looks from the browser. "New" has to
+    // answer over the same set "collected" does, or a row could be offered as
+    // owned and marked as never seen at the same time.
+    //
+    // ⚠ NEW MEANS COLLECTED AND NOT ACKNOWLEDGED. A look the player has never
+    // owned is not new, it is absent, and with the collection filter on it is
+    // not even drawn.
+    [[nodiscard]] bool LookIsNew(const StyleItem& a_item);
+
+    // Mark every record of this look that the player actually owns. Marking
+    // only the representative would leave a row that came in as a variant
+    // permanently new, because LookIsNew reads the same set both ways.
+    void AcknowledgeLook(const StyleItem& a_item);
 
 }  // namespace OS

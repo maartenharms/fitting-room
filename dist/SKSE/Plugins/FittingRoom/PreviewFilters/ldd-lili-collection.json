@@ -1,0 +1,33 @@
+{
+  "_readme": [
+    "Preview scene fixups. Each scope names a folded model-path substring and",
+    "the geometry names to hide or show inside it. Patterns take a leading",
+    "and/or trailing * and nothing else. A show beats a hide, and rescues a",
+    "piece the built-in helper-token rule catches by mistake; it deliberately",
+    "cannot rescue an embedded body or an out-of-slot hands/feet mesh.",
+    "",
+    "Drop your own file in this folder. Files are read in sorted order and",
+    "merged, and one that will not parse costs only its own scopes."
+  ],
+  "scopes": [
+    {
+      "_why": [
+        "The Lili Collection ships SMP collision proxies as ordinary geometry,",
+        "so the previewer draws them: a ring around the neck on the choker card",
+        "and three hulls inside the dresses. Censused whole with",
+        "tools/nif_name_census.py over the mod's meshes/ folders, which found",
+        "ColChokerNeck on 6 NIFs and ColSkirtFeet, ColSkirtLegs and",
+        "ColSkirtPelvis on 20 each.",
+        "",
+        "The pattern is _col rather than col because this mod's real garment",
+        "pieces are Corset, Cardigan and every name containing LiliCollection.",
+        "A bare col substring would hide the entire mod. _col matches the four",
+        "proxies and none of the pieces, which is checkable because this mod",
+        "was censused whole; it is not checkable across the whole load order,",
+        "which is exactly why the rule is scoped to this path."
+      ],
+      "path": "ldd/lili collection/",
+      "hide": ["*_col*"]
+    }
+  ]
+}

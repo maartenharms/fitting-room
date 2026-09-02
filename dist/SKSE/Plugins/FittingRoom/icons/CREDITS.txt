@@ -1,0 +1,58 @@
+Fitting Room row icons
+
+These PNGs are rasterised from game-icons.net SVGs, licensed CC BY 3.0.
+https://creativecommons.org/licenses/by/3.0/
+
+The background rect each source SVG ships was removed so the shape sits on
+transparency; the editor tints it per row. No other change was made.
+
+  arrows.png  delapouite/quiver                Delapouite
+  battleaxe.png delapouite/warhammer             Delapouite
+  bolts.png   delapouite/dart                  Delapouite
+  bow.png     delapouite/bow-arrow             Delapouite
+  crossbow.png carl-olsen/crossbow              Carl Olsen
+  dagger.png  lorc/plain-dagger                Lorc
+  greatsword.png lorc/relic-blade                 Lorc
+  mace.png    delapouite/flanged-mace          Delapouite
+  staff.png   lorc/wizard-staff                Lorc
+  sword.png   lorc/broadsword                  Lorc
+  waraxe.png  delapouite/war-axe               Delapouite
+
+The armour rows below come from the same source and the same pipeline. Font
+Awesome 5 Free Solid has no leg, hip, waist, trousers or shoulder glyph at
+all, which was established by enumerating the bundled font rather than by
+reading a cheatsheet, so these five rows could not be fixed with a codepoint.
+
+  leg.png     delapouite/armor-cuisses         Delapouite
+  pelvis.png  delapouite/belt-armor            Delapouite
+  shoulder.png skoll/pauldrons                 Skoll
+
+Three pictures for five rows. Both legs share leg.png and both pelvis rows
+share pelvis.png, which is this table's own convention: Face and Face (alt)
+are one glyph, and so are Arm (left) and Arm (right). The row label is what
+separates outer from under.
+
+hair.png comes from Material Symbols instead, licensed Apache 2.0.
+https://github.com/google/material-design-icons
+
+  hair.png    symbols/web/face_3 (filled)      Google
+
+A second source for one icon, because neither Font Awesome set has a hair
+glyph and game-icons has exactly one in 4,239, which is unreadable at row
+size. The body row needed no asset at all: Font Awesome has a feminine
+figure and it is drawn as a glyph.
+
+The icon FONT the editor draws its glyphs from, icons.ttf beside this file, is
+Font Awesome Free, licensed SIL OFL 1.1.
+https://fontawesome.com/  https://scripts.sil.org/OFL
+
+  icons.ttf   Font Awesome Free (webfont)      Fonticons, Inc.
+
+robe.png is the Menu Studio action bar tile rather than a row, and it comes
+from the same game-icons.net set and the same pipeline as the rows above.
+
+  robe.png    lorc/robe                        Lorc
+
+It replaced hood.png, which was original to this project and drawn by a
+script in tools. Nothing here is drawn in-house any more, so there is no
+longer a second attribution rule to keep apart from the one at the top.

@@ -1,0 +1,15 @@
+{
+  "note": "Corrections to overlay-locations.json, applied when the table is read. A pack can register its art in the wrong RaceMenu list and the table records what the pack said, not what it meant. Each fixup names a registration script by its file name (the tail of a by_source key in the table; case does not matter) and says which overlay locations that script's warpaint-only registrations really belong on: body, hands, feet, face, or a comma list of them. A fixup only adds locations to rows no pack placed anywhere; it never takes one away and never touches a texture a pack did place. The warpaint bit stays, so a corrected texture is still offered under Makeup as well. If this file is missing or will not parse, nothing is corrected and the log line says so.",
+  "fixups": [
+    {
+      "script": "Sheps_Tattoo_Collection.pex",
+      "warpaint_is": "body",
+      "why": "Shep's Female Tattoo Collection registers all 132 of its body tattoos with AddWarpaint, so RaceMenu offers them only under war paint. They are body art and belong on the body page."
+    },
+    {
+      "script": "Sheps_Male_Tattoo_Collection.pex",
+      "warpaint_is": "body",
+      "why": "Sheps Male Tattoo Collection does the same with its 132: AddWarpaint for body art. Body page."
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 #include "CrashGuard.h"
 
+#include "BuildChannel.h"
+
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -10,9 +12,9 @@
 namespace OS::CrashGuard {
 
     namespace {
-        constexpr const char* kDir     = "Data/SKSE/Plugins/FittingRoom";
-        constexpr const char* kPending = "Data/SKSE/Plugins/FittingRoom/pending_preview.txt";
-        constexpr const char* kCrashers = "Data/SKSE/Plugins/FittingRoom/crashed_styles.txt";
+        const auto kDir      = BuildChannel::DataRoot();
+        const auto kPending  = BuildChannel::DataPath("pending_preview.txt");
+        const auto kCrashers = BuildChannel::DataPath("crashed_styles.txt");
 
         std::mutex             g_mutex;
         StyleRefKey            g_previewing;       // guarded by g_mutex

@@ -52,26 +52,23 @@ int main() {
     }
 
     {  // Submask re-derivation from the MASKED hideMask. Hide a body-skin slot
-       // (32 -> bit 2), a head-part slot (31 -> bit 1) and an attachment slot
-       // (35 -> bit 5); worn coverage omits the head-part slot. The masked set
-       // must drop the head-part bit from EVERY derived submask.
+       // (32 -> bit 2), a hair slot (31 -> bit 1) and an attachment slot
+       // (35 -> bit 5); worn coverage omits the hair slot. The masked set must
+       // drop that bit from EVERY derived submask.
         const std::uint32_t bitBody = MaskForEditorSlot(32);  // kBodySkinMask member
-        const std::uint32_t bitHead = MaskForEditorSlot(31);  // kHeadPartMask member
-        const std::uint32_t bitAmul = MaskForEditorSlot(35);  // attachment (neither)
+        const std::uint32_t bitHair = MaskForEditorSlot(31);
+        const std::uint32_t bitAmul = MaskForEditorSlot(35);  // attachment
 
         DisplaySet in;
-        in.hideMask = bitBody | bitHead | bitAmul;
-        // Sanity: the raw derivation carries the head-part bit before masking.
+        in.hideMask             = bitBody | bitHair | bitAmul;
         in.hiddenBodySkinMask   = in.hideMask & kBodySkinMask;
         in.hiddenAttachmentMask = in.hideMask & ~kBodySkinMask;
-        in.hiddenHeadPartMask   = in.hideMask & kHeadPartMask;
-        CHECK(in.hiddenHeadPartMask == bitHead);
+        CHECK(in.hiddenAttachmentMask == (bitHair | bitAmul));
 
-        const auto out = WornRequiredDisplay(in, bitBody | bitAmul);  // no head-part worn
+        const auto out = WornRequiredDisplay(in, bitBody | bitAmul);  // no hair gear worn
         CHECK(out.hideMask == (bitBody | bitAmul));
         CHECK(out.hiddenBodySkinMask == bitBody);           // body-skin survives
-        CHECK(out.hiddenAttachmentMask == bitAmul);         // attachment survives
-        CHECK(out.hiddenHeadPartMask == 0u);                // head-part dropped
+        CHECK(out.hiddenAttachmentMask == bitAmul);         // attachment survives, hair dropped
     }
 
     {  // Worn-required derivation matches ComputeDisplaySet's own submask rule
@@ -85,7 +82,14 @@ int main() {
         CHECK(masked.hideMask == full.hideMask);
         CHECK(masked.hiddenBodySkinMask == full.hiddenBodySkinMask);
         CHECK(masked.hiddenAttachmentMask == full.hiddenAttachmentMask);
-        CHECK(masked.hiddenHeadPartMask == full.hiddenHeadPartMask);
+    }
+
+    {  // Hair is an appearance choice, not a worn-gear question, so the
+       // worn-required masking must pass it through untouched.
+        DisplaySet in;
+        in.hair = HairMode::kShow;
+        CHECK(WornRequiredDisplay(in, 0u).hair == HairMode::kShow);
+        CHECK(WornRequiredDisplay(in, 0xFFFFFFFFu).hair == HairMode::kShow);
     }
 
     {  // SelectNpcSource precedence: suspension stands the actor down FIRST,
@@ -105,6 +109,36 @@ int main() {
     {  // No staging: the assigned active outfit renders iff one exists.
         CHECK(SelectNpcSource(false, false, true) == NpcSource::kAssignedActive);
         CHECK(SelectNpcSource(false, false, false) == NpcSource::kNone);
+    }
+
+    // ---- StagedTargetMatches -------------------------------------------
+    // The editor stages on exactly one base at a time. Everything else,
+    // including a player-staging session and an unresolvable base, must not
+    // match, or a follower inherits the player's staged outfit.
+    {
+        constexpr std::uint32_t kHer = 0x0001A696;
+        constexpr std::uint32_t kHim = 0x000A2C8E;
+
+        // Staging on her, asked about her.
+        CHECK(StagedTargetMatches(true, false, kHer, kHer));
+
+        // Staging on her, asked about someone else.
+        CHECK(!StagedTargetMatches(true, false, kHer, kHim));
+
+        // Staging on the PLAYER. No base may match, whatever the stale
+        // stagedBaseFormID_ still holds.
+        CHECK(!StagedTargetMatches(true, true, kHer, kHer));
+
+        // Nothing staged at all.
+        CHECK(!StagedTargetMatches(false, false, kHer, kHer));
+
+        // The zero guard. An unresolvable base is 0, and a session that is
+        // not staging an NPC leaves stagedBaseFormID_ at 0. Without the guard
+        // these compare equal and every keyless actor silently picks up the
+        // staged outfit.
+        CHECK(!StagedTargetMatches(true, false, 0, 0));
+        CHECK(!StagedTargetMatches(true, false, 0, kHer));
+        CHECK(!StagedTargetMatches(true, false, kHer, 0));
     }
 
     {  // Race-switch suspension rule (spec §6): the trigger is beast-ness, not
@@ -139,6 +173,31 @@ int main() {
         const auto out = BuildDisambiguatedLabels(in);
         CHECK(out.size() == 1);
         CHECK(out[0] == "Inigo");
+    }
+
+    {  // NearestFirstOrder: the roster walk's order is process-list order;
+        // the picker wants the person you walked up to on top. A city shape:
+        // a far guard first in the walk, the adjacent smith third.
+        const std::vector<float> dist2{ 90000.0f, 2500.0f, 40.0f, 640000.0f };
+        const auto               order = NearestFirstOrder(dist2);
+        CHECK(order.size() == 4);
+        CHECK(order[0] == 2);
+        CHECK(order[1] == 1);
+        CHECK(order[2] == 0);
+        CHECK(order[3] == 3);
+    }
+
+    {  // Ties keep the walk's order (stable), so two people on one spot do
+        // not swap places between opens. Empty and single are the identity.
+        const std::vector<float> tied{ 100.0f, 100.0f, 1.0f };
+        const auto               order = NearestFirstOrder(tied);
+        CHECK(order.size() == 3);
+        CHECK(order[0] == 2);
+        CHECK(order[1] == 0);
+        CHECK(order[2] == 1);
+        CHECK(NearestFirstOrder({}).empty());
+        const auto one = NearestFirstOrder({ 7.0f });
+        CHECK(one.size() == 1 && one[0] == 0);
     }
 
     if (g_failures == 0) {

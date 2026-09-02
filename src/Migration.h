@@ -1,5 +1,7 @@
 #pragma once
 
+#include "BuildChannel.h"
+
 #include <array>
 #include <filesystem>
 
@@ -14,6 +16,11 @@ namespace OS::Migration {
     // name, appearance collection) needs no migration - only these on-disk files do.
     // Call once at kDataLoaded BEFORE Settings::Load and the library load.
     inline void RunOnce() {
+        if constexpr (BuildChannel::kBodyStudioDev) {
+            // Never seed an isolated development channel from release or the
+            // pre-rename mod. A field test must begin with channel-owned data.
+            return;
+        }
         namespace fs = std::filesystem;
         std::error_code ec;
 

@@ -1,13 +1,15 @@
 #include "MenuButton.h"
 
+#include "HostGuard.h"  // the menus the editor can be hosted by, and so hinted in
 #include "Settings.h"
 
 namespace OS {
 
     namespace {
-        // Known homes of the SkyUI-family bottom button bar inside the
-        // InventoryMenu movie, most common first. Vel'dun and other Edge-style
-        // skins keep SkyUI's structure and only reskin the assets.
+        // Known homes of the SkyUI-family bottom button bar inside a menu movie,
+        // most common first. Vel'dun and other Edge-style skins keep SkyUI's
+        // structure and only reskin the assets, and SkyUI builds the magic menu
+        // on the same ItemMenu base as the inventory, so one list covers both.
         constexpr const char* kPanelPaths[] = {
             "_root.Menu_mc.navPanel",
             "_root.Menu_mc.bottomBar",
@@ -23,17 +25,18 @@ namespace OS {
     void MenuButton::Register() {
         if (auto* ui = RE::UI::GetSingleton()) {
             ui->AddEventSink<RE::MenuOpenCloseEvent>(&GetSingleton());
-            spdlog::info("MenuButton: inventory watcher registered.");
+            spdlog::info("MenuButton: watching {} and {} for the Outfits hint.",
+                         HostGuard::kInventoryMenu, HostGuard::kMagicMenu);
         }
     }
 
-    void MenuButton::InjectButton() {
+    void MenuButton::InjectButton(const std::string& a_menu) {
         const auto key = Settings::GetSingleton().editorKeyDIK;
         auto*      ui  = RE::UI::GetSingleton();
         if (!ui || !key) {
             return;
         }
-        const auto menu = ui->GetMenu(RE::InventoryMenu::MENU_NAME);
+        const auto menu = ui->GetMenu(a_menu);
         if (!menu || !menu->uiMovie) {
             return;
         }
@@ -49,10 +52,9 @@ namespace OS {
         }
         auto& self = GetSingleton();
         if (!found) {
-            if (!self.loggedMissingPanel_) {
-                self.loggedMissingPanel_ = true;
-                spdlog::warn("MenuButton: no SkyUI-family button panel in the InventoryMenu "
-                             "movie - the Outfits hint is skipped on this UI.");
+            if (self.loggedMissingPanel_.insert(a_menu).second) {
+                spdlog::warn("MenuButton: no SkyUI-family button panel in the {} movie - "
+                             "the Outfits hint is skipped there on this UI.", a_menu);
             }
             return;
         }
@@ -67,29 +69,38 @@ namespace OS {
 
         RE::GFxValue ret;
         if (!panel.Invoke("addButton", &ret, &button, 1)) {
-            if (!self.loggedMissingPanel_) {
-                self.loggedMissingPanel_ = true;
-                spdlog::warn("MenuButton: {}.addButton not invocable - hint skipped.", found);
+            if (self.loggedMissingPanel_.insert(a_menu).second) {
+                spdlog::warn("MenuButton: {}.addButton not invocable in {} - hint skipped.",
+                             found, a_menu);
             }
             return;
         }
         RE::GFxValue immediate(true);
         panel.Invoke("updateButtons", nullptr, &immediate, 1);
-        spdlog::debug("MenuButton: 'Outfits' hint added via {}.", found);
+        spdlog::debug("MenuButton: 'Outfits' hint added to {} via {}.", a_menu, found);
     }
 
     RE::BSEventNotifyControl MenuButton::ProcessEvent(
         const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) {
-        if (!a_event || !a_event->opening ||
-            a_event->menuName != RE::InventoryMenu::MENU_NAME) {
+        if (!a_event || !a_event->opening) {
+            return RE::BSEventNotifyControl::kContinue;
+        }
+        // ⚠ THE VANILLA HOSTS ONLY, AND THE NAME COMES FROM HostGuard. SAM is
+        // deliberately absent: it is not a SkyUI menu and has no button panel to
+        // add to, and its own addon already carries the entry point.
+        const std::string_view name{ a_event->menuName.c_str() };
+        if (name != HostGuard::kInventoryMenu && name != HostGuard::kMagicMenu) {
             return RE::BSEventNotifyControl::kContinue;
         }
         // The movie exists when the open event fires, but SkyUI finishes its
         // own bottom-bar setup in the same breath - inject from the task queue
         // so we land after it, not under it. Re-done every open: each open
         // builds a fresh movie.
+        //
+        // The name is COPIED into the task rather than captured by view: the
+        // event is gone by the time the task runs.
         if (auto* task = SKSE::GetTaskInterface()) {
-            task->AddTask([] { InjectButton(); });
+            task->AddTask([menu = std::string(name)] { InjectButton(menu); });
         }
         return RE::BSEventNotifyControl::kContinue;
     }

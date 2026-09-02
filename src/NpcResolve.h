@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Outfit.h"    // DisplaySet, ComputeDisplaySet
-#include "SlotMask.h"  // kBodySkinMask / kHeadPartMask
+#include "SlotMask.h"  // kBodySkinMask
 
 #include <cstdint>
 
@@ -10,13 +10,16 @@
 // here, header-only, so the same math the biped hooks run on the hot path is
 // unit-tested without RE:: types (see tests/test_npcsession.cpp).
 //
-// Three decisions live here:
+// Four decisions live here:
 //   1. WornRequiredDisplay - NPC styles are visual and may fill an otherwise
 //      unworn slot, matching the player. Hides remain limited to real gear.
 //   2. SelectNpcSource - which outfit source a given assigned base resolves
 //      to at snapshot BUILD time (suspension / staged-target override /
 //      assigned-active), mirroring the player's EffectiveLocked precedence.
-//   3. ShouldSuspendForRace - the spec §6 race-switch suspension rule:
+//   3. StagedTargetMatches - whether the editor's live preview is staged on
+//      THIS base right now, the shared precondition SelectNpcSource's staged
+//      override and the OBody/hair displays all key off.
+//   4. ShouldSuspendForRace - the spec §6 race-switch suspension rule:
 //      whether the actor's CURRENT race is a beast/creature form with no
 //      styleable humanoid biped (werewolf, vampire lord).
 namespace OS::NpcResolve {
@@ -42,7 +45,7 @@ namespace OS::NpcResolve {
         // too, or the hook would skin/cull a slot the actor does not wear.
         out.hiddenBodySkinMask   = out.hideMask & kBodySkinMask;
         out.hiddenAttachmentMask = out.hideMask & ~kBodySkinMask;
-        out.hiddenHeadPartMask   = out.hideMask & kHeadPartMask;
+        out.hair = a_in.hair;  // an appearance choice, not a worn-gear question
         return out;
     }
 
@@ -74,6 +77,28 @@ namespace OS::NpcResolve {
             return NpcSource::kNone;
         }
         return NpcSource::kAssignedActive;
+    }
+
+    // Is the editor staging on THIS base right now?
+    //
+    // Four callers need this answer: the snapshot build (which outfit an
+    // assigned base resolves to), the OBody body display, the hair display,
+    // and ActiveOutfitFor's follower branch. They used to spell it inline and
+    // they did not agree.
+    //
+    // ⚠ THE ZERO GUARD IS THE POINT. An actor whose base has no defining file
+    // classifies with baseFormID 0, and a session that is not staging an NPC
+    // leaves stagedBaseFormID_ at 0. Compared naively those two zeros are
+    // equal, so every keyless actor in the cell would resolve to whatever the
+    // editor happens to have staged. That is a silent wrong answer, not a
+    // crash, which is why it lives here behind a test rather than in four
+    // hand-written conditions.
+    [[nodiscard]] constexpr bool StagedTargetMatches(bool          a_hasStagedOutfit,
+                                                     bool          a_stagedForPlayer,
+                                                     std::uint32_t a_stagedBaseFormID,
+                                                     std::uint32_t a_base) {
+        return a_hasStagedOutfit && !a_stagedForPlayer && a_stagedBaseFormID != 0 &&
+               a_stagedBaseFormID == a_base;
     }
 
     // §6 race-switch suspension rule. Takes a plain bool rather than an

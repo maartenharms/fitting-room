@@ -3,6 +3,8 @@
 #include "Collection.h"
 #include "CrashGuard.h"
 #include "Favorites.h"
+#include "Mannequin.h"
+#include "PreviewSwapCapture.h"
 #include "REAugments.h"
 #include "RecentMods.h"
 #include "Settings.h"
@@ -12,7 +14,7 @@
 #include <algorithm>
 #include <bit>
 #include <cctype>
-#include <set>
+#include <map>
 #include <string>
 #include <utility>
 
@@ -218,7 +220,7 @@ namespace OS {
             item.name       = name;
             item.source     = item.key.modName;
             item.slotMask   = mask;
-            item.primaryBit = static_cast<std::uint32_t>(std::countr_zero(mask));
+            item.primaryBit = PrimaryBitFor(mask);
             item.armorType  = static_cast<std::uint8_t>(armo->GetArmorType());
             if (const char* ed = armo->GetFormEditorID(); ed && *ed) {
                 item.edid = ed;  // best-effort; a corroborating stem for set detection
@@ -266,6 +268,16 @@ namespace OS {
             item.name        = a_name;
             item.source      = item.key.modName;
             item.weaponClass = a_class;
+            // The preview grid renders from this without touching the form
+            // again; `model` was already validated non-empty above. The
+            // model's own alternate textures ride along (OS-192): the same
+            // subobject WeaponLookKey already treats as look identity, so
+            // "the same blade retextured" entries stop sharing one picture.
+            item.modelPaths.push_back(model);
+            if (auto captured = PreviewSwapCapture::FromModel(*swap);
+                !captured.empty()) {
+                item.swaps.push_back(std::move(captured));
+            }
             if (const char* ed = a_form->GetFormEditorID(); ed && *ed) {
                 item.edid = ed;
             }
@@ -332,21 +344,36 @@ namespace OS {
             std::ranges::sort(addons);
             return addons;
         };
-        std::vector<StyleItem>                        unique;
-        std::set<std::vector<RE::TESObjectARMA*>>     seen;
-        std::set<std::pair<WeaponClass, std::string>> seenWeapon;  // (class, look)
-        std::size_t                                   armorCollapsed  = 0;
-        std::size_t                                   weaponCollapsed = 0;
+        // The maps remember WHICH kept row each key landed on, not merely that
+        // it was seen: a collapsed record has to be recorded on its
+        // representative's variantIds, or the Collection filter can only ever
+        // see the one record of the group that happened to sort first.
+        std::vector<StyleItem>                                     unique;
+        std::map<std::vector<RE::TESObjectARMA*>, std::size_t>     seen;
+        std::map<std::pair<WeaponClass, std::string>, std::size_t> seenWeapon;  // (class, look)
+        std::size_t                                                armorCollapsed  = 0;
+        std::size_t                                                weaponCollapsed = 0;
         for (auto& it : items_) {
-            const bool fresh =
-                it.IsWeapon()
-                    ? seenWeapon.emplace(*it.weaponClass, WeaponLookKey(WeaponSwapOf(it.form)))
-                          .second
-                    : seen.insert(addonKey(it)).second;
+            // Two maps with unrelated iterator types, so the branch resolves
+            // to (kept index, fresh?) rather than to an iterator.
+            std::size_t keptAt = 0;
+            bool        fresh  = false;
+            if (it.IsWeapon()) {
+                const auto [pos, ins] = seenWeapon.emplace(
+                    std::pair{ *it.weaponClass, WeaponLookKey(WeaponSwapOf(it.form)) },
+                    unique.size());
+                keptAt = pos->second;
+                fresh  = ins;
+            } else {
+                const auto [pos, ins] = seen.emplace(addonKey(it), unique.size());
+                keptAt = pos->second;
+                fresh  = ins;
+            }
             if (fresh) {
                 unique.push_back(std::move(it));
                 continue;
             }
+            unique[keptAt].variantIds.push_back(it.form->GetFormID());
             if (it.IsWeapon()) {
                 ++weaponCollapsed;
             } else {
@@ -380,6 +407,28 @@ namespace OS {
                      "playable race).",
                      armorKept, weaponKept, ammoKept, armorCollapsed, weaponCollapsed,
                      raceRejected);
+        std::size_t weaponPaths = 0;
+        for (const auto& it : items_) {
+            if (it.IsWeapon() && it.HasPreviewScene()) {
+                ++weaponPaths;
+            }
+        }
+        spdlog::info("StyleCatalog: {} weapon/ammo style(s) carry a model path for the "
+                     "preview grid.",
+                     weaponPaths);
+
+        // Every form -> its look's row, so a Collection question about ANY
+        // record of a group (a preset naming the enchanted variant, say)
+        // reaches the row that group collapsed onto. Built here, after items_
+        // has settled, so no index can outlive the vector it points into.
+        lookIndex_.clear();
+        lookIndex_.reserve(items_.size() + armorCollapsed + weaponCollapsed);
+        for (std::size_t i = 0; i < items_.size(); ++i) {
+            lookIndex_.emplace(items_[i].form->GetFormID(), i);
+            for (const auto id : items_[i].variantIds) {
+                lookIndex_.emplace(id, i);
+            }
+        }
 
         // OS-26: flag styles whose plugin is newly added this launch, then
         // persist the current plugin set as next launch's baseline. First run
@@ -394,16 +443,111 @@ namespace OS {
     }
 
     namespace {
+        // Owned-at-some-point, asked of the whole collapsed look rather than
+        // of the one record that represents it. See StyleItem::variantIds.
+        bool LookCollected(const StyleItem& a_it, const Collection& a_collection) {
+            if (a_collection.Knows(a_it.form->GetFormID())) {
+                return true;  // the common case: the representative itself
+            }
+            return std::ranges::any_of(a_it.variantIds, [&](RE::FormID a_id) {
+                return a_collection.Knows(a_id);
+            });
+        }
+    }
+
+    bool LookIsNew(const StyleItem& a_item) {
+        auto& collection = Collection::GetSingleton();
+        if (!LookCollected(a_item, collection)) {
+            return false;  // never owned: absent, not new
+        }
+        // ⚠ ACKNOWLEDGED IF **ANY** OWNED RECORD IS, which is deliberately the
+        // opposite quantifier to "new if any is unacknowledged". One row is one
+        // picture with one name, so one click settles it. The other rule would
+        // re-light a look the player has seen for years every time a WACCF
+        // re-issue or an enchanted variant of it first entered their pack, and
+        // the row would look identical each time.
+        //
+        // known && !IsNew IS "known and acknowledged", since IsNew is known &&
+        // not acknowledged. Spelled out rather than given a helper because the
+        // pair reads as a contradiction at a glance and the helper would hide
+        // that rather than answer it.
+        const auto acknowledged = [&](RE::FormID a_id) {
+            return collection.Knows(a_id) && !collection.IsNew(a_id);
+        };
+        if (acknowledged(a_item.form->GetFormID())) {
+            return false;
+        }
+        return !std::ranges::any_of(a_item.variantIds, acknowledged);
+    }
+
+    void AcknowledgeLook(const StyleItem& a_item) {
+        auto& collection = Collection::GetSingleton();
+        // Acknowledge ignores an id the collection does not know, so this is a
+        // walk rather than a filtered walk.
+        collection.Acknowledge(a_item.form->GetFormID());
+        for (const auto id : a_item.variantIds) {
+            collection.Acknowledge(id);
+        }
+    }
+
+    bool StyleCatalog::IsLookCollected(RE::FormID a_formID) const {
+        auto& collection = Collection::GetSingleton();
+        if (const auto it = lookIndex_.find(a_formID); it != lookIndex_.end()) {
+            return LookCollected(items_[it->second], collection);
+        }
+        // Not indexed (dropped by a Build() filter, or not a style form at
+        // all): the record is all we can speak for.
+        return collection.Knows(a_formID);
+    }
+
+    namespace {
         int PlayerSexIdx() {
             auto* player = RE::PlayerCharacter::GetSingleton();
             return StyleCatalog::SexIdxOf(player ? player->GetActorBase() : nullptr);
         }
-        bool ArmaHasSexModel(RE::TESObjectARMA* a_arma, int a_sexIdx) {
-            if (!a_arma) {
-                return false;
+        const char* RaceEdid(RE::TESRace* a_race) {
+            if (!a_race) {
+                return "(none)";
             }
-            const char* path = a_arma->bipedModels[a_sexIdx].GetModel();
-            return path && *path;
+            const char* edid = a_race->GetFormEditorID();
+            return edid && *edid ? edid : "(unnamed)";
+        }
+        // ⚠ THE ENGINE WEARS THE MALE MODEL WHEN THE FEMALE PATH IS EMPTY,
+        // and half of vanilla is authored on exactly that convention. Measured
+        // against the load order 2026-08-20: Skyrim.esm's StormCloakBootsAA
+        // ("Fur Boots") ships male='Armor\StormCloaks\BootsM_1.nif',
+        // female=NONE, and every female hold guard on screen is wearing it.
+        // Reading the empty path as "no female mesh" called 656 of 8631 armor
+        // styles kNoSex on a Bosmer female, which excluded them from the
+        // browser AND from set completion's candidate pool - the field report
+        // was "guard presets are missing shoes" and "we don't have fur boots
+        // in this load order", one cause. The fallback is ASYMMETRIC, female
+        // to male only: a female-only piece on a male renders nothing (the
+        // invisible-armour report every female-only mod page carries), so a
+        // male subject still requires the male path itself.
+        //
+        // One answerer for "which model slot will the engine use": the fit
+        // verdict and the card's path collector both ask HERE, because two
+        // readers of one rule drift in the gap - a style that fits but
+        // collects no mesh is a set completed with an invisible boot.
+        const RE::TESModelTextureSwap* EffectiveBipedModel(RE::TESObjectARMA* a_arma,
+                                                           int a_sexIdx) {
+            if (!a_arma) {
+                return nullptr;
+            }
+            const auto& own     = a_arma->bipedModels[a_sexIdx];
+            const char* ownPath = own.GetModel();
+            if (ownPath && *ownPath) {
+                return &own;
+            }
+            if (a_sexIdx == RE::SEXES::kFemale) {
+                const auto& male     = a_arma->bipedModels[RE::SEXES::kMale];
+                const char* malePath = male.GetModel();
+                if (malePath && *malePath) {
+                    return &male;
+                }
+            }
+            return nullptr;
         }
     }
 
@@ -417,25 +561,104 @@ namespace OS {
         if (!a_armo || !a_race) {
             return FitReason::kFits;  // fail open - never a false red
         }
+        // ⚠ THE ARMOUR RACE COUNTS TOO, AND ASKING ONLY ABOUT THE LITERAL RACE
+        // WAS WRONG BY FOUR STYLES IN TEN. TESRace::armorParentRace is the CK's
+        // Armor Race (RNAM), and it is what the ENGINE resolves an armature
+        // through when it dresses somebody. A custom body race points RNAM at
+        // DefaultRace precisely so ordinary armour works on it, and almost no
+        // armour mod lists the custom race in its own ARMA. So a character on
+        // one of those races got told that four in ten installed styles had "no
+        // armature", and the hide-unfit filter then took them off the page -
+        // which from the player's side is whole plugins going missing.
+        //
+        // Measured on the reference load order 2026-08-07: race
+        // '00UBE_DarkElfRace', 343 of 865 armor styles flagged, and NONE of them
+        // for the wrong gender. That count is the report "sometimes other esps
+        // are not appearing for the player or follower", and it explains the
+        // sometimes: it depends entirely on whether the subject's race is a
+        // custom one, so a follower on a vanilla race looked fine beside a
+        // player who did not.
+        //
+        // ⚠ ONE LEVEL, NOT A WALK. RNAM is where the engine looks and vanilla
+        // races point theirs at DefaultRace, whose own RNAM is itself. The
+        // identity guard is what stops that self-reference costing a second
+        // IsValidRace call on every armature of every style.
+        RE::TESRace* const armorRace = a_race->armorParentRace;
+        const auto         validFor  = [&](RE::TESObjectARMA* a_arma) {
+            return a_arma->IsValidRace(a_race) ||
+                   (armorRace && armorRace != a_race && a_arma->IsValidRace(armorRace));
+        };
         bool anyRaceValid = false;
         for (auto* arma : a_armo->armorAddons) {
-            if (!arma || !arma->IsValidRace(a_race)) {
+            if (!arma || !validFor(arma)) {
                 continue;
             }
             anyRaceValid = true;
-            if (ArmaHasSexModel(arma, a_sexIdx)) {
-                return FitReason::kFits;  // same armature fits race AND sex
+            if (EffectiveBipedModel(arma, a_sexIdx)) {
+                return FitReason::kFits;  // the engine has a model to wear
             }
         }
-        // A race-valid armature with no mesh for the target's sex is
-        // gender-exclusive to the other sex - trying it on renders nothing
-        // (and previewing the wrong-sex mesh has crashed the skinning pass).
+        // A race-valid armature with no model the engine would fall back to is
+        // exclusive to the other sex - trying it on renders nothing. After the
+        // female-to-male fallback above this is in practice a male subject and
+        // a female-only piece; the reverse direction wears the male mesh and
+        // counts as a fit, because that is what the engine puts on screen.
         return anyRaceValid ? FitReason::kNoSex : FitReason::kNoRace;
     }
 
     FitReason StyleCatalog::EvaluateFit(RE::TESObjectARMO* a_armo) {
         auto* player = RE::PlayerCharacter::GetSingleton();
         return EvaluateFitFor(a_armo, player ? player->GetRace() : nullptr, PlayerSexIdx());
+    }
+
+    void StyleCatalog::CollectArmourPaths(
+        RE::TESObjectARMO* a_armo, RE::TESRace* a_race, int a_sexIdx,
+        std::vector<std::string>& a_out,
+        std::vector<std::vector<PreviewGrid::TextureSwapEntry>>& a_swaps) {
+        a_out.clear();
+        a_swaps.clear();
+        if (!a_armo || !a_race) {
+            return;
+        }
+        // The same race question EvaluateFitFor asks, RNAM fallback included:
+        // the fallback carries 343 of 865 styles on the reference load order,
+        // so a collector without it blanks about 40% of the grid on a
+        // custom-race character.
+        RE::TESRace* const armorRace = a_race->armorParentRace;
+        bool               anySwap   = false;
+        for (auto* arma : a_armo->armorAddons) {
+            if (!arma) {
+                continue;
+            }
+            const bool raceValid =
+                arma->IsValidRace(a_race) ||
+                (armorRace && armorRace != a_race && arma->IsValidRace(armorRace));
+            if (!raceValid) {
+                continue;
+            }
+            // The colour of a variant lives on THIS subobject: the record
+            // research found every field-named family (monk robes, Dunmer
+            // Outfit, LDD) as per-variant ARMAs sharing one NIF, each
+            // carrying its own alternate textures on the per-sex model
+            // (docs/superpowers/specs/2026-08-09-preview-grid-texture-swaps-design.md).
+            //
+            // The slot the ENGINE would dress, not the subject's literal one:
+            // EffectiveBipedModel is the same female-to-male fallback the fit
+            // verdict uses, and the swaps ride the model that is actually
+            // worn, so a unisex boot's card carries the male mesh and the
+            // male slot's alternate textures together.
+            if (const auto* model = EffectiveBipedModel(arma, a_sexIdx)) {
+                a_out.emplace_back(model->GetModel());
+                a_swaps.push_back(PreviewSwapCapture::FromModel(*model));
+                anySwap = anySwap || !a_swaps.back().empty();
+            }
+        }
+        // Absent-when-empty: a scene with no swap anywhere must not carry a
+        // sized vector, so the disk key cannot grow a stray suffix and the
+        // byte-identity pin holds structurally.
+        if (!anySwap) {
+            a_swaps.clear();
+        }
     }
 
     std::string StyleCatalog::FitReasonText(FitReason a_reason) {
@@ -464,8 +687,19 @@ namespace OS {
         auto* player        = RE::PlayerCharacter::GetSingleton();
         fitSubjectIsPlayer_ = player && a_race == player->GetRace() && a_sexIdx == PlayerSexIdx();
         if (!a_race) {
+            Mannequin::Clear();
             return;
         }
+        // The mannequin's parts, resolved once for this target rather than
+        // per card (OS-204). ⚠ THE PLAYER'S OWN SKIN WHEN THE TARGET IS THE
+        // PLAYER, the race's otherwise: the skin identifies the BODY SYSTEM
+        // independently of the race, which is the point RefreshFit's own log
+        // line already makes, and an NPC target here has no live Actor* to
+        // ask. race->skin is the engine's own base-body answer, so the
+        // fallback is the engine's rather than a guess.
+        Mannequin::Refresh(fitSubjectIsPlayer_ && player ? REAug::GetActorSkin(player)
+                                                         : a_race->skin,
+                           a_race, a_sexIdx);
         std::size_t unfit     = 0;
         std::size_t noSex     = 0;
         std::size_t armorSeen = 0;
@@ -480,6 +714,20 @@ namespace OS {
                 it.fitReason = FitReason::kCrashed;
             }
             it.fitsBody = it.fitReason == FitReason::kFits;
+            // The preview grid's scene, resolved here because this walk
+            // already knows the target's race and sex and runs on the main
+            // thread. kFits is the gate: an unfit style keeps no scene and
+            // its card draws the cross rather than a wrong-sex mesh
+            // (previewing those has crashed the skinning pass).
+            if (!it.IsWeapon()) {
+                if (it.fitReason == FitReason::kFits) {
+                    CollectArmourPaths(it.Armo(), a_race, a_sexIdx, it.modelPaths,
+                                       it.swaps);
+                } else {
+                    it.modelPaths.clear();
+                    it.swaps.clear();
+                }
+            }
             // Counted over ARMOR only, both sides of the ratio: this line reports
             // the race/sex fit check, which weapons do not take part in, and
             // including them would dilute it toward zero as the catalog grows.
@@ -497,10 +745,30 @@ namespace OS {
             }
         }
         const char* edid = a_race->GetFormEditorID();
-        spdlog::info("StyleCatalog: fit check vs race '{}' \"{}\" ({:08X}), sex {}: {} of {} "
-                     "armor styles flagged may-not-fit ({} of them wrong-gender).",
+        // ⚠ THE ARMOUR RACE IS NAMED IN THE LINE, and it is the only thing that
+        // tells a healthy custom-race character from the bug this used to have.
+        // A run reporting a high unfit count against a race whose RNAM is
+        // DefaultRace is the symptom; the same count against a race that IS its
+        // own armour race is a load order that genuinely has no armatures.
+        auto* const armorRace = a_race->armorParentRace;
+        const char* armorEdid = armorRace ? armorRace->GetFormEditorID() : nullptr;
+        spdlog::info("StyleCatalog: fit check vs race '{}' \"{}\" ({:08X}), armour race "
+                     "'{}', sex {}: {} of {} armor styles flagged may-not-fit ({} of them "
+                     "wrong-gender).",
                      edid && *edid ? edid : "?", a_race->GetName(), a_race->GetFormID(),
+                     armorEdid && *armorEdid ? armorEdid
+                     : armorRace             ? "(unnamed)"
+                                             : "(none)",
                      a_sexIdx == RE::SEXES::kFemale ? "F" : "M", unfit, armorSeen, noSex);
+        std::size_t armourPaths = 0;
+        for (const auto& it : items_) {
+            if (!it.IsWeapon() && it.HasPreviewScene()) {
+                ++armourPaths;
+            }
+        }
+        spdlog::info("StyleCatalog: {} armour style(s) carry a preview scene for this "
+                     "target.",
+                     armourPaths);
     }
 
     void StyleCatalog::RefreshFit() {
@@ -533,11 +801,39 @@ namespace OS {
         // selected, fitSubjectIsPlayer_ is always true and this behaves
         // exactly as before.
         if (!fitSubjectIsPlayer_) {
+            spdlog::info("StyleCatalog: fit cache check declined - subject is not the "
+                         "player (cached '{}'). A race change will not be picked up "
+                         "until the editor puts the player back.",
+                         RaceEdid(fitRace_));
             return;
         }
         auto* player = RE::PlayerCharacter::GetSingleton();
         auto* race   = player ? player->GetRace() : nullptr;
-        if (race && race != fitRace_) {
+        // ⚠ SEX COUNTS TOO, AND IT DID NOT BEFORE. showracemenu changes sex as
+        // readily as race, EvaluateFitFor reads both, and the tooltip says "no
+        // female mesh" off fitSexIdx_ - so a sex swap left every one of those
+        // three answering for the character who used to be there.
+        const int sex = PlayerSexIdx();
+        // ⚠ TWO SOURCES FOR THE RACE, AND THEY ARE PRINTED SEPARATELY ON
+        // PURPOSE. Actor::GetRace() and the actor base's own race are the two
+        // answers to "what race is the player", and this cache self-heals off
+        // the first one only. Field evidence 2026-08-07: RaceMenu erased its
+        // head-morph registry at 07:40 and started attaching vanilla-path
+        // armour, and the fit check sixteen minutes later still named the UBE
+        // race - so either nothing changed or one of these two lags the other.
+        // Printing both costs a pointer read and tells those apart in one run.
+        auto* const baseRace = player && player->GetActorBase()
+                                   ? player->GetActorBase()->GetRace()
+                                   : nullptr;
+        const bool  stale    = race && (race != fitRace_ || sex != fitSexIdx_);
+        spdlog::info("StyleCatalog: fit cache check - actor race '{}' ({:08X}), base race "
+                     "'{}' ({:08X}), sex {}; cached race '{}', sex {} -> {}.",
+                     RaceEdid(race), race ? race->GetFormID() : 0, RaceEdid(baseRace),
+                     baseRace ? baseRace->GetFormID() : 0,
+                     sex == RE::SEXES::kFemale ? "F" : "M", RaceEdid(fitRace_),
+                     fitSexIdx_ == RE::SEXES::kFemale ? "F" : "M",
+                     stale ? "REBUILDING" : "unchanged");
+        if (stale) {
             RefreshFit();
         }
     }
@@ -556,7 +852,7 @@ namespace OS {
     namespace {
         bool Matches(const StyleItem& a_it, std::string_view a_search, bool a_collectedOnly,
                      int a_armorType, bool a_favoritesOnly, const Collection& a_collection) {
-            if (a_collectedOnly && !a_collection.Knows(a_it.form->GetFormID())) {
+            if (a_collectedOnly && !LookCollected(a_it, a_collection)) {
                 return false;
             }
             if (a_favoritesOnly && !Favorites::IsFavorite(a_it.key)) {
@@ -604,14 +900,27 @@ namespace OS {
     }
 
     std::uint32_t StyleCatalog::MatchMask(std::string_view a_search, bool a_collectedOnly,
-                                          int a_armorType, bool a_favoritesOnly) const {
+                                          int a_armorType, bool a_favoritesOnly,
+                                          bool a_hideUnfit) const {
         std::uint32_t mask       = 0;
         auto&         collection = Collection::GetSingleton();
         for (const auto& it : items_) {
             // A weapon has no slot bit (primaryBit stays 0) - without this every
             // weapon would light bit 0 in the slot list.
-            if (!it.IsWeapon() && !((mask >> it.primaryBit) & 1u) &&
-                Matches(it, a_search, a_collectedOnly, a_armorType, a_favoritesOnly, collection)) {
+            if (it.IsWeapon() || ((mask >> it.primaryBit) & 1u)) {
+                continue;
+            }
+            // ⚠⚠ THE BROWSER'S OWN DROP, COPIED EXACTLY. Matches() deliberately
+            // never judges fit, because the browser wants unfit rows drawn red
+            // rather than missing. The browser then erases them itself when
+            // bBrowserHideUnfit is on, and this mask has to make the same cut
+            // or it lights a slot on an item the pane will not show. Crashers
+            // are left in, because the browser leaves them in too: it draws
+            // them and blocks the click.
+            if (a_hideUnfit && !it.fitsBody) {
+                continue;
+            }
+            if (Matches(it, a_search, a_collectedOnly, a_armorType, a_favoritesOnly, collection)) {
                 mask |= 1u << it.primaryBit;
             }
         }

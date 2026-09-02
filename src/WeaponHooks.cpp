@@ -3,6 +3,7 @@
 #include "VersionCheck.h"
 
 #include "NpcLookup.h"
+#include "OutfitDye.h"  // QueueRepaint, armed from the part-3D thunk
 #include "OutfitSession.h"
 #include "StyleCatalog.h"
 #include "WeaponSlots.h"
@@ -370,6 +371,61 @@ namespace OS {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // ---- weapon DYE: arm a pass, paint nothing here --------------
+                //
+                // ⚠ THIS THUNK MUST NOT PAINT. It is noexcept, it is entered
+                // from an engine frame or a co-hooked mod's compiled handler,
+                // and it fires for every weapon and ammo part load in the game
+                // for every actor. A material swap, a lock and a map write do
+                // not belong in it, and this file's own comments record two
+                // crashes that came from reading more than the displaced call's
+                // real arguments. So it arms the deferred chain and the SKSE
+                // task drain does the work, which is the shape QueueRepaint
+                // already has for armour.
+                //
+                // ⚠ OUTSIDE THE STYLING GATE ABOVE, deliberately. That gate asks
+                // AnyWeaponStyling() or NpcRenderCount(), which are both about
+                // TRANSMOG. A player who dyes a weapon and styles nothing fails
+                // both, and putting the arm inside would give that player a
+                // colour that only ever appears after some unrelated rebuild.
+                //
+                // ⚠ TWO ARMS, DELIBERATELY NOT MERGED INTO ONE GATED CALL.
+                //
+                // The PLAYER's arm stays a bare pointer compare outside the
+                // styling gate above. That gate asks AnyWeaponStyling() or
+                // NpcRenderCount(), which are both about TRANSMOG, and a player
+                // who dyes a weapon and styles nothing fails both; gating him
+                // would give him a colour that only appears after some
+                // unrelated rebuild. The compare is also what keeps this cheap:
+                // every other actor in a crowded cell used to leave on one
+                // comparison, before any lock.
+                //
+                // The FOLLOWER's arm is different because follower dye is
+                // assigned-outfit-only (OS-128), so she is inside that gate by
+                // definition and LookupAssignedNpc costs her nothing that the
+                // feature does not already require. This is the assigned-NPC
+                // lookup this site asked for rather than a widened compare.
+                //
+                // QueueRepaint resolves the outfit itself and does nothing when
+                // there is no dye, and a second call while a chain is in flight
+                // refreshes that chain rather than starting a second one, so a
+                // dye-free session costs one task and a lookup per equip change.
+                if (a_slot >= 0 &&
+                    IsWeaponOrQuiverBipedSlot(static_cast<std::uint32_t>(a_slot))) {
+                    auto* const player = RE::PlayerCharacter::GetSingleton();
+                    if (player && a_refr == player) {
+                        OutfitDye::QueueRepaint(player->GetHandle());
+                    } else {
+                        // ⚠ Bound to a named local: `entry` points INTO the map
+                        // `snapshot` co-owns, so reading it off a temporary
+                        // would dangle at the semicolon (NpcLookup.h).
+                        const auto lk = LookupAssignedNpc(session, a_refr);
+                        if (lk.entry) {
+                            OutfitDye::QueueRepaint(lk.actor->GetHandle());
                         }
                     }
                 }

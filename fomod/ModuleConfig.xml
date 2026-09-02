@@ -4,54 +4,217 @@
 	<moduleImage path="Images\fittingroom.png"/>
 
 	<!-- One DLL loads on both SE 1.5.97 and AE 1.6.1130+, so there is no SE/AE
-	     file choice. The only choice is the STARTING SETUP: Lore-friendly (the
-	     Seamstone ESP + its gold cost + the stone as the key) or Free-form (no
-	     plugin, no gold, hotkey only). Identical mod either way - the choice
-	     writes FittingRoom.ini and, for lore, adds the ESP; every key stays
-	     editable in the in-game panel. Game files ONLY in the install
-	     directives: the docs (LICENSE + README.txt) ship at the archive root,
-	     NOT installed to Data - flat docs at the Data root collide across mods
-	     and show as overwrite conflicts in MO2. -->
+	     file choice. The only choice is the STARTING SETUP, and since
+	     2026-08-11 it is settings and NOTHING ELSE: every option installs
+	     exactly the same files and they differ only in which FittingRoom.ini is
+	     written. Game files ONLY in the install directives: the docs (LICENSE +
+	     README.txt) ship at the archive root, NOT installed to Data - flat docs
+	     at the Data root collide across mods and show as overwrite conflicts in
+	     MO2.
+
+	     ⚠⚠ THE ESP AND THE LORE UNLOCK RULES USED TO RIDE THE CHOICE AND NOW DO
+	     NOT, because a choice made at install time was deciding what the mod
+	     could do for the rest of the save. Picking Freeform and later turning
+	     Lore friendly on in the settings panel left a player with no Seamstone
+	     to carry or pay with, and - the larger half - without
+	     Unlocks\lore.json, so 80 colours fell back to their rarity tier and the
+	     locked swatches said "Level 35" where they should name a quest. Neither
+	     is a thing an installer page should be able to take away from a
+	     playstyle switch (user 2026-08-11).
+
+	     ⚠ THE COST OF SHIPPING THE ESP TO EVERYONE IS A LIGHT SLOT, NOT A REAL
+	     ONE. FittingRoomLore.esp is ESL-flagged (header flag 0x200), 1695
+	     bytes, and masters Skyrim.esm alone, so it lands in the FE space and
+	     none of the 254 regular slots. It is also inert until the settings ask
+	     for it: no requirement, no cost, an item sold by one merchant.
+
+	     ⚠ AND lore.json IS SAFE IN CORE FOR A SEPARATE REASON. Unlock rules only
+	     ever LOCK - a colour with no rule is FREE - so shipping more of them
+	     cannot hand anything out, and with bDyeUnlocks off they gate nothing at
+	     all. Freeform is unchanged by their presence and a later switch finds
+	     the economy the design actually wrote.
+
+	     ⚠⚠ THE PAGES QUESTION IS GONE AND EVERY PAGE SHIPS ON (user 2026-08-28).
+	     It asked which of the eight sidebar tiles to start with and offered
+	     three bundles: all of them, the wardrobe four, the character four. Two
+	     of the three hid working pages from a player who had not yet seen one,
+	     to save them a sidebar they could empty in the editor's own Pages tab in
+	     a second. The installer was asking a question the answer to which is
+	     always "show me, I will hide what I do not want", so it stopped asking
+	     and the template's eight b*=1 keys are now the only answer. The axis
+	     also cost twelve pre-baked INIs where there are now four. -->
 	<requiredInstallFiles>
 		<folder source="core\SKSE" destination="SKSE" priority="0"/>
 		<folder source="core\Scripts" destination="Scripts" priority="0"/>
 		<folder source="core\Interface" destination="Interface" priority="0"/>
+		<folder source="core\textures" destination="textures" priority="0"/>
+		<file source="core\FittingRoomLore.esp" destination="FittingRoomLore.esp" priority="0"/>
 	</requiredInstallFiles>
 
 	<installSteps order="Explicit">
-		<installStep name="Fitting Room">
+		<installStep name="How should the Fitting Room open?">
 			<optionalFileGroups order="Explicit">
-				<group name="How should the Fitting Room open? (just settings - change any of it, any time)" type="SelectExactlyOne">
+				<group name="Starting setup (just settings, change any of it any time)" type="SelectExactlyOne">
 					<plugins order="Explicit">
-						<plugin name="Lore-friendly">
-							<description>Dressing up costs you something. This adds the Seamstone, a carryable Alteration focus sold by Farengar Secret-Fire in Dragonsreach (one small plugin, FittingRoomLore.esp), and the book "On the Outward Art" turns up in your inventory to point you at him. Carry the stone to open the Fitting Room, and pay a little gold for each slot you change when you apply an outfit. Previewing is always free.
+						<plugin name="Freeform">
+							<description>Just the wardrobe. Your hotkey opens the Fitting Room in your inventory, changing an outfit is free, and you can dress out of nothing rather than needing real gear underneath.
 
-This choice ONLY sets your starting settings. Both options install the same mod, and the gold cost and the Seamstone requirement are both switches in the in-game settings panel, so you can change your mind whenever you like. The transmog itself works exactly the same either way.
-
-Source, docs and issue tracker: https://github.com/maartenharms/fitting-room
-
-Thanks for installing, and if you enjoy it, a kind endorsement is always appreciated.</description>
-							<image path="Images\fittingroom.png"/>
-							<files>
-								<file source="optional\lore\FittingRoomLore.esp" destination="FittingRoomLore.esp" priority="0"/>
-								<file source="settings\lore\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="0"/>
-							</files>
+FittingRoomLore.esp installs either way and sits idle until you ask for it. It is a light plugin, so it costs none of your 254 load order slots, and it adds one item to one merchant.</description>
+							<image path="Images\free-form.png"/>
+							<files/>
+							<conditionFlags>
+								<flag name="setup">freeform</flag>
+							</conditionFlags>
 							<typeDescriptor>
 								<type name="Recommended"/>
 							</typeDescriptor>
 						</plugin>
-						<plugin name="Free-form">
-							<description>Just the wardrobe. Your hotkey opens the Fitting Room in your inventory, changing an outfit is free, and no plugin is installed at all.
+						<plugin name="Lore friendly">
+							<description>Dressing up costs you something. Carry the Seamstone to open the Fitting Room, and spend its enchantment charge for each slot you change when you apply an outfit. Previewing is always free.
 
-This choice ONLY sets your starting settings. Both options install the same mod, and you can turn the gold cost back on at any time in the in-game settings panel. The Seamstone item itself is the one part that needs a plugin, so if you want it later, run this installer again and pick Lore-friendly.
+The Seamstone is a carryable Alteration focus. Farengar Secret-Fire in Dragonsreach sells one.
 
-Source, docs and issue tracker: https://github.com/maartenharms/fitting-room
+It runs on charge like an enchanted weapon: soul gems refill it, T Charge works on it, and there is a Refill button in the editor. Its item card carries a meter, and the editor says what an Apply will cost before you commit. It starts empty, so feed it a soul gem before your first restyle.
 
-Thanks for installing, and if you enjoy it, a kind endorsement is always appreciated.</description>
-							<image path="Images\fittingroom.png"/>
-							<files>
-								<file source="settings\freeform\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="0"/>
-							</files>
+Gold works too if you would rather pay in coin. One setting, three answers: nothing, gold, or the stone.
+
+The next page asks about dyes separately. What styling costs and whether dyes are earned are two different questions.</description>
+							<image path="Images\lore-friendly.png"/>
+							<files/>
+							<conditionFlags>
+								<flag name="setup">lore</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Optional"/>
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
+
+		<installStep name="Your character's face">
+			<!-- ⚠⚠ ADDED 2026-08-29 WITH THE SAFE ANSWER AS THE DEFAULT, after
+			     two players lost a face to the RaceMenu features on 1.1.2 in
+			     one night: eyes replaced with ones they had not chosen, and a
+			     second face drawn over the first. Both rolled back. THE LOOKS
+			     PAGE IS THE DEFAULT SINCE 1.1.7 (user 2026-09-02): the face arc
+			     fixed what caused both, the template ships the three keys on,
+			     and the safe answer is now the one that substitutes.
+
+			     ⚠ THIS SETS A STARTING POSITION, NOT A CAPABILITY. Every
+			     option here writes ini keys the settings panel owns and can
+			     change back in a click; nothing is removed from the build. An
+			     install choice that gated a runtime setting is a mistake this
+			     repo has already made once. -->
+			<optionalFileGroups order="Explicit">
+				<group name="How much may Fitting Room touch your face? (settings, change any of it any time)" type="SelectExactlyOne">
+					<plugins order="Explicit">
+						<plugin name="Looks page">
+							<description>Turns on the Looks page and the face features behind it: save a whole character as one look, let a look load its RaceMenu preset and switch your race and sex, and have Fitting Room put your look back after something else overwrites it.
+
+On by default since 1.1.7. If your eyes change on their own or a second face appears, the settings panel turns these off in a click.</description>
+							<image path="Images\face-page.png"/>
+							<files/>
+							<conditionFlags>
+								<flag name="face">full</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Recommended"/>
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Leave my face alone">
+							<description>Fitting Room never swaps a head part or loads a look's RaceMenu preset, and the Looks page is hidden, so nothing offers to rebuild a character you already built. Your colours are still put back after the game repaints your head.
+
+Outfits, dyes, overlays and shapes all work exactly the same. Pick this if you have a face you like and want it left alone.</description>
+							<image path="Images\face-page.png"/>
+							<files/>
+							<conditionFlags>
+								<flag name="face">safe</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Optional"/>
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
+
+		<installStep name="The dye colours">
+			<!-- ⚠ ALL DYES UNLOCKED IS FIRST AND RECOMMENDED (user 2026-08-28). It
+			     used to sit second behind Earn dyes. Most people arrive to dress a
+			     character rather than to work through an economy, and the padlocks
+			     are the surprising answer of the two, so the padlocks are the one
+			     you now have to ask for. Both are still one tick in the settings
+			     panel and neither takes anything back. -->
+			<optionalFileGroups order="Explicit">
+				<group name="Should dyes be earned? (a setting, change it any time)" type="SelectExactlyOne">
+					<plugins order="Explicit">
+						<plugin name="All dyes unlocked">
+							<description>Every dye you have installed is yours from the start. No padlocks.
+
+Pick this if you came to dress your character rather than to play an economy. Nothing you have earned is ever taken back, so turning the locks on later starts you from what you have.</description>
+							<image path="Images\all-dyes.png"/>
+							<files/>
+							<conditionFlags>
+								<flag name="colours">free</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Recommended"/>
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Earn dyes">
+							<description>The palette is something to work through. A dye opens up for what your character has done: quests finished, ruins cleared, skills raised. A locked swatch says what it takes, and a card appears at the top right when one arrives.
+
+There are 458 of them, so there is a lot in there to find.</description>
+							<image path="Images\earn-dyes.png"/>
+							<files/>
+							<conditionFlags>
+								<flag name="colours">earn</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Optional"/>
+							</typeDescriptor>
+						</plugin>
+					</plugins>
+				</group>
+			</optionalFileGroups>
+		</installStep>
+
+		<installStep name="Before you play">
+			<!-- ⚠ ONE PICTURE FOR BOTH OPTIONS ON THIS STEP, ON PURPOSE. Neither is
+			     a choice: they are two paragraphs of reading on a page that sets no
+			     flag and installs no file. Shooting the pair separately would give a
+			     reader two frames to tell apart for no decision they are making.
+			     This is NOT the case the shot list warns about, where three real
+			     options shared the banner and a player choosing between them saw the
+			     same image three times. -->
+			<optionalFileGroups order="Explicit">
+				<group name="Worth knowing" type="SelectAny">
+					<plugins order="Explicit">
+						<plugin name="An interface mod I recommend">
+							<description>The vanilla layout puts the item card and the floating preview on the right of the screen, which is exactly where your character stands. Fitting Room hides the preview while its editor is open and leaves it alone otherwise.
+
+A Vel'dun-style interface layout moves both well clear of them. Not required, not a dependency.</description>
+							<image path="Images\worth-knowing.png"/>
+							<files/>
+							<typeDescriptor>
+								<type name="Optional"/>
+							</typeDescriptor>
+						</plugin>
+						<plugin name="Goes well with">
+							<description>Menu Studio pauses the world and stages your character, which is what makes browsing outfits worth looking at.
+
+Apparel Preview shows a piece on your character as you highlight it, before you commit.
+
+Both optional. Fitting Room works on its own.
+
+https://github.com/maartenharms/fitting-room
+
+Thanks for installing. An endorsement is always appreciated if you enjoy it.</description>
+							<image path="Images\worth-knowing.png"/>
+							<files/>
 							<typeDescriptor>
 								<type name="Optional"/>
 							</typeDescriptor>
@@ -61,4 +224,119 @@ Thanks for installing, and if you enjoy it, a kind endorsement is always appreci
 			</optionalFileGroups>
 		</installStep>
 	</installSteps>
+
+	<!-- The two pages are INDEPENDENT AXES, so the starting INI is chosen by the
+	     PAIR of answers rather than by either one alone. Four files, generated by
+	     tools/make_fomod.sh from the one documented template with a guard on
+	     every flip, because a hand-maintained fourth copy forks its comments the
+	     first time anybody edits one of them.
+
+	     Every pattern below matches exactly one combination and all four
+	     combinations are covered. A missing pair would install NO ini, which is
+	     survivable (the plugin writes its own on first run) and would silently
+	     ignore the player's answers, which is not.
+
+	     ⚠ THERE WERE TWELVE OF THESE UNTIL 2026-08-28, when the pages question
+	     went. Three page bundles times these four is where the other eight came
+	     from. -->
+	<!-- ⚠⚠ EACH PATTERN INSTALLS ITS INI TWICE SINCE 1.1.7 (2026-09-02). The live
+	     copy at SKSE\Plugins\FittingRoom.ini is what the plugin reads and writes,
+	     and a leftover in Overwrite or in a mod above shadows it: measured on the
+	     author's rig, where "Earn dyes" was answered here and never arrived. The
+	     second copy, SKSE\Plugins\FittingRoom\installer.ini, is a path the plugin
+	     never writes, so nothing shadows it, and it carries a stamp naming the zip
+	     and the answers; the plugin takes the eight answers from it once per
+	     install. See InstallerSeed.h. -->
+	<conditionalFileInstalls>
+		<patterns>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="lore"/>
+					<flagDependency flag="colours" value="earn"/>
+					<flagDependency flag="face" value="safe"/>
+				</dependencies>
+				<files>
+					<file source="settings\lore-earn-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\lore-earn-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="lore"/>
+					<flagDependency flag="colours" value="earn"/>
+					<flagDependency flag="face" value="full"/>
+				</dependencies>
+				<files>
+					<file source="settings\lore-earn-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\lore-earn-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="lore"/>
+					<flagDependency flag="colours" value="free"/>
+					<flagDependency flag="face" value="safe"/>
+				</dependencies>
+				<files>
+					<file source="settings\lore-free-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\lore-free-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="lore"/>
+					<flagDependency flag="colours" value="free"/>
+					<flagDependency flag="face" value="full"/>
+				</dependencies>
+				<files>
+					<file source="settings\lore-free-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\lore-free-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="freeform"/>
+					<flagDependency flag="colours" value="earn"/>
+					<flagDependency flag="face" value="safe"/>
+				</dependencies>
+				<files>
+					<file source="settings\freeform-earn-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\freeform-earn-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="freeform"/>
+					<flagDependency flag="colours" value="earn"/>
+					<flagDependency flag="face" value="full"/>
+				</dependencies>
+				<files>
+					<file source="settings\freeform-earn-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\freeform-earn-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="freeform"/>
+					<flagDependency flag="colours" value="free"/>
+					<flagDependency flag="face" value="safe"/>
+				</dependencies>
+				<files>
+					<file source="settings\freeform-free-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\freeform-free-safe\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+			<pattern>
+				<dependencies operator="And">
+					<flagDependency flag="setup" value="freeform"/>
+					<flagDependency flag="colours" value="free"/>
+					<flagDependency flag="face" value="full"/>
+				</dependencies>
+				<files>
+					<file source="settings\freeform-free-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom.ini" priority="1"/>
+					<file source="settings\freeform-free-full\FittingRoom.ini" destination="SKSE\Plugins\FittingRoom\installer.ini" priority="1"/>
+				</files>
+			</pattern>
+		</patterns>
+	</conditionalFileInstalls>
 </config>

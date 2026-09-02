@@ -237,13 +237,96 @@ namespace OS {
         return a_bipedSlot <= 41;
     }
 
-    // A visual-only engine biped object can be rebuilt without guessing a
-    // hand only when its slot is intrinsically back/two-handed. This bounded
-    // set covers template/default bows (Jenassa's edge case), crossbows and
-    // two-handed weapons while refusing ambiguous one-hand/staff objects.
+    // Which biped slots a VISUAL-ONLY engine object can be rebuilt out of: one
+    // the follower displays but does not carry, so nothing in her inventory
+    // names it and no equip event ever fired for it.
+    //
+    // ⚠ THIS WAS {37, 38, 40} AND THE NARROWING WAS UNFOUNDED. It read "only an
+    // intrinsically back or two-handed slot names its hand without guessing",
+    // which meant a default BOW could be restyled and a default sword, dagger,
+    // war axe, mace or staff could not: the transmog staged, nothing reloaded
+    // the part, and the follower kept her original weapon with no sign why
+    // (user 2026-08-07, "this can happen not just for a bow").
+    //
+    // There was never a guess to make. IsMainHandWeaponBipedSlot above states
+    // the rule this file already relies on everywhere else: AttachWeapon stages
+    // the MAIN hand in the class's own slot and the OFF hand in the race's
+    // shield slot, so an object FOUND in 33..40 is main-hand by construction.
+    // The caller passes leftHand=false for exactly that reason and was already
+    // right to; it was simply refusing to do it for five of the eight slots.
+    //
+    // ⚠ 32 IS EXCLUDED THOUGH IsMainHandWeaponBipedSlot ACCEPTS IT. That
+    // predicate answers "does this slot tell me a hand", and its range starts at
+    // the body slot. Nothing stages a weapon in 32, so rebuilding out of it
+    // would be acting on a garment.
+    //
+    // ⚠ AND SO IS 41. A quiver has no hand, Actor::AttachWeapon rejects ammo
+    // outright, and REAugments reaches it through its own ammo entry point.
+    //
+    // The off hand is deliberately not here. It lands in an editor slot below
+    // 32, which is every armour slot too, so it needs a form-checked scan
+    // rather than a slot predicate. OS-163 is the worked example of what
+    // trusting a slot predicate there costs.
     [[nodiscard]] constexpr bool IsUnambiguousVisualWeaponSlot(
         std::uint32_t a_bipedSlot) {
-        return a_bipedSlot == 37 || a_bipedSlot == 38 || a_bipedSlot == 40;
+        return a_bipedSlot >= 33 && a_bipedSlot <= 40;
+    }
+
+    // Where to look for the node a weapon of a given hand hangs on.
+    //
+    // The main hand stages in the class's own slot (BipedSlotForClass, 33..41),
+    // which is exact: only that class materializes there. The off hand stages
+    // in the race's shield/editor slot, which is NOT exact and has to be
+    // scanned, so it comes second.
+    //
+    // ⚠ MAIN HAND FIRST, AND THAT IS THE SPEC RATHER THAN A PREFERENCE. A class
+    // held in both hands frames the primary.
+    //
+    // ⚠ AND THE OFF-HAND SCAN MUST CHECK THE FORM, WHICH IS WHY THIS TYPE
+    // EXISTS RATHER THAN A BARE SLOT PREDICATE. The off-hand domain is "below
+    // 32", which is every armour slot too. A scan from slot 0 that trusted the
+    // slot alone matched ARMOUR, whose clone parents to the ACTOR ROOT, and the
+    // whole character came back as the thing to frame: field 2026-08-07, every
+    // weapon row answering `skeleton_female.nif` at radius 73.
+    struct WeaponNodeSearch {
+        bool tryClassSlot{ false };  // BipedSlotForClass, the main hand or quiver
+        bool tryOffHand{ false };    // scan the shield/editor domain below 32
+    };
+
+    [[nodiscard]] constexpr WeaponNodeSearch WeaponNodeSearchFor(WeaponHand a_hand) {
+        switch (a_hand) {
+            case WeaponHand::Left:
+                return { false, true };
+            case WeaponHand::Right:
+                return { true, false };
+            default:
+                return { true, true };
+        }
+    }
+
+    // Does this biped slot hold the weapon in the named hand?
+    //
+    // Main-hand weapons occupy the class slots 32 to 40 and the off hand
+    // occupies the race's shield/editor slot below 32. Keeping the two domains
+    // apart is what lets a dual-wield pair of the SAME form be told apart at
+    // all, which is the whole reason the shot could frame the wrong sword.
+    //
+    // ⚠ THE QUIVER IS NEITHER HAND. Arrows hang on the back, so a caller after
+    // them names the quiver slot rather than asking this.
+    //
+    // Expressed through the two predicates above rather than repeating their
+    // numbers, so the 32 boundary stays in one place.
+    [[nodiscard]] constexpr bool WeaponBipedSlotOwnedBy(std::uint32_t a_bipedSlot,
+                                                        WeaponHand a_hand) {
+        switch (a_hand) {
+            case WeaponHand::Left:
+                return IsOffHandWeaponBipedSlot(a_bipedSlot);
+            case WeaponHand::Right:
+                return IsMainHandWeaponBipedSlot(a_bipedSlot);
+            default:
+                return IsOffHandWeaponBipedSlot(a_bipedSlot) ||
+                       IsMainHandWeaponBipedSlot(a_bipedSlot);
+        }
     }
 
     // Frozen public vocabulary for outfits.json / presets ("weapons" array,

@@ -1,5 +1,7 @@
 #include "PresetStore.h"
 
+#include "BuildChannel.h"
+
 #include <json/json.h>
 
 #include <algorithm>
@@ -10,8 +12,8 @@
 namespace OS {
 
     namespace {
-        constexpr const char* kPresetsDir = "Data/SKSE/Plugins/FittingRoom/Presets";
-        constexpr const char* kExportsDir = "Data/SKSE/Plugins/FittingRoom/Exports";
+        const auto kPresetsDir = BuildChannel::DataPath("Presets");
+        const auto kExportsDir = BuildChannel::DataPath("Exports");
         // Sanity cap: a hand-written preset is a few KB; anything bigger is
         // not one of ours and must not stall the load.
         constexpr std::uintmax_t kMaxPresetBytes = 256 * 1024;
@@ -231,17 +233,17 @@ namespace OS {
 
         std::error_code ec;
         std::filesystem::create_directories(kExportsDir, ec);
-        const auto path = std::string(kExportsDir) + "/" + base + ".json";
+        const auto path = kExportsDir / (base + ".json");
         std::ofstream out(path, std::ios::trunc);
         if (!out) {
-            spdlog::error("PresetStore: cannot write '{}'.", path);
+            spdlog::error("PresetStore: cannot write '{}'.", path.string());
             return {};
         }
         Json::StreamWriterBuilder wb;
         wb["indentation"] = "  ";
         out << Json::writeString(wb, root);
-        spdlog::info("PresetStore: exported '{}' -> {}.", a_outfit.name, path);
-        return path;
+        spdlog::info("PresetStore: exported '{}' -> {}.", a_outfit.name, path.string());
+        return path.string();
     }
 
     bool PresetStore::DeleteExport(std::string_view a_file) {
@@ -251,7 +253,7 @@ namespace OS {
             spdlog::warn("PresetStore: rejected unsafe export delete '{}'.", a_file);
             return false;
         }
-        const auto path = std::filesystem::path{ kExportsDir } / file;
+        const auto path = kExportsDir / file;
         std::error_code ec;
         const bool removed = std::filesystem::remove(path, ec);
         if (!removed || ec) {

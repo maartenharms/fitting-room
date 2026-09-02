@@ -18,6 +18,18 @@ namespace OS::JsonCodec {
     //       { "slot": 32, "kind": "style", "mod": "Some.esp", "id": "0x000D62" },
     //       { "slot": 31, "kind": "hide" } ] }
 
+    // The ONE bare-RRGGBB colour rule, shared by everything in this mod that
+    // writes a colour to a file: hair tints, the outfit "dyes" array, and the
+    // dye scheme store. Exported rather than copied because a second strictness
+    // that drifted from this one would mean a colour that round trips in an
+    // outfit and not in a scheme, which is the kind of bug nobody looks for.
+    //
+    // Strict on the way in: exactly six hex digits or the result is unset. An
+    // imported file is untrusted, and a half-parsed colour would be applied to
+    // the user's character, so anything malformed decodes to "leave it alone".
+    [[nodiscard]] std::string  ColourToHex(const DyeChannel& a_colour);
+    [[nodiscard]] DyeChannel   ColourFromHex(const std::string& a_hex);
+
     [[nodiscard]] Json::Value OutfitToJson(const Outfit& a_outfit);
 
     // Fills a_out from an outfit object. Slots outside 30-61, unknown kinds,
@@ -51,5 +63,26 @@ namespace OS::JsonCodec {
                                            const std::string& a_author,
                                            const std::string& a_description,
                                            const std::vector<std::string>& a_requires);
+
+    // The unsupported-hair sidecar
+    // (Data/SKSE/Plugins/FittingRoom/unsupported-hair.json): styles the
+    // follower attach measured and declined. Load-order-scoped like
+    // outfits.json, because bone counts and partition maps are properties of
+    // the MESH, not of any save. Persisting them is what turns the one
+    // visible dud attach per style into once ever instead of once a session.
+    //
+    //   { "version": 2, "entries": [ { "mod": "X.esp", "id": "0x0123AB" } ] }
+    //
+    // Unresolvable entries ride along unmodified (their plugin may return),
+    // same posture as an NPC assignment whose plugin is absent. The version
+    // is a hard gate: anything other than the current number is treated as
+    // outdated rather than corrupt, and the whole file is rejected so every
+    // style re-measures once under the rules that are current now.
+    [[nodiscard]] Json::Value UnsupportedHairToJson(
+        const std::vector<StyleRefKey>& a_keys);
+
+    // Skips junk entries; returns false when a_json is not an object or is not schema v2.
+    bool JsonToUnsupportedHair(const Json::Value& a_json,
+                               std::vector<StyleRefKey>& a_out);
 
 }  // namespace OS::JsonCodec

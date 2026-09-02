@@ -1,0 +1,2452 @@
+{
+  "dyes": [
+    {
+      "id": "eso:faded-dwemer-scholar-red",
+      "name": "Faded Dwemer Scholar Red",
+      "hex": "BF827C",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Dwarven Secrets Gatherer"
+    },
+    {
+      "id": "eso:forge-ember-red",
+      "name": "Forge Ember Red",
+      "hex": "BF7C7C",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Apprentice Deconstructor"
+    },
+    {
+      "id": "eso:aspect-red",
+      "name": "Aspect Red",
+      "hex": "8D6563",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Aspect"
+    },
+    {
+      "id": "eso:oblivion-vermilion",
+      "name": "Oblivion Vermilion",
+      "hex": "996B6B",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Oblivion Shard Gatherer"
+    },
+    {
+      "id": "eso:mudcrab-maroon",
+      "name": "Mudcrab Maroon",
+      "hex": "724F54",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Chitin Accumulator"
+    },
+    {
+      "id": "eso:fighters-guild-red",
+      "name": "Fighters Guild Red",
+      "hex": "71524F",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Associate of the Fighters Guild"
+    },
+    {
+      "id": "eso:dragonknights-blood",
+      "name": "Dragonblood Brown",
+      "hex": "443331",
+      "hue": "Red",
+      "rarity": "Common",
+      "esoUnlock": "Grand Dragonknight Slayer"
+    },
+    {
+      "id": "eso:quester-yellow",
+      "name": "Quester Yellow",
+      "hex": "BFBA85",
+      "hue": "Yellow",
+      "rarity": "Common",
+      "esoUnlock": "Quester"
+    },
+    {
+      "id": "eso:master-gold",
+      "name": "Master Gold",
+      "hex": "BFA585",
+      "hue": "Yellow",
+      "rarity": "Common",
+      "esoUnlock": "Level 50 Hero"
+    },
+    {
+      "id": "eso:templars-last-dawn",
+      "name": "Templars' Last Dawn",
+      "hex": "948067",
+      "hue": "Yellow",
+      "rarity": "Common",
+      "esoUnlock": "Grand Templar Slayer"
+    },
+    {
+      "id": "eso:automaton-bronze",
+      "name": "Automaton Bronze",
+      "hex": "494034",
+      "hue": "Yellow",
+      "rarity": "Common",
+      "esoUnlock": "Dwarven Construct Slayer"
+    },
+    {
+      "id": "eso:restorative-gold",
+      "name": "Restorative Gold",
+      "hex": "72704F",
+      "hue": "Yellow",
+      "rarity": "Common",
+      "esoUnlock": "Greater Dungeon Healer"
+    },
+    {
+      "id": "eso:dragonthorn-yellow",
+      "name": "Dragonthorn Yellow",
+      "hex": "918D65",
+      "hue": "Yellow",
+      "rarity": "Common",
+      "esoUnlock": "Apprentice Crafting Harvester"
+    },
+    {
+      "id": "eso:essence-green",
+      "name": "Essence Green",
+      "hex": "A1BF85",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Essence"
+    },
+    {
+      "id": "eso:explorer-green",
+      "name": "Explorer Green",
+      "hex": "8EBF9E",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Explorer"
+    },
+    {
+      "id": "eso:spriggan-green",
+      "name": "Spriggan Green",
+      "hex": "679379",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Nature Collector"
+    },
+    {
+      "id": "eso:battaglir-green",
+      "name": "Battaglir Green",
+      "hex": "6B9979",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Recipe Card"
+    },
+    {
+      "id": "eso:jute-green",
+      "name": "Jute Green",
+      "hex": "4F725E",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Expert Crafting Harvester"
+    },
+    {
+      "id": "eso:corporals-green",
+      "name": "Corporal's Green",
+      "hex": "4B4B36",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Alliance War Corporal"
+    },
+    {
+      "id": "eso:gangrene-green",
+      "name": "Gangrene Green",
+      "hex": "414B36",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Undead Hoarder"
+    },
+    {
+      "id": "eso:hunter-green",
+      "name": "Hunter Green",
+      "hex": "364B3D",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Nature Slayer"
+    },
+    {
+      "id": "eso:woodsman-green",
+      "name": "Woodsman Green",
+      "hex": "2D4034",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Certified Jack-of-All-Trades"
+    },
+    {
+      "id": "eso:wardens-moss-green",
+      "name": "Hunter's Moss",
+      "hex": "46503D",
+      "hue": "Green",
+      "rarity": "Common",
+      "esoUnlock": "Grand Warden Slayer"
+    },
+    {
+      "id": "eso:guardian-blue",
+      "name": "Guardian Blue",
+      "hex": "36424B",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Greater Dungeon Blocker"
+    },
+    {
+      "id": "eso:dungeon-victor-turquoise",
+      "name": "Dungeon Victor Turquoise",
+      "hex": "476663",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Dungeon Annihilator"
+    },
+    {
+      "id": "eso:apprentice-blue",
+      "name": "Apprentice Blue",
+      "hex": "4F6472",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Level 20 Hero"
+    },
+    {
+      "id": "eso:mages-guild-blue",
+      "name": "Mages Guild Blue",
+      "hex": "4F6972",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Student of the Mages Guild"
+    },
+    {
+      "id": "eso:motif-pattern-blue",
+      "name": "Motif Pattern Blue",
+      "hex": "6B8C99",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Alliance Style Master"
+    },
+    {
+      "id": "eso:potency-blue",
+      "name": "Potency Blue",
+      "hex": "706B99",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Potency"
+    },
+    {
+      "id": "eso:bugloss-blue",
+      "name": "Bugloss Blue",
+      "hex": "4F5D72",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Apprentice of Refinement"
+    },
+    {
+      "id": "eso:nightblades-indigo",
+      "name": "Nightblades' Indigo",
+      "hex": "363D4B",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Grand Nightblade Slayer"
+    },
+    {
+      "id": "eso:dolmen-deep-blue",
+      "name": "Dolmen Deep Blue",
+      "hex": "38364B",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Anchor Destroyer"
+    },
+    {
+      "id": "eso:spectral-blue",
+      "name": "Spectral Blue",
+      "hex": "B5AFEF",
+      "hue": "Blue",
+      "rarity": "Common",
+      "esoUnlock": "Grand Necromancer Slayer"
+    },
+    {
+      "id": "eso:sorcerers-bane-violet",
+      "name": "Sorcerers'-Bane Violet",
+      "hex": "AF8EBF",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Grand Sorcerer Slayer"
+    },
+    {
+      "id": "eso:soul-gem-purple",
+      "name": "Soul Gem Purple",
+      "hex": "674F72",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Chasing Shadows"
+    },
+    {
+      "id": "eso:amethyst-violet",
+      "name": "Amethyst Violet",
+      "hex": "544F72",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Learn a Trait"
+    },
+    {
+      "id": "eso:hyacinth-pink",
+      "name": "Hyacinth Pink",
+      "hex": "BF859C",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Journeyman Crafting Harvester"
+    },
+    {
+      "id": "eso:adept-purple",
+      "name": "Adept Purple",
+      "hex": "724F72",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Level 30 Hero"
+    },
+    {
+      "id": "eso:beast-collector-violet",
+      "name": "Beast Collector Violet",
+      "hex": "44364B",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Tamriel Beast Collector"
+    },
+    {
+      "id": "eso:shein-violet",
+      "name": "Shein Violet",
+      "hex": "4A363F",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Recipe Book"
+    },
+    {
+      "id": "eso:captains-violet",
+      "name": "Captain's Violet",
+      "hex": "483434",
+      "hue": "Purple",
+      "rarity": "Common",
+      "esoUnlock": "Alliance War Captain"
+    },
+    {
+      "id": "eso:yokudan-cod-tan",
+      "name": "Yokudan Cod Tan",
+      "hex": "BF9C85",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Craglorn Angler"
+    },
+    {
+      "id": "eso:novice-tan",
+      "name": "Novice Tan",
+      "hex": "B18E7D",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Level 10 Hero"
+    },
+    {
+      "id": "eso:raw-hide-tan",
+      "name": "Raw Hide Tan",
+      "hex": "BF9385",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Master Crafting Harvester"
+    },
+    {
+      "id": "eso:centurion-metal",
+      "name": "Centurion Metal",
+      "hex": "99796B",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Alliance War Centurion"
+    },
+    {
+      "id": "eso:dried-blood-brown",
+      "name": "Dried Blood Brown",
+      "hex": "997C6B",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Recruit of the Undaunted"
+    },
+    {
+      "id": "eso:heartlands-umber",
+      "name": "Heartlands Umber",
+      "hex": "8F6D64",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Support the Fight"
+    },
+    {
+      "id": "eso:book-cover-brown",
+      "name": "Book Cover Brown",
+      "hex": "725D4F",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Racial Style Learned"
+    },
+    {
+      "id": "eso:trolls-fur-brown",
+      "name": "Trolls Fur Brown",
+      "hex": "665147",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Monstrous Component Collector"
+    },
+    {
+      "id": "eso:bandit-brown",
+      "name": "Bandit Brown",
+      "hex": "72594F",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Humanoid Slayer"
+    },
+    {
+      "id": "eso:wolfs-fur-brown",
+      "name": "Wolf's Fur Brown",
+      "hex": "4B3B36",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Lycanthropy"
+    },
+    {
+      "id": "eso:boss-butcher-brown",
+      "name": "Boss Butcher Brown",
+      "hex": "4B3D36",
+      "hue": "Brown",
+      "rarity": "Common",
+      "esoUnlock": "Dungeon Lord"
+    },
+    {
+      "id": "eso:birch-white",
+      "name": "Birch White",
+      "hex": "BFBFBF",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Expert of Refinement"
+    },
+    {
+      "id": "eso:volunteers-iron",
+      "name": "Volunteer's Iron",
+      "hex": "B1B1B1",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Alliance War Volunteer"
+    },
+    {
+      "id": "eso:boethiah-gray",
+      "name": "Boethiah Gray",
+      "hex": "666666",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Daedra Slayer"
+    },
+    {
+      "id": "eso:obsidian-black",
+      "name": "Obsidian Black",
+      "hex": "474747",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Expert Deconstructor"
+    },
+    {
+      "id": "eso:mort-flesh-white",
+      "name": "Mort Flesh White",
+      "hex": "ACBCBF",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Undead Slayer"
+    },
+    {
+      "id": "eso:expert-gray",
+      "name": "Expert Gray",
+      "hex": "A1AFB1",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Level 40 Hero"
+    },
+    {
+      "id": "eso:tombstone-gray",
+      "name": "Tombstone Gray",
+      "hex": "5B6466",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Dungeon Damage Dispenser"
+    },
+    {
+      "id": "eso:noxophilic-black",
+      "name": "Noxophilic Black",
+      "hex": "3A3E40",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Vampirism"
+    },
+    {
+      "id": "eso:elemental-white",
+      "name": "Elemental White",
+      "hex": "BFB1AC",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Atronach Element Collector"
+    },
+    {
+      "id": "eso:legionarys-lead",
+      "name": "Legionary's Lead",
+      "hex": "B1A7A1",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Alliance War Legionary"
+    },
+    {
+      "id": "eso:soul-shriven-gray",
+      "name": "Soul Cairn Grey",
+      "hex": "665E5B",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Soul Shriven in Coldharbour"
+    },
+    {
+      "id": "eso:sergeants-charcoal",
+      "name": "Sergeant's Charcoal",
+      "hex": "403B3A",
+      "hue": "Grey",
+      "rarity": "Common",
+      "esoUnlock": "Alliance War Sergeant"
+    },
+    {
+      "id": "eso:recipe-reaper-red",
+      "name": "Recipe Reaper Red",
+      "hex": "99444F",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Recipe Compendium"
+    },
+    {
+      "id": "eso:khenarthi-red",
+      "name": "Khenarthi Red",
+      "hex": "723434",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Khenarthi's Roost Pathfinder"
+    },
+    {
+      "id": "eso:pact-fisher-red",
+      "name": "Rift Autumn",
+      "hex": "BF5656",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Pact Fisherman"
+    },
+    {
+      "id": "eso:strangler-maw-red",
+      "name": "Strangler Maw Red",
+      "hex": "A63A3A",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Shadowfen Master Explorer"
+    },
+    {
+      "id": "eso:kresh-flower-red",
+      "name": "Kresh Flower Red",
+      "hex": "993E35",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Grand Master Crafting Harvester"
+    },
+    {
+      "id": "eso:flame-knight-light-red",
+      "name": "Flame-Knight Light Red",
+      "hex": "994B44",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Stormhaven Master Explorer"
+    },
+    {
+      "id": "eso:riften-copper",
+      "name": "Riften Copper",
+      "hex": "996044",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Shattered Remnants"
+    },
+    {
+      "id": "eso:deceit-orange",
+      "name": "Deceit Orange",
+      "hex": "995B3D",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Easy as Pie"
+    },
+    {
+      "id": "eso:senche-tiger-orange",
+      "name": "Senche-Tiger Orange",
+      "hex": "994F2D",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Hallowed Moons"
+    },
+    {
+      "id": "eso:marshnettle-titian",
+      "name": "Marshnettle Titian",
+      "hex": "DD5918",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Savior of Blackwood"
+    },
+    {
+      "id": "eso:enchanter-tangerine",
+      "name": "Enchanter Tangerine",
+      "hex": "733B22",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Enchanter"
+    },
+    {
+      "id": "eso:champion-red",
+      "name": "Champion Red",
+      "hex": "72231C",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Fighters Guild Veteran"
+    },
+    {
+      "id": "eso:jode-red",
+      "name": "Jode Red",
+      "hex": "721C28",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Reaper's March Master Explorer"
+    },
+    {
+      "id": "eso:red-diamond-red",
+      "name": "Red Diamond Red",
+      "hex": "721C1C",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "The Valley of Blades"
+    },
+    {
+      "id": "eso:regicide-red",
+      "name": "Regicide Red",
+      "hex": "4B2121",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Emperor Slayer"
+    },
+    {
+      "id": "eso:pact-conqueror-red",
+      "name": "Assassin's Crimson",
+      "hex": "4B1313",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Ebonheart Pact Conqueror"
+    },
+    {
+      "id": "eso:ruckus-rust",
+      "name": "Ruckus Rust",
+      "hex": "491600",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Ruckus Favored"
+    },
+    {
+      "id": "eso:craglorn-crimson",
+      "name": "Reach Crimson",
+      "hex": "481219",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Lower Craglorn Master Explorer"
+    },
+    {
+      "id": "eso:somber-cerise",
+      "name": "Somber Cerise",
+      "hex": "792C3F",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Imperial City Warlord"
+    },
+    {
+      "id": "eso:fire-drakes-flame",
+      "name": "Fire Drake's Flame",
+      "hex": "931818",
+      "hue": "Red",
+      "rarity": "Uncommon",
+      "esoUnlock": "Pit Hero"
+    },
+    {
+      "id": "eso:starlight-gold",
+      "name": "Starlight Gold",
+      "hex": "B1955E",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Dawn of a Champion"
+    },
+    {
+      "id": "eso:hlaalu-gold",
+      "name": "Hlaalu Gold",
+      "hex": "99774B",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Plague Eater"
+    },
+    {
+      "id": "eso:evermore-gold",
+      "name": "Evermore Gold",
+      "hex": "BF9660",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "End of Empire"
+    },
+    {
+      "id": "eso:mastic-yellow",
+      "name": "Mastic Yellow",
+      "hex": "CC9B5B",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Legendary Woodworker"
+    },
+    {
+      "id": "eso:glittering-gold",
+      "name": "Glittering Gold",
+      "hex": "CFAC3B",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Goad Favored"
+    },
+    {
+      "id": "eso:10-year-anniversary-gold-leaf",
+      "name": "Gold Leaf",
+      "hex": "99803D",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Commemorative Safebox Looter"
+    },
+    {
+      "id": "eso:craftmaster-gold",
+      "name": "Craftmaster Gold",
+      "hex": "725734",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Deconstructor"
+    },
+    {
+      "id": "eso:hunding-gold",
+      "name": "Hunding Gold",
+      "hex": "4B3A21",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Stros M'kai and Betnikh Explorer"
+    },
+    {
+      "id": "eso:sulfur-pools-yellow",
+      "name": "Sulfur Pools Yellow",
+      "hex": "BFB856",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Eastmarch Master Explorer"
+    },
+    {
+      "id": "eso:dominion-fisher-yellow",
+      "name": "Whiterun Wheat",
+      "hex": "BFB52F",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Dominion Fisherman"
+    },
+    {
+      "id": "eso:woodworker-yellow",
+      "name": "Woodworker Yellow",
+      "hex": "999344",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Woodworker"
+    },
+    {
+      "id": "eso:alchemist-bilious",
+      "name": "Alchemist Bilious",
+      "hex": "726D1C",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Alchemist"
+    },
+    {
+      "id": "eso:dominion-conqueror-yellow",
+      "name": "Markarth Brass",
+      "hex": "4B4813",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Aldmeri Dominion Conqueror"
+    },
+    {
+      "id": "eso:antique-brass",
+      "name": "Antique Brass",
+      "hex": "BA7E2E",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "The Sublime Protector"
+    },
+    {
+      "id": "eso:anequina-sunrise",
+      "name": "Anequina Sunrise",
+      "hex": "FF7C0E",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Savior of Elsweyr"
+    },
+    {
+      "id": "eso:10-year-anniversary-ivory",
+      "name": "Aged Ivory",
+      "hex": "E6DFCF",
+      "hue": "Yellow",
+      "rarity": "Uncommon",
+      "esoUnlock": "Commemorative Mundus Missionary"
+    },
+    {
+      "id": "eso:doomcrag-verdigris",
+      "name": "Doomcrag Verdigris",
+      "hex": "34726D",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Curse Breaker"
+    },
+    {
+      "id": "eso:thousand-eyes-ichor",
+      "name": "Thousand Eyes Ichor",
+      "hex": "347062",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Eyes Favored"
+    },
+    {
+      "id": "eso:dominion-vanquisher-green",
+      "name": "Falkreath Green",
+      "hex": "34724D",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Vanquisher of the Dominion"
+    },
+    {
+      "id": "eso:falinesti-green",
+      "name": "Falinesti Green",
+      "hex": "1A6C35",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Matchmaker"
+    },
+    {
+      "id": "eso:vine-green",
+      "name": "Vine Green",
+      "hex": "56BF77",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Glenumbra Master Explorer"
+    },
+    {
+      "id": "eso:glenbridge-green",
+      "name": "Glenbridge Green",
+      "hex": "649A5D",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Rockgrove Vanquisher"
+    },
+    {
+      "id": "eso:nibenay-trout-green",
+      "name": "Nibenay Trout Green",
+      "hex": "6E9944",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Cyrodiil Angler"
+    },
+    {
+      "id": "eso:hist-green",
+      "name": "Hist Green",
+      "hex": "5D9926",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Egg and Root"
+    },
+    {
+      "id": "eso:forest-footpad-green",
+      "name": "Forest Footpad Green",
+      "hex": "608342",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Sneak Thief Extraordinaire"
+    },
+    {
+      "id": "eso:arc-master-moss",
+      "name": "Arc Master Moss",
+      "hex": "59590F",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Arcing Onward"
+    },
+    {
+      "id": "eso:wyrd-tree-green",
+      "name": "Wyrd Tree Green",
+      "hex": "605D34",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Ritual Destruction"
+    },
+    {
+      "id": "eso:shell-tide-green",
+      "name": "Shell-Tide Green",
+      "hex": "3B601C",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Hero of Western Solstice"
+    },
+    {
+      "id": "eso:silvenar-green",
+      "name": "Silvenar Green",
+      "hex": "364B21",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Malabal Tor Master Explorer"
+    },
+    {
+      "id": "eso:pit-daemons-poison",
+      "name": "Pit Daemon's Poison",
+      "hex": "3D4634",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Grand Relic Hunter"
+    },
+    {
+      "id": "eso:moras-mauve",
+      "name": "Mora's Mauve",
+      "hex": "5BC80C",
+      "hue": "Green",
+      "rarity": "Uncommon",
+      "esoUnlock": "Grand Arcanist Slayer"
+    },
+    {
+      "id": "eso:welkynd-blue",
+      "name": "Welkynd Blue",
+      "hex": "2FBFB1",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Spirit of the Bosmer"
+    },
+    {
+      "id": "eso:eyevea-blue",
+      "name": "Arcanaeum Blue",
+      "hex": "1C5B72",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Arch-Mage"
+    },
+    {
+      "id": "eso:smith-steel-blue",
+      "name": "Smith Steel Blue",
+      "hex": "213A4B",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Blacksmith"
+    },
+    {
+      "id": "eso:ransacker-blue",
+      "name": "Ransacker Blue",
+      "hex": "21314B",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Superior Ransacker"
+    },
+    {
+      "id": "eso:soulseeker-blue",
+      "name": "Soulseeker Blue",
+      "hex": "232B4B",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Hero of Eastern Solstice"
+    },
+    {
+      "id": "eso:covenant-conqueror-blue",
+      "name": "Eastmarch Night",
+      "hex": "122546",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Daggerfall Covenant Conqueror"
+    },
+    {
+      "id": "eso:netch-jelly-blue",
+      "name": "Netch Jelly Blue",
+      "hex": "56A1BF",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Bleakrock and Bal Foyen Explorer"
+    },
+    {
+      "id": "eso:wisp-blue",
+      "name": "Wisp Blue",
+      "hex": "5691BF",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Bangkorai Master Explorer"
+    },
+    {
+      "id": "eso:covenant-fisher-blue",
+      "name": "Winterhold Blue",
+      "hex": "4373BF",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Covenant Fisherman"
+    },
+    {
+      "id": "eso:alikr-lapis",
+      "name": "Alik'r Lapis",
+      "hex": "32486D",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Consecrated Ground"
+    },
+    {
+      "id": "eso:indoril-blue",
+      "name": "Indoril Blue",
+      "hex": "1C3D72",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Deshaan Master Explorer"
+    },
+    {
+      "id": "eso:tainted-turquoise",
+      "name": "Tainted Turquoise",
+      "hex": "13376B",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Imperial Transgressions"
+    },
+    {
+      "id": "eso:new-life-cerulean",
+      "name": "Frostfall Cerulean",
+      "hex": "7C8EC6",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "New Life Celebrant"
+    },
+    {
+      "id": "eso:shrike-blue",
+      "name": "Shrike Blue",
+      "hex": "5785EB",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Savior of Summerset"
+    },
+    {
+      "id": "eso:scholarium-cerulean",
+      "name": "Scholarium Cerulean",
+      "hex": "159BC7",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Pen is Mightier than the Sword"
+    },
+    {
+      "id": "eso:lucentshard-azure",
+      "name": "Lucentshard Azure",
+      "hex": "119D91",
+      "hue": "Blue",
+      "rarity": "Uncommon",
+      "esoUnlock": "Lucent Citadel Vanquisher"
+    },
+    {
+      "id": "eso:wayrest-royal-purple",
+      "name": "Wayrest Royal Purple",
+      "hex": "3B3472",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Rude Awakening"
+    },
+    {
+      "id": "eso:ironweed-violet",
+      "name": "Ironweed Violet",
+      "hex": "B161B0",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Legendary Clothier"
+    },
+    {
+      "id": "eso:haunted-moor-mauve",
+      "name": "Haunted Moor Mauve",
+      "hex": "9C56BF",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Rivenspire Master Explorer"
+    },
+    {
+      "id": "eso:covenant-vanquisher-violet",
+      "name": "Riften Amethyst",
+      "hex": "5D3472",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Vanquisher of the Covenant"
+    },
+    {
+      "id": "eso:dolorous-indigo",
+      "name": "Dolorous Indigo",
+      "hex": "4D265E",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Ossein Cage Vanquisher"
+    },
+    {
+      "id": "eso:pillager-purple",
+      "name": "Pillager Purple",
+      "hex": "492049",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Epic Acquirer"
+    },
+    {
+      "id": "eso:dibellas-blush",
+      "name": "Dibella's Blush",
+      "hex": "994467",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Greenshade Master Explorer"
+    },
+    {
+      "id": "eso:master-adventurer-purple",
+      "name": "Master Adventurer Purple",
+      "hex": "6B3148",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Adventurer"
+    },
+    {
+      "id": "eso:clothier-purple",
+      "name": "Clothier Purple",
+      "hex": "4B132A",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Clothier"
+    },
+    {
+      "id": "eso:nightshade-purple",
+      "name": "Nightshade Purple",
+      "hex": "441544",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Chainbreaker"
+    },
+    {
+      "id": "eso:stormlords-lightning",
+      "name": "Stormlord's Lightning",
+      "hex": "573464",
+      "hue": "Purple",
+      "rarity": "Uncommon",
+      "esoUnlock": "Grand Standard-Bearer"
+    },
+    {
+      "id": "eso:telvanni-brown",
+      "name": "Telvanni Brown",
+      "hex": "724B34",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Stonefalls Master Explorer"
+    },
+    {
+      "id": "eso:murder-mahogany",
+      "name": "Murder Mahogany",
+      "hex": "996444",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Kill a Grand Overlord"
+    },
+    {
+      "id": "eso:mammoth-fur-brown",
+      "name": "Mammoth Fur Brown",
+      "hex": "CC885B",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "The Rift Master Explorer"
+    },
+    {
+      "id": "eso:provisioner-brown",
+      "name": "Provisioner Brown",
+      "hex": "C27157",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Provisioner"
+    },
+    {
+      "id": "eso:graht-bark-brown",
+      "name": "Graht-Bark Brown",
+      "hex": "573724",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Grahtwood Master Explorer"
+    },
+    {
+      "id": "eso:adventurer-brown",
+      "name": "Adventurer Brown",
+      "hex": "6E4232",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Adventurer"
+    },
+    {
+      "id": "eso:pact-vanquisher-brown",
+      "name": "Hjaalmarch Clay",
+      "hex": "72311C",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Vanquisher of the Pact"
+    },
+    {
+      "id": "eso:brewers-ale-brown",
+      "name": "Brewer's Ale Brown",
+      "hex": "451E11",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Chef"
+    },
+    {
+      "id": "eso:colovian-deep-brown",
+      "name": "Colovian Deep Brown",
+      "hex": "472916",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Cyrodiil Cave Delver"
+    },
+    {
+      "id": "eso:dusky-bronze",
+      "name": "Dusky Bronze",
+      "hex": "5E3D2A",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Horror of Horrors"
+    },
+    {
+      "id": "eso:telvanni-walnut",
+      "name": "Telvanni Walnut",
+      "hex": "4B2113",
+      "hue": "Brown",
+      "rarity": "Uncommon",
+      "esoUnlock": "Hero of Necrom"
+    },
+    {
+      "id": "eso:polished-steel-gray",
+      "name": "Polished Steel Gray",
+      "hex": "8B8B8B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master of Refinement"
+    },
+    {
+      "id": "eso:windhelm-steel",
+      "name": "Windhelm Steel",
+      "hex": "585858",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Blood Feud"
+    },
+    {
+      "id": "eso:prefects-gray",
+      "name": "Prefect's Gray",
+      "hex": "4B4B4B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Alliance War Prefect"
+    },
+    {
+      "id": "eso:thalmor-black",
+      "name": "Thalmor Black",
+      "hex": "2B2B2B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Iconoclast"
+    },
+    {
+      "id": "eso:10-year-anniversary-ebon-leather",
+      "name": "Ebon Leather",
+      "hex": "242424",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Commemorative Activity Achiever"
+    },
+    {
+      "id": "eso:stendarr-white",
+      "name": "Stendarr White",
+      "hex": "AED2D9",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Monster Slayer"
+    },
+    {
+      "id": "eso:moonstone-white",
+      "name": "Moonstone White",
+      "hex": "ADC7CC",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Trait Master"
+    },
+    {
+      "id": "eso:earthforge-iron-gray",
+      "name": "Earthforge Iron Gray",
+      "hex": "69868B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Legendary Blacksmith"
+    },
+    {
+      "id": "eso:tribunes-steel",
+      "name": "Tribune's Steel",
+      "hex": "3D4A4B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Alliance War Tribune"
+    },
+    {
+      "id": "eso:maormer-eyes-gray",
+      "name": "Slaughterfish Grey",
+      "hex": "222A2B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Auridon Master Explorer"
+    },
+    {
+      "id": "eso:varla-white",
+      "name": "Varla White",
+      "hex": "CBB6AC",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "A Rule Unquestioned"
+    },
+    {
+      "id": "eso:ashland-gray",
+      "name": "Ashland Gray",
+      "hex": "947E75",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Hearts of Darkness"
+    },
+    {
+      "id": "eso:ashabah-hood-gray",
+      "name": "Ash'abah Hood Gray",
+      "hex": "8B7970",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Alik'r Desert Master Explorer"
+    },
+    {
+      "id": "eso:shadowfoot-gray",
+      "name": "Shadowfoot Gray",
+      "hex": "584E4B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Felonious Recompense"
+    },
+    {
+      "id": "eso:tower-white-gold",
+      "name": "Tower White-Gold",
+      "hex": "97999B",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Blockbuster"
+    },
+    {
+      "id": "eso:soul-shriven-pale",
+      "name": "Soul Cairn Pale",
+      "hex": "D9C4B7",
+      "hue": "Grey",
+      "rarity": "Uncommon",
+      "esoUnlock": "Coldharbour Master Explorer"
+    },
+    {
+      "id": "eso:antique-silver",
+      "name": "Antique Silver",
+      "hex": "DFDBC6",
+      "hue": "Mixed",
+      "rarity": "Uncommon",
+      "esoUnlock": "Master Jewelry Crafter"
+    },
+    {
+      "id": "eso:chivalric-silver",
+      "name": "Chivalric Silver",
+      "hex": "4D565D",
+      "hue": "Mixed",
+      "rarity": "Uncommon",
+      "esoUnlock": "Savior of High Isle"
+    },
+    {
+      "id": "eso:west-weald-autumnal-orange",
+      "name": "West Weald Autumnal Orange",
+      "hex": "E69E18",
+      "hue": "Iridescent",
+      "rarity": "Uncommon",
+      "esoUnlock": "Hero of the Gold Road"
+    },
+    {
+      "id": "eso:mad-gods-berry",
+      "name": "Mad God's Berry",
+      "hex": "A383D8",
+      "hue": "Iridescent",
+      "rarity": "Uncommon",
+      "esoUnlock": "Madness Catcher"
+    },
+    {
+      "id": "eso:dragonstar-red",
+      "name": "Dragonstar Red",
+      "hex": "762230",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Time Trial: Hel Ra Citadel"
+    },
+    {
+      "id": "eso:syffim-red",
+      "name": "Syffim Red",
+      "hex": "863C35",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Fighters Guild Skill Master"
+    },
+    {
+      "id": "eso:generals-gold",
+      "name": "General's Gold",
+      "hex": "7B3C1F",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War General"
+    },
+    {
+      "id": "eso:sigil-orange",
+      "name": "Sigil Orange",
+      "hex": "8B3E1B",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "City of Ash II Conqueror"
+    },
+    {
+      "id": "eso:pact-blood-red",
+      "name": "Reachman Red",
+      "hex": "632222",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Hero of the Ebonheart Pact"
+    },
+    {
+      "id": "eso:warlords-red",
+      "name": "Chieftain's Red",
+      "hex": "56231F",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War Warlord"
+    },
+    {
+      "id": "eso:ruby-throne-red",
+      "name": "Ruby Throne Red",
+      "hex": "531111",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Emperor!"
+    },
+    {
+      "id": "eso:nirncrux-red",
+      "name": "Nirncrux Red",
+      "hex": "461919",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Learn the Nirnhoned Trait"
+    },
+    {
+      "id": "eso:daedric-red",
+      "name": "Daedric Red",
+      "hex": "310E0E",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "General Executioner"
+    },
+    {
+      "id": "eso:magnus-setting-red",
+      "name": "Magnus Setting Red",
+      "hex": "7C1E1A",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Veteran White-Gold Tower"
+    },
+    {
+      "id": "eso:bloodroot-wine",
+      "name": "Bloodroot Wine",
+      "hex": "BA2D11",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Horns of the Reach Delver"
+    },
+    {
+      "id": "eso:apricot-outrage",
+      "name": "Apricot Outrage",
+      "hex": "75240A",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Blackrose Prison Vanquisher"
+    },
+    {
+      "id": "eso:scintillating-scarlet",
+      "name": "Scintillating Scarlet",
+      "hex": "B11305",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Flames of Ambition Delver"
+    },
+    {
+      "id": "eso:cardsharp-crimson",
+      "name": "Cardsharp Crimson",
+      "hex": "2D0303",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Roister's Club Master"
+    },
+    {
+      "id": "eso:artifact-hunter-amber",
+      "name": "Artifact-Hunter Amber",
+      "hex": "330507",
+      "hue": "Red",
+      "rarity": "Rare",
+      "esoUnlock": "Retribution Takes Time"
+    },
+    {
+      "id": "eso:dominion-yellow",
+      "name": "Thalmor Gold",
+      "hex": "805A27",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Hero of the Aldmeri Dominion"
+    },
+    {
+      "id": "eso:grand-overlords-brass",
+      "name": "Legion Brass",
+      "hex": "966E3C",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War Grand Overlord"
+    },
+    {
+      "id": "eso:ayleid-gold",
+      "name": "Ayleid Gold",
+      "hex": "533D1C",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Aldmeri Master Explorer"
+    },
+    {
+      "id": "eso:dwarven-brass",
+      "name": "Dwarven Brass",
+      "hex": "4F3318",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Dwemer Style Master"
+    },
+    {
+      "id": "eso:akatoshs-scales-gold",
+      "name": "Akatosh's Scales Gold",
+      "hex": "BBBD7B",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Complete All Speed Challenges"
+    },
+    {
+      "id": "eso:colossus-brass",
+      "name": "Colossus Brass",
+      "hex": "A5773A",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Halls of Fabrication Completed"
+    },
+    {
+      "id": "eso:glacial-topaz",
+      "name": "Glacial Topaz",
+      "hex": "714E15",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Wrathstone Delver"
+    },
+    {
+      "id": "eso:patrons-gold",
+      "name": "Patron's Gold",
+      "hex": "B8870F",
+      "hue": "Yellow",
+      "rarity": "Rare",
+      "esoUnlock": "Tales of Tribute Master"
+    },
+    {
+      "id": "eso:aurora-green",
+      "name": "Aurora Green",
+      "hex": "238F62",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Time Trial: Aetherian Archive"
+    },
+    {
+      "id": "eso:orichalc-green",
+      "name": "Orichalc Green",
+      "hex": "3F3E29",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Daggerfall Master Explorer"
+    },
+    {
+      "id": "eso:ophidian-jade",
+      "name": "Ophidian Jade",
+      "hex": "123E24",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Sanctum Ophidia Completed"
+    },
+    {
+      "id": "eso:putrid-flesh-teal",
+      "name": "Putrid Flesh Teal",
+      "hex": "418B60",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Veteran Imperial City Prison"
+    },
+    {
+      "id": "eso:viridian-venom",
+      "name": "Viridian Venom",
+      "hex": "121D0C",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Toxicologist"
+    },
+    {
+      "id": "eso:hazardous-chartreuse",
+      "name": "Hazardous Chartreuse",
+      "hex": "CAF079",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Stonethorn Delver"
+    },
+    {
+      "id": "eso:darkstorm-emerald",
+      "name": "Darkstorm Emerald",
+      "hex": "006042",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Savior of the Reach"
+    },
+    {
+      "id": "eso:sunforge-patina",
+      "name": "Sunforge Patina",
+      "hex": "DAF671",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Hero of Fargrave"
+    },
+    {
+      "id": "eso:drowned-cobalt",
+      "name": "Drowned Cobalt",
+      "hex": "032D03",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Ascending Tide Delver"
+    },
+    {
+      "id": "eso:roisters-cerulean",
+      "name": "Roister's Cerulean",
+      "hex": "0A4D38",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Tales of Travel"
+    },
+    {
+      "id": "eso:brightfern-green",
+      "name": "Brightfern Green",
+      "hex": "054E0A",
+      "hue": "Green",
+      "rarity": "Rare",
+      "esoUnlock": "Lost Depths Delver"
+    },
+    {
+      "id": "eso:necromancer-blue",
+      "name": "Necromancer Blue",
+      "hex": "76A6A3",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Radiant Champion"
+    },
+    {
+      "id": "eso:aetherial-blue",
+      "name": "Aetherial Blue",
+      "hex": "5195A2",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Tamriel Skyshard Hunter"
+    },
+    {
+      "id": "eso:entoloma-blue",
+      "name": "Entoloma Blue",
+      "hex": "549994",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Truly Legendary"
+    },
+    {
+      "id": "eso:arcane-blue",
+      "name": "Arcane Blue",
+      "hex": "1D4356",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Mages Guild Skill Master"
+    },
+    {
+      "id": "eso:mundus-blue",
+      "name": "Mundus Blue",
+      "hex": "6F83AA",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Weekly Trial Complete"
+    },
+    {
+      "id": "eso:covenant-blue",
+      "name": "Windhelm Blue",
+      "hex": "222B54",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Hero of the Daggerfall Covenant"
+    },
+    {
+      "id": "eso:superior-blue",
+      "name": "Superior Blue",
+      "hex": "222E42",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Superior Attire"
+    },
+    {
+      "id": "eso:stalhrim-chrome",
+      "name": "Stalhrim Chrome",
+      "hex": "11BFAE",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Wolfhunter Delver"
+    },
+    {
+      "id": "eso:abyssal-beryl",
+      "name": "Abyssal Beryl",
+      "hex": "3698C4",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Maw of Lorkhaj Completed"
+    },
+    {
+      "id": "eso:vehks-mystic-blue",
+      "name": "Vehk's Mystic Blue",
+      "hex": "116DA8",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Champion of Vivec"
+    },
+    {
+      "id": "eso:blackreach-blue",
+      "name": "Blackreach Blue",
+      "hex": "1C54B6",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Savior of Western Skyrim"
+    },
+    {
+      "id": "eso:scriveners-ultramarine",
+      "name": "Scrivener's Ultramarine",
+      "hex": "002433",
+      "hue": "Blue",
+      "rarity": "Rare",
+      "esoUnlock": "Scribes of Fate Delver"
+    },
+    {
+      "id": "eso:celestial-violet",
+      "name": "Celestial Violet",
+      "hex": "7E6A84",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Time Trial: Weekly"
+    },
+    {
+      "id": "eso:indomitable-violet",
+      "name": "Indomitable Violet",
+      "hex": "554454",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Indomitable Adventurer"
+    },
+    {
+      "id": "eso:grand-warlords-violet",
+      "name": "Nightfall Violet",
+      "hex": "232345",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War Grand Warlord"
+    },
+    {
+      "id": "eso:contraband-violet",
+      "name": "Contraband Violet",
+      "hex": "541486",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Black Market Mogul"
+    },
+    {
+      "id": "eso:voidstone-violet",
+      "name": "Voidstone Violet",
+      "hex": "110F31",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Complete All Death Challenges"
+    },
+    {
+      "id": "eso:slaughterfish-flesh-pink",
+      "name": "Slaughterfish Flesh Pink",
+      "hex": "A0708B",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Master Fisher"
+    },
+    {
+      "id": "eso:epic-violet",
+      "name": "Epic Violet",
+      "hex": "37192D",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Epic Attire"
+    },
+    {
+      "id": "eso:overlords-purple",
+      "name": "Vaermina's Purple",
+      "hex": "2D072D",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War Overlord"
+    },
+    {
+      "id": "eso:transliminal-violet",
+      "name": "Transliminal Violet",
+      "hex": "41387C",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Imperial Lightbringer"
+    },
+    {
+      "id": "eso:blademasters-mauve",
+      "name": "Blademaster's Mauve",
+      "hex": "64418B",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Maelstrom Arena Champion"
+    },
+    {
+      "id": "eso:nacreous-purple",
+      "name": "Nacreous Purple",
+      "hex": "7F6389",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Dragon Bones Delver"
+    },
+    {
+      "id": "eso:bedlam-purple",
+      "name": "Bedlam Purple",
+      "hex": "1D1542",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Cloudrest Conqueror"
+    },
+    {
+      "id": "eso:moonshadow-orchid",
+      "name": "Moonshadow Orchid",
+      "hex": "AE9DBA",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Waking Flame Delver"
+    },
+    {
+      "id": "eso:pyandonean-purple",
+      "name": "Pyandonean Purple",
+      "hex": "801380",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Dreadsail Reef Vanquisher"
+    },
+    {
+      "id": "eso:king-orgnums-wine",
+      "name": "King Orgnum's Wine",
+      "hex": "693867",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Savior of Galen"
+    },
+    {
+      "id": "eso:sanitys-orchid",
+      "name": "Sanity's Orchid",
+      "hex": "693867",
+      "hue": "Purple",
+      "rarity": "Rare",
+      "esoUnlock": "Sanity's Edge Vanquisher"
+    },
+    {
+      "id": "eso:scaled-court-brown",
+      "name": "Dragon Cult Brown",
+      "hex": "A17F7C",
+      "hue": "Brown",
+      "rarity": "Rare",
+      "esoUnlock": "Time Trial: Sanctum Ophidia"
+    },
+    {
+      "id": "eso:undaunted-bronze",
+      "name": "Delver's Bronze",
+      "hex": "80543A",
+      "hue": "Brown",
+      "rarity": "Rare",
+      "esoUnlock": "Undaunted Skill Master"
+    },
+    {
+      "id": "eso:atmoran-bronze",
+      "name": "Atmoran Bronze",
+      "hex": "6D3B1F",
+      "hue": "Brown",
+      "rarity": "Rare",
+      "esoUnlock": "Ebonheart Master Explorer"
+    },
+    {
+      "id": "eso:motif-master-brown",
+      "name": "Motif Master Brown",
+      "hex": "382514",
+      "hue": "Brown",
+      "rarity": "Rare",
+      "esoUnlock": "Rare Style Master"
+    },
+    {
+      "id": "eso:julianos-white",
+      "name": "Julianos White",
+      "hex": "CCCCCC",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Aetherian Archive Completed"
+    },
+    {
+      "id": "eso:lamaes-white",
+      "name": "Lamae's White",
+      "hex": "B0B0B0",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Vampirism Master"
+    },
+    {
+      "id": "eso:lycanthrope-gray",
+      "name": "Lycanthrope Gray",
+      "hex": "7C7C7C",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Lycanthropy Master"
+    },
+    {
+      "id": "eso:legates-black",
+      "name": "Legate's Black",
+      "hex": "171919",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War Legate"
+    },
+    {
+      "id": "eso:adamantine-silver",
+      "name": "Adamantine Silver",
+      "hex": "93A8AD",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Dragonstar Arena Conqueror"
+    },
+    {
+      "id": "eso:cyrodilic-steel",
+      "name": "Cyrodilic Steel",
+      "hex": "43535A",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Cyrodiil Champion"
+    },
+    {
+      "id": "eso:warriors-steel",
+      "name": "Warrior's Steel",
+      "hex": "35333E",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Hel Ra Citadel Completed"
+    },
+    {
+      "id": "eso:palatines-white",
+      "name": "Bone White",
+      "hex": "D1BCB0",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Alliance War Palatine"
+    },
+    {
+      "id": "eso:liars-linen",
+      "name": "Liar's Linen",
+      "hex": "ABA19B",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "I Like M'aiq"
+    },
+    {
+      "id": "eso:nirnroot-gray",
+      "name": "Nirnroot Gray",
+      "hex": "9B8C83",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Botanist"
+    },
+    {
+      "id": "eso:coldharbour-ash-black",
+      "name": "Coldharbour Ash Black",
+      "hex": "231F1D",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "The God of Schemes"
+    },
+    {
+      "id": "eso:marble-white",
+      "name": "Marble White",
+      "hex": "F9F0FF",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Excavation Virtuoso"
+    },
+    {
+      "id": "eso:void-pitch",
+      "name": "Void Pitch",
+      "hex": "000000",
+      "hue": "Grey",
+      "rarity": "Rare",
+      "esoUnlock": "Honor to the Spiritblood"
+    },
+    {
+      "id": "eso:divine-gold",
+      "name": "Divine Gold",
+      "hex": "D6B14B",
+      "hue": "Mixed",
+      "rarity": "Rare",
+      "esoUnlock": "Legendary Jewelry Crafter"
+    },
+    {
+      "id": "eso:blood-gold",
+      "name": "Blood Gold",
+      "hex": "DDA3A0",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Queenmaker"
+    },
+    {
+      "id": "eso:hollowfang-cruor",
+      "name": "Hollowfang Cruor",
+      "hex": "300503",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Scalebreaker Delver"
+    },
+    {
+      "id": "eso:pellitine-coral",
+      "name": "Pellitine Coral",
+      "hex": "AC3342",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Return of the Dragonguard"
+    },
+    {
+      "id": "eso:frozen-blood",
+      "name": "Frozen Blood",
+      "hex": "D3C2BB",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Harrowstorm Delver"
+    },
+    {
+      "id": "eso:weathered-keystone-green",
+      "name": "Weathered Keystone Green",
+      "hex": "4B7066",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Mining Tunes"
+    },
+    {
+      "id": "eso:anu-white",
+      "name": "Anu White",
+      "hex": "E6EBC1",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Seasoned Monster Slayer"
+    },
+    {
+      "id": "eso:brassy-brass",
+      "name": "Brassy Brass",
+      "hex": "95640F",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Seasoned Construct Slayer"
+    },
+    {
+      "id": "eso:boethian-ash",
+      "name": "Boethian Ash",
+      "hex": "3D2750",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Seasoned Daedra Slayer"
+    },
+    {
+      "id": "eso:brigand-brown",
+      "name": "Brigand Brown",
+      "hex": "38180C",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Seasoned Humanoid Slayer"
+    },
+    {
+      "id": "eso:vinebeard-green",
+      "name": "Vinebeard Green",
+      "hex": "16772D",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Seasoned Nature Slayer"
+    },
+    {
+      "id": "eso:draugr-flesh",
+      "name": "Draugr Flesh",
+      "hex": "AADFE2",
+      "hue": "Iridescent",
+      "rarity": "Rare",
+      "esoUnlock": "Seasoned Undead Slayer"
+    },
+    {
+      "id": "eso:rank-1-materials",
+      "name": "Iron Grey",
+      "hex": "404C58",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 1 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-2-materials",
+      "name": "Steel Grey",
+      "hex": "676767",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 2 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-3-materials",
+      "name": "Orcish Olive",
+      "hex": "4C502F",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 3 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-4-materials",
+      "name": "Dwarven Bronze",
+      "hex": "76572B",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 4 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-5-materials",
+      "name": "Quicksilver Blue",
+      "hex": "5A676D",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 5 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-6-materials",
+      "name": "Tanned Hide",
+      "hex": "6F573B",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 6 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-7-materials",
+      "name": "Boiled Leather",
+      "hex": "4B321E",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 7 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-8-materials",
+      "name": "Malachite Green",
+      "hex": "3C554F",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 8 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-9-materials",
+      "name": "Ebony Black",
+      "hex": "270915",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 9 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:rank-10-materials",
+      "name": "Daedric Ember",
+      "hex": "630E0B",
+      "hue": "Mixed",
+      "rarity": "Material",
+      "esoUnlock": "Rank 10 Deconstruction Analyst"
+    },
+    {
+      "id": "eso:alikr-sand",
+      "name": "Alik'r Sand",
+      "hex": "C8B848",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:avocado-green",
+      "name": "Avocado Green",
+      "hex": "0B6915",
+      "hue": "Green",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:baked-ash-yam-orange",
+      "name": "Baked Ash Yam Orange",
+      "hex": "E67708",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:black-is-the-darkest-gray",
+      "name": "Black is the Darkest Gray",
+      "hex": "1A012F",
+      "hue": "Grey",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:bunny-nose-pink",
+      "name": "Bunny Nose Pink",
+      "hex": "FFDDDC",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:butterscotch-ale",
+      "name": "Butterscotch Ale",
+      "hex": "DA9D38",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:chorrol-cheddar",
+      "name": "Chorrol Cheddar",
+      "hex": "F8CA24",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:clover-lawn",
+      "name": "Clover Lawn",
+      "hex": "437A33",
+      "hue": "Green",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:comberry-crimson",
+      "name": "Comberry Crimson",
+      "hex": "9E070C",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:crown-gold",
+      "name": "Jarl's Gold",
+      "hex": "987908",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:elven-gore-red",
+      "name": "Elven Gore Red",
+      "hex": "A30F0F",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:frostfroth-gray",
+      "name": "Frostfroth Gray",
+      "hex": "E1EFF0",
+      "hue": "Grey",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:gilt-y-pleasure",
+      "name": "Gilt-y Pleasure",
+      "hex": "C6B880",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:guar-tongue-pink",
+      "name": "Guar Tongue Pink",
+      "hex": "F2AFE6",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:harlequin-heliotrope",
+      "name": "Harlequin Heliotrope",
+      "hex": "3A2169",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:hint-of-mint",
+      "name": "Hint of Mint",
+      "hex": "E0FAE3",
+      "hue": "Grey",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:hundred-pumpkin-orange",
+      "name": "Hundred Pumpkin Orange",
+      "hex": "D45226",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:iliac-bay-blue",
+      "name": "Iliac Bay Blue",
+      "hex": "919ED6",
+      "hue": "Blue",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:immaculate-white",
+      "name": "Immaculate White",
+      "hex": "FFFFFF",
+      "hue": "Grey",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:jolly-aubergine",
+      "name": "Jolly Aubergine",
+      "hex": "75469C",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:karth-ivy-green",
+      "name": "Karth Ivy Green",
+      "hex": "07770A",
+      "hue": "Green",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:lil-peep-yellow",
+      "name": "Lil' Peep Yellow",
+      "hex": "F0EF7E",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:pale-pink-gray",
+      "name": "Pale Pink Gray",
+      "hex": "FBF0F9",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:pastel-sky",
+      "name": "Pastel Sky",
+      "hex": "BCE8F4",
+      "hue": "Blue",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:patriots-blood",
+      "name": "Patriots' Blood",
+      "hex": "B30F07",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:red-sangria",
+      "name": "Red Sangria",
+      "hex": "741E1B",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:roasted-yellow-squash",
+      "name": "Roasted Yellow Squash",
+      "hex": "F2DA62",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:star-made-gold",
+      "name": "Star-Made Gold",
+      "hex": "F2D444",
+      "hue": "Yellow",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:surilie-wine",
+      "name": "Surilie Wine",
+      "hex": "9E2D8A",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:true-blue",
+      "name": "True Blue",
+      "hex": "0F1AA3",
+      "hue": "Blue",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:week-old-bruise-purple",
+      "name": "Week-Old Bruise Purple",
+      "hex": "460A79",
+      "hue": "Purple",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    },
+    {
+      "id": "eso:cranberry-red",
+      "name": "Cranberry Red",
+      "hex": "850F0F",
+      "hue": "Red",
+      "rarity": "Dye Stamp",
+      "esoUnlock": null
+    }
+  ]
+}

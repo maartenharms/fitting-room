@@ -1,6 +1,7 @@
 #include "Diagnostics.h"
 
 #include <cstring>
+#include <wchar.h>  // _wcsicmp: the name compare that cannot throw
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -20,22 +21,52 @@ namespace OS::Diagnostics {
         // The SOS-lineage incompatibility with DAV does not apply to this
         // design. Variant-swap + our style injection compose through the
         // rebuild pipeline (last-wins; our restore is field-disciplined).
-        static constexpr std::string_view kConflicting[]{
-            "SkyrimOutfitSystemSE.dll",
-            "SkyrimOutfitEquipmentSystemNG.dll",
-            "SkyrimVanitySystem.dll",
+        // ⚠⚠ THE NAME IS COMPARED WIDE AND REPORTED FROM THE TABLE, NEVER
+        // CONVERTED FROM THE DIRECTORY. `path::string()` narrows through the
+        // ACTIVE ANSI CODE PAGE and THROWS std::system_error on any filename
+        // that page cannot represent. This function runs inside the SKSE
+        // message handler at kDataLoaded with nothing above it catching, so
+        // that throw is a crash to desktop before the main menu, caused by a
+        // file we do not care about and never open.
+        //
+        // FIELD 2026-08-24: installing `GT - Softbody v3.37` did exactly that.
+        // It ships `新建文本文档.txt` in its SKSE/Plugins folder, cp1252 has no
+        // mapping for those characters, and every launch died here. Nothing
+        // about Fitting Room had changed.
+        //
+        // So the comparison is wide, which cannot fail, and a match reports the
+        // table's OWN narrow spelling rather than the one read from disk. A
+        // conflicting plugin's name is ASCII by construction because we wrote
+        // it here.
+        struct Conflict {
+            const wchar_t* wide;
+            const char*    narrow;
+        };
+        static constexpr Conflict kConflicting[]{
+            { L"SkyrimOutfitSystemSE.dll", "SkyrimOutfitSystemSE.dll" },
+            { L"SkyrimOutfitEquipmentSystemNG.dll", "SkyrimOutfitEquipmentSystemNG.dll" },
+            { L"SkyrimVanitySystem.dll", "SkyrimVanitySystem.dll" },
         };
 
-        std::error_code          ec;
-        std::vector<std::string> found;
-        for (const auto& entry : std::filesystem::directory_iterator("Data/SKSE/Plugins", ec)) {
+        // ⚠ AND THE WALK IS STEPPED BY HAND. A range-for over
+        // directory_iterator increments through the THROWING overload, so an
+        // entry that goes unreadable mid-walk is the same crash by a different
+        // route. The error_code form turns both ends of the walk into a return.
+        std::error_code                 ec;
+        std::filesystem::directory_iterator it{ "Data/SKSE/Plugins", ec };
+        if (ec) {
+            return;
+        }
+        const std::filesystem::directory_iterator end{};
+        std::vector<std::string>                   found;
+        for (; it != end; it.increment(ec)) {
             if (ec) {
                 return;
             }
-            const auto name = entry.path().filename().string();
-            for (auto candidate : kConflicting) {
-                if (_stricmp(name.c_str(), candidate.data()) == 0) {
-                    found.push_back(name);
+            const std::wstring name = it->path().filename().native();
+            for (const auto& candidate : kConflicting) {
+                if (_wcsicmp(name.c_str(), candidate.wide) == 0) {
+                    found.push_back(candidate.narrow);
                 }
             }
         }

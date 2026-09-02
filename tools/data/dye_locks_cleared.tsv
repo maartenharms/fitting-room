@@ -1,0 +1,33 @@
+dye_name	hex	eso_achievement	location_edid	location_name	confidence	reasoning
+Hollowfang Cruor	300503	Scalebreaker Delver	DLC1DimhollowCryptLocation	Dimhollow Crypt	high	Hollowfang is ESO's vampire clan; Dimhollow is where Skyrim's vampire line starts
+Voidstone Violet	110F31	Complete All Death Challenges	DLC1SoulCairnLocation	Soul Cairn	high	a death challenge, and the Soul Cairn is literally where the dead go
+Scrivener's Ultramarine	002433	Scribes of Fate Delver	DLC2ApocryphaLocation	Apocrypha	high	scribes; Apocrypha is Hermaeus Mora's library
+Hazardous Chartreuse	CAF079	Stonethorn Delver	BthardamzLocation	Bthardamz	high	toxic yellow-green, and Bthardamz is Peryite's plague ruin
+Magnus Setting Red	7C1E1A	Veteran White-Gold Tower	MzulftLocation	Mzulft	high	Magnus by name, and Mzulft holds the Oculory in the College's own Magnus quest
+Brightfern Green	054E0A	Lost Depths Delver	BlackreachLocation	Blackreach	high	the lost depths, and Blackreach glows green
+Dragonstar Red	762230	Time Trial: Hel Ra Citadel	ForelhostLocation	Forelhost	high	a dragon citadel, and Forelhost is a dragon priest's fortress
+Scaled Court Brown	A17F7C	Time Trial: Sanctum Ophidia	RagnvaldLocation	Ragnvald	high	the Scaled Court worship dragons; Ragnvald is a dragon priest lair
+Abyssal Beryl	3698C4	Maw of Lorkhaj Completed	SightlessPitLocation	Sightless Pit	high	a maw, a pit, and both are lightless
+Colossus Brass	A5773A	Halls of Fabrication Completed	AvanchnzelLocation	Avanchnzel	high	brass and fabrication both mean Dwemer machinery
+Sigil Orange	8B3E1B	City of Ash II Conqueror	DLC2KolbjornBarrowLocation	Kolbjorn Barrow	high	a city of ash; Kolbjorn is the barrow buried in Solstheim's ash
+Bloodroot Wine	BA2D11	Horns of the Reach Delver	HagsEndLocation	Hag's End	high	the Reach by name, and Hag's End is its signature ruin
+Nacreous Purple	7F6389	Dragon Bones Delver	VolskyggeLocation	Volskygge	medium	dragon bones, so a dragon priest barrow
+Akatosh's Scales Gold	BBBD7B	Complete All Speed Challenges	SkuldafnLocation	Skuldafn	medium	Akatosh is the dragon god; Skuldafn is the dragon temple
+Stalhrim Chrome	11BFAE	Wolfhunter Delver	FrostmereCryptLocation	Frostmere Crypt	medium	icy cyan; stalhrim is Solstheim ice but the colour reads frost
+Frozen Blood	D3C2BB	Harrowstorm Delver	YngolBarrowLocation	Yngol Barrow	medium	frozen, and Yngol drowned in the Sea of Ghosts
+Glacial Topaz	714E15	Wrathstone Delver	SaarthalLocation	Saarthal	medium	a buried stone under ice
+Bedlam Purple	1D1542	Cloudrest Conqueror	HighGateRuinsLocation	High Gate Ruins	medium	Cloudrest sits high; High Gate is Skyrim's high ruin
+Ophidian Jade	123E24	Sanctum Ophidia Completed	VolunruudLocation	Volunruud	medium	a sanctum; Volunruud is a sealed tomb
+Dolorous Indigo	4D265E	Ossein Cage Vanquisher	GeirmundsHallLocation	Geirmund's Hall	medium	ossein is bone; Geirmund's Hall is a bone-strewn island tomb
+Apricot Outrage	75240A	Blackrose Prison Vanquisher	RannveigsFastLocation	Rannveig's Fast	medium	a prison, and Rannveig's Fast is Skyrim's trap-cell ruin
+Scintillating Scarlet	B11305	Flames of Ambition Delver	ShriekwindBastionLocation	Shriekwind Bastion	low	arbitrary; the flame theme has no clean Skyrim ruin
+Moonshadow Orchid	AE9DBA	Waking Flame Delver	ArcwindPointLocation	Arcwind Point	low	Moonshadow is Azura's realm; Arcwind Point is only a loose fit
+Putrid Flesh Teal	418B60	Veteran Imperial City Prison	SnaplegCaveLocation	Snapleg Cave	low	rot and hagravens; the prison half does not carry over
+Drowned Cobalt	032D03	Ascending Tide Delver	DeadMensRespiteLocation	Dead Men's Respite	low	drowned dead; note the hex is green, not cobalt, in the source pack
+Glenbridge Green	649A5D	Rockgrove Vanquisher	UstengravLocation	Ustengrav	low	a grove of stone; arbitrary
+Mundus Blue	6F83AA	Weekly Trial Complete	KorvanjundLocation	Korvanjund	low	no theme at all in the achievement, so this is a free pick
+Lucentshard Azure	119D91	Lucent Citadel Vanquisher	MzinchaleftLocation	Mzinchaleft	low	lucent shards read Dwemer; otherwise arbitrary
+Pyandonean Purple	801380	Dreadsail Reef Vanquisher	IrkngthandLocation	Irkngthand	low	Pyandonea is the Maormer homeland; nothing in Skyrim matches
+Sanity's Orchid	693867	Sanity's Edge Vanquisher	AnsilvundLocation	Ansilvund	low	madness; Ansilvund is a haunting rather than a madness
+Aurora Green	238F62	Time Trial: Aetherian Archive	NchuandZelLocation	Nchuand-Zel	low	pairs with Julianos White as the same archive; arbitrary otherwise
+Celestial Violet	7E6A84	Time Trial: Weekly	AngarvundeLocation	Angarvunde	low	free pick, same as Mundus Blue

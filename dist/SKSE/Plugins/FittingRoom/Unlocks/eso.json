@@ -1,0 +1,526 @@
+// Fitting Room, the shipped unlock rules.
+//
+// A dye resolves to its own entry in "dyes" if it has one, else to its
+// rarity's entry in "tiers", else to NO RULE. No rule means an empty
+// condition list, and an empty condition list is SATISFIED, so anything that
+// falls through here is free at level 1 and permanent once a save has stored
+// it. Every gap in this file spends a colour rather than withholding one.
+//
+// WHERE THE NUMBERS COME FROM. Every colour in ../Dyes/eso.json carries an
+// "esoUnlock" naming the achievement that awarded it in ESO, and 274 of the
+// 306 have one. Nothing evaluates that string. It is the raw material for
+// this file, and until 2026-08-02 it was thrown away: five colours were mined
+// out of it by hand and the other 301 got their rarity bucket and nothing
+// else. That is how all three enchanting rune colours came to be free at
+// level 1 while Master Enchanter asked for Enchanting 100.
+//
+// There is almost nothing to gate by family. 261 distinct achievements across
+// 274 colours, and only two of them repeat: Rank 1 to 10 Deconstruction
+// Analyst, and Level 10 to 50 Hero. So this is not family gating. Each rule
+// below was read off what its own achievement says the character DID and
+// mapped to the nearest thing a Skyrim character does. Where the achievement
+// carries an intensity word, Apprentice and Expert and Legendary and Master
+// and Grand and Seasoned, that word placed it against the other colours on
+// the same skill.
+//
+// RARITY DECIDES WHETHER A COLOUR IS GATED. THE ACHIEVEMENT DECIDES HOW. The
+// 64 Commons are the starting palette and the design says so in as many
+// words: a level three character with the tier defaults sees the Commons. So
+// they keep "always" apart from thirteen, and every Uncommon, Rare and
+// Material colour carries a rule of its own instead, bar the three named
+// further down that are still waiting on a quest form id.
+//
+// 220 overrides is a lot for a hand written file. It is also the only thing
+// that can break a tier cliff, because a tier is ONE threshold for a whole
+// rarity and everything left on it arrives together. Gating by rarity alone
+// put 108 colours on level 15 and 84 on level 35, which between them was 89
+// percent of everything a character earned after creation, and levels 16 to
+// 34 handed out two colours in total.
+//
+// Measured through the real loaders against the real packs, counting what a
+// character holds at each level with every skill at twice their level and the
+// deed at zero:
+//
+//   level     1   5  10  15  20  25  30  35  40  45  50
+//   before   66  66  67 174 175 178 179 263 266 266 282
+//   after    63  63  68  80  95 115 140 168 213 246 282
+//
+// No single threshold in here now grants more than 20 colours, against 108 at
+// level 15 before. A maxed character who has dyed a hundred channels still
+// reaches all 318, and one who has never dyed anything still reaches 282, so
+// nothing became unreachable.
+//
+// AN INTENSITY WORD ORDERS A LADDER, IT DOES NOT SET A NUMBER. ESO spends
+// "Master" on a fishing achievement and on the top of the blacksmithing line
+// alike, so the word decides where a colour sits among the OTHER colours that
+// share its skill and nothing more. Within Smithing that reads Master of
+// Refinement 60, Master Deconstructor 75, Master Jewelry Crafter 75, Legendary
+// Jewelry Crafter 95, Master Blacksmith 100.
+//
+// "Legendary" sits below "Master" in the blacksmith and the clothier pair,
+// because that is where the first pass already had them. IT DOES NOT REACH THE
+// JEWELLERY PAIR, and following it there cost the one ordering a player can
+// actually check. Legendary Jewelry Crafter is the Rare colour and Master
+// Jewelry Crafter is the Uncommon one, so 80 against 90 sold the rarer swatch
+// cheaper than the commoner one, on screen, side by side. In ESO the two words
+// are not even on one axis: Legendary is a QUALITY tier and Master is a RANK.
+// RARITY OUTRANKS THE INTENSITY WORD wherever the two disagree, because rarity
+// is a thing the palette shows and the achievement name is not.
+//
+// AN ACHIEVEMENT REPEATED ACROSS THE THREE ALLIANCES IS ONE GATE, NOT THREE.
+// Pact, Dominion and Covenant Fisherman are the same fishing achievement done
+// in three alliances, and 30, 32 and 34 made three colours that always arrive
+// together look like a ladder that was walked. They share Alchemy 30.
+//
+// THE SKILL RULES ARE NOT LEVEL RULES IN DISGUISE. A character who takes
+// Smithing to 100 by level 12 has done the thing the smithing colours record
+// and gets them at level 12. That is the point: the palette is meant to read
+// as where the character has been, not as a second experience bar. Any curve
+// measured with skills tracking level is therefore one path through this
+// file, and a crafter or a thief walks a different one.
+//
+// NINE COLOURS ARE DELIBERATELY LEFT ON THEIR RARITY TIERS.
+//
+//   eso:fighters-guild-red    Associate of the Fighters Guild
+//   eso:mages-guild-blue      Student of the Mages Guild
+//   eso:dried-blood-brown     Recruit of the Undaunted
+//   eso:eyevea-blue           Arch-Mage
+//   eso:wolfs-fur-brown       Lycanthropy
+//   eso:noxophilic-black      Vampirism
+//   eso:lamaes-white          Vampirism Master
+//   eso:lycanthrope-gray      Lycanthropy Master
+//   eso:soul-shriven-gray     Soul Shriven in Coldharbour
+//
+// Joining a guild, catching lycanthropy and waking up in Coldharbour are all
+// things only a "quest" condition can ask about, and NO QUEST FORM ID IN THIS
+// PROJECT HAS BEEN CHECKED AGAINST THE LIVE GAME. An unverified id parses,
+// never matches, and locks its colour for the life of the character with no
+// log line anywhere, which is worse than the tier they sit on now. They wait
+// for a pass that confirms each one in the CK or in xEdit. Six of the nine are
+// Common, so they are free at level 1 until that happens; eso:eyevea-blue
+// resolves by the Uncommon tier, and eso:lamaes-white and eso:lycanthrope-gray
+// by the Rare one.
+//
+// FOUR MORE COLOURS CARRY THE SAME THEME AND ARE GATED ANYWAY, because
+// Fighters Guild Skill Master, Mages Guild Skill Master, Undaunted Skill
+// Master and Fighters Guild Veteran name a SKILL LINE rather than a
+// membership, and a skill line has an honest Skyrim analogue. Undaunted Skill
+// Master sat on the list above until 2026-08-02, filed as a guild because the
+// Undaunted are one. The words that decide are "Skill Master", not the name in
+// front of them, and its two siblings were already gated at 100.
+//
+// THE SCHEMA IS CLOSED. "tiers" and "dyes" at the root and nothing else: any
+// other top level key fails the whole file, which freezes promotion until it
+// is removed. That is the only way a section misspelled "dye" can be caught,
+// since a missing section is indistinguishable from one an author never
+// wrote. So there is no "_comment" key in here, and none is needed: the
+// reader keeps allowComments on, and DyeRulesTests pins five placements of
+// real // and /* */ comments as shapes that must keep loading clean.
+//
+// THE TIER LOOKUP IS AN EXACT BYTE MATCH on the rarity string the dye pack
+// carries. "Dye Stamp" has a space in it, and "Dye stamp" or "DyeStamp" here
+// would match no tier at all, which frees all 32 of them permanently rather
+// than failing anything. tools/check_dye_rules.py refuses that, and refuses a
+// skill threshold a new character already meets, because a character starts
+// every skill at 15 and racial bonuses reach 25.
+//
+// "channelsDyed" IS COUNTED BY THE MOD ITSELF, one per channel an Apply
+// actually paints, and its name is matched as exactly as a rarity is. A deed
+// clause naming a counter nothing produces is NOT rejected: it parses, it
+// reads 0 for the rest of that character's life, and the colour it gates never
+// unlocks, with no log line anywhere. kDeedChannelsDyed in src/DyeUnlocks.h is
+// the only spelling that counts anything, and the same script checks every
+// deed name in here against it.
+//
+// AN OVERRIDE KEY THAT NO DYE CLAIMS IS INERT, not an error, so a typo here
+// silently drops its colour onto its rarity tier. Thirteen of the 220
+// overrides below sit on Common dyes, and the Common tier is "always". The
+// same script checks every key against the packs in ../Dyes, and refuses any
+// override weaker than the tier it displaces on a dimension the two share.
+//
+// AN OVERRIDE MAY NOT ASK FOR LESS THAN ITS OWN TIER, which is why the
+// Uncommon tier reads 10 rather than the 15 it used to. The earliest Uncommon
+// band is the three starter islands at level 10, and a tier above its own
+// lowest band would have had the checker refuse them. One colour resolves by
+// that tier now, eso:eyevea-blue, and it comes five levels earlier than it
+// did. The Rare tier keeps 35 because 35 is still the earliest Rare band.
+{
+  "tiers": {
+    "Common":    [ { "type": "always" } ],
+    "Uncommon":  [ { "type": "level", "min": 10 } ],
+    "Rare":      [ { "type": "level", "min": 35 } ],
+    "Material":  [ { "type": "skill", "skill": "Smithing", "min": 30 } ],
+    "Dye Stamp": [ { "type": "deed", "deed": "channelsDyed", "min": 25 } ]
+  },
+  "dyes": {
+    // The level ladder. "Level N Hero" is the one place ESO states a number,
+    // so these five keep the number they were given.
+    "eso:novice-tan":      [ { "type": "level", "min": 10 } ],  // Level 10 Hero
+    "eso:apprentice-blue": [ { "type": "level", "min": 20 } ],  // Level 20 Hero
+    "eso:adept-purple":    [ { "type": "level", "min": 30 } ],  // Level 30 Hero
+    "eso:expert-gray":     [ { "type": "level", "min": 40 } ],  // Level 40 Hero
+    "eso:master-gold":     [ { "type": "level", "min": 50 } ],  // Level 50 Hero
+
+    // The dyer's own deed, the only counter this mod produces. Black and white
+    // are the two colours every palette needs, so they are what using the
+    // feature pays for: ten channels for the near black and the near
+    // white, a hundred for the pure ones. Their ESO achievements are
+    // crafting ones and this is the one place the mapping ignores them on
+    // purpose, because the deed is the only condition that can say the
+    // player used the dye station at all.
+    "eso:obsidian-black": [ { "type": "deed", "deed": "channelsDyed", "min": 10 } ],  // Expert Deconstructor
+    "eso:birch-white":    [ { "type": "deed", "deed": "channelsDyed", "min": 10 } ],  // Expert of Refinement
+    "eso:void-pitch":     [ { "type": "deed", "deed": "channelsDyed", "min": 100 } ],  // Honor to the Spiritblood
+    "eso:marble-white":   [ { "type": "deed", "deed": "channelsDyed", "min": 100 } ],  // Excavation Virtuoso
+
+    // Rank 1 to 10 Deconstruction Analyst, the only real ladder in the data and
+    // the ten Material colours. Thirty plus eight a rank, the tenth pulled
+    // back to 100 so a Legendary reset still proves it was reached.
+    "eso:rank-1-materials":  [ { "type": "skill", "skill": "Smithing", "min": 30 } ],  // Rank 1 Deconstruction Analyst
+    "eso:rank-2-materials":  [ { "type": "skill", "skill": "Smithing", "min": 38 } ],  // Rank 2 Deconstruction Analyst
+    "eso:rank-3-materials":  [ { "type": "skill", "skill": "Smithing", "min": 46 } ],  // Rank 3 Deconstruction Analyst
+    "eso:rank-4-materials":  [ { "type": "skill", "skill": "Smithing", "min": 54 } ],  // Rank 4 Deconstruction Analyst
+    "eso:rank-5-materials":  [ { "type": "skill", "skill": "Smithing", "min": 62 } ],  // Rank 5 Deconstruction Analyst
+    "eso:rank-6-materials":  [ { "type": "skill", "skill": "Smithing", "min": 70 } ],  // Rank 6 Deconstruction Analyst
+    "eso:rank-7-materials":  [ { "type": "skill", "skill": "Smithing", "min": 78 } ],  // Rank 7 Deconstruction Analyst
+    "eso:rank-8-materials":  [ { "type": "skill", "skill": "Smithing", "min": 86 } ],  // Rank 8 Deconstruction Analyst
+    "eso:rank-9-materials":  [ { "type": "skill", "skill": "Smithing", "min": 94 } ],  // Rank 9 Deconstruction Analyst
+    "eso:rank-10-materials": [ { "type": "skill", "skill": "Smithing", "min": 100 } ],  // Rank 10 Deconstruction Analyst
+
+    // THE NINETEEN fr: METALS, the other half of the Material family.
+    //
+    // They had no rule at all and fell to the tier, so ONE Smithing check at
+    // 30 handed all nineteen over at once while the ten above already
+    // laddered. That is what this block fixes: the two families now read as
+    // one ladder from 30 to 96, and the rungs are set BETWEEN the rank rungs
+    // above rather than on top of them, so a Smithing level rarely pays out
+    // twice.
+    //
+    // ⚠ THESE NINETEEN HAVE NO esoUnlock AND THERE IS NO SOURCE MATERIAL FOR
+    // THEM. Every colour in ../Dyes/eso.json carries the ESO achievement that
+    // awarded it, and the whole method described at the top of this file is
+    // reading that string. ../Dyes/pearl.json carries no such field for any of
+    // these: they are Fitting Room's own inventions, not ESO imports. So the
+    // ladder below is AUTHORED, not derived, and it is commented as authored.
+    // Do not read it as if it were mined out of anything.
+    //
+    // ⚠⚠ ONE REQUIREMENT PER COLOUR. WHERE A COLOUR NAMES A QUEST OR A PLACE,
+    // THAT IS THE WHOLE RULE (user 2026-08-11). These ten used to carry a
+    // Smithing clause AND the deed, because conditions in one rule are all_of
+    // (DyeConditions.cpp) and pairing them with the tier's own dimension let
+    // check_dye_rules.py PROVE the override tightened rather than filing ten
+    // entries under "taken on trust". That proof was worth having and it is
+    // not worth what it costs the player: a locked swatch that recites two
+    // lines is asking you to hold two things in your head to understand one
+    // colour, and the second line is always the duller of the two. Nobody
+    // remembers a colour as "Smithing 82"; they remember it as the one the
+    // Brotherhood pays you.
+    //
+    // What that gives up, stated rather than glossed: on the Smithing axis
+    // alone these ten are now a LOOSENING against the Material tier's 30, so
+    // check_dye_rules.py reports them as deliberate exceptions instead of
+    // proving them. It is not a loosening in practice - a questline is a
+    // longer road than a skill level - but the checker cannot know that, so it
+    // stays honest about which it can prove. It does enforce the shape:
+    // a special clause may not share a rule with a level or a skill.
+    //
+    // ⚠ EVERY FORM ID BELOW WAS RESOLVED FROM AN EDITOR ID THROUGH
+    // tools/data/form_index.json, which make_form_index.py builds by reading
+    // the game's own masters. None of them is typed from memory. That matters
+    // more here than anywhere else in this file: an unverified id parses,
+    // never matches, and locks its colour for the life of the character with
+    // no log line - which is exactly why the nine guild colours further up are
+    // still waiting on the tier instead. Checking one is cheap now, so these
+    // do not wait. (DB09 is 'To Kill an Empire', not the Brotherhood's last
+    // quest - that is DB11. Guessing would have locked Black Opal forever.)
+    //
+    // ⚠ AND IT CHANGES WHAT A MAXED CHARACTER REACHES. The note at the top of
+    // this file says a maxed character who has dyed a hundred channels still
+    // reaches all 318. That is no longer true and should not be repaired by
+    // weakening these: ten of the nineteen now want a questline, so a
+    // character who never joined the Brotherhood does not get Black Opal.
+    // Unlocks are add-only and travel account-wide, so one character doing the
+    // questline hands the colour to every other character on the account - the
+    // requirement is per ACCOUNT in practice, which is what makes it fair to
+    // ask for a questline at all.
+    //
+    // Burnished Gold sits at the tier's own 30. It is the tease: the plainest
+    // honest metal, reachable exactly when the Material tier used to hand over
+    // everything, so the player who reaches Smithing 30 gets ONE metal and
+    // eighteen padlocked swatches that each already name what they want.
+    //
+    // ⚠ THE NINE PLAIN RUNGS STILL LADDER AND THE TEN DEED RUNGS NO LONGER DO.
+    // 36 through 88 used to interleave the two, so the numbers rose past the
+    // quests. They do not any more: a colour that names a questline is reached
+    // when that questline is done and at no particular Smithing level, which is
+    // the point of naming it. Read the plain rungs as their own ladder and the
+    // ten below as ten separate errands.
+    "fr:burnished-gold":  [ { "type": "skill", "skill": "Smithing", "min": 30 } ],  // AUTHORED. The tease: the tier's own number, one metal, no second clause
+    "fr:bronze":          [ { "type": "quest", "plugin": "Skyrim.esm", "formId": "01CEF6" } ],  // AUTHORED. C06 Glory of the Dead - the Skyforge is the Companions'
+    "fr:beetle-shell":    [ { "type": "locationCleared", "plugin": "Dragonborn.esm", "formId": "0142BB" } ],  // AUTHORED. Kolbjorn Barrow - dug out of the ash, where the beetles are
+    "fr:sterling-silver": [ { "type": "quest", "plugin": "Dawnguard.esm", "formId": "007C25" } ],  // AUTHORED. DLC1VQ08 Kindred Judgment - silver is what the Dawnguard answer vampires with
+    "fr:rose-gold":       [ { "type": "skill", "skill": "Smithing", "min": 46 } ],  // AUTHORED. Plain rung, between rank 2 and rank 3
+    "fr:champagne-frost": [ { "type": "skill", "skill": "Smithing", "min": 48 } ],  // AUTHORED. Plain rung
+    "fr:molten-copper":   [ { "type": "locationCleared", "plugin": "Skyrim.esm", "formId": "018EE8" } ],  // AUTHORED. Blackreach - the deepest forge-light in the game
+    "fr:moonlit-nacre":   [ { "type": "quest", "plugin": "Dawnguard.esm", "formId": "002853" } ],  // AUTHORED. DLC1VQ07 Touching the Sky - Auriel's bow, and the moon on shell
+    "fr:cyan-gleam":      [ { "type": "skill", "skill": "Smithing", "min": 56 } ],  // AUTHORED. Plain rung
+    "fr:pure-gold":       [ { "type": "quest", "plugin": "Skyrim.esm", "formId": "0D7D69" } ],  // AUTHORED. TGLeadership Under New Management - the guild's own gold, and its last quest
+    "fr:rose-quartz":     [ { "type": "skill", "skill": "Smithing", "min": 62 } ],  // AUTHORED. Plain rung
+    "fr:starlight":       [ { "type": "quest", "plugin": "Skyrim.esm", "formId": "01F258" } ],  // AUTHORED. MG08 The Eye of Magnus - the College ends looking at a star
+    "fr:bubblegum":       [ { "type": "skill", "skill": "Smithing", "min": 68 } ],  // AUTHORED. Plain rung
+    "fr:peacock":         [ { "type": "skill", "skill": "Smithing", "min": 72 } ],  // AUTHORED. Plain rung
+    "fr:black-and-blue":  [ { "type": "skill", "skill": "Smithing", "min": 74 } ],  // AUTHORED. Plain rung
+    "fr:oil-slick":       [ { "type": "quest", "plugin": "Skyrim.esm", "formId": "04D8D6" } ],  // AUTHORED. DA02 Boethiah's Calling - ebony is the oily black one
+    "fr:black-opal":      [ { "type": "quest", "plugin": "Skyrim.esm", "formId": "01EA59" } ],  // AUTHORED. DB11 Hail Sithis! - the Brotherhood's last quest, not DB09
+    "fr:dragonfly-wing":  [ { "type": "skill", "skill": "Smithing", "min": 88 } ],  // AUTHORED. Plain rung
+    "fr:abyssal-pearl":   [ { "type": "quest", "plugin": "Dragonborn.esm", "formId": "0179D7" } ],  // AUTHORED. DLC2MQ06 At the Summit of Apocrypha - the deepest thing in the palette
+
+    // Smithing: forging, refining, traits, styles, jewellery.
+    "eso:nirncrux-red":             [ { "type": "skill", "skill": "Smithing", "min": 40 } ],  // Learn the Nirnhoned Trait
+    "eso:weathered-keystone-green": [ { "type": "skill", "skill": "Smithing", "min": 45 } ],  // Mining Tunes
+    "eso:moonstone-white":          [ { "type": "skill", "skill": "Smithing", "min": 50 } ],  // Trait Master
+    "eso:superior-blue":            [ { "type": "skill", "skill": "Smithing", "min": 55 } ],  // Superior Attire
+    "eso:polished-steel-gray":      [ { "type": "skill", "skill": "Smithing", "min": 60 } ],  // Master of Refinement
+    "eso:dwarven-brass":            [ { "type": "skill", "skill": "Smithing", "min": 65 } ],  // Dwemer Style Master
+    "eso:epic-violet":              [ { "type": "skill", "skill": "Smithing", "min": 68 } ],  // Epic Attire
+    "eso:motif-master-brown":       [ { "type": "skill", "skill": "Smithing", "min": 72 } ],  // Rare Style Master
+    "eso:craftmaster-gold":         [ { "type": "skill", "skill": "Smithing", "min": 75 } ],  // Master Deconstructor
+    "eso:earthforge-iron-gray":     [ { "type": "skill", "skill": "Smithing", "min": 75 } ],  // Legendary Blacksmith
+    // THE JEWELLERY PAIR RUNS THE OTHER WAY ROUND TO THE REST. The Uncommon
+    // colour is the cheaper one and the Rare colour is the dearer one, which
+    // is the only ordering a player holding both can actually see. It read
+    // Master 90 against Legendary 80 until 2026-08-02, on the "Legendary sits
+    // below Master" precedent the blacksmith and clothier pairs set. That
+    // precedent does not reach this pair: in ESO, Legendary is a QUALITY tier
+    // and Master is a RANK, so the two words are not on one axis here, and
+    // following them put the Rare below the Uncommon.
+    "eso:antique-silver":           [ { "type": "skill", "skill": "Smithing", "min": 75 } ],  // Master Jewelry Crafter
+    "eso:divine-gold":              [ { "type": "skill", "skill": "Smithing", "min": 95 } ],  // Legendary Jewelry Crafter
+    "eso:smith-steel-blue":         [ { "type": "skill", "skill": "Smithing", "min": 100 } ],  // Master Blacksmith
+
+    // Enchanting: the three rune types, then the master.
+    "eso:aspect-red":          [ { "type": "skill", "skill": "Enchanting", "min": 30 } ],  // Aspect
+    "eso:potency-blue":        [ { "type": "skill", "skill": "Enchanting", "min": 40 } ],  // Potency
+    "eso:essence-green":       [ { "type": "skill", "skill": "Enchanting", "min": 50 } ],  // Essence
+    "eso:enchanter-tangerine": [ { "type": "skill", "skill": "Enchanting", "min": 100 } ],  // Master Enchanter
+
+    // Alchemy: gathering, cooking, brewing, poisons, and every fishing
+    // achievement, which has no closer Skyrim verb than filling a satchel.
+    //
+    // THE THREE ALLIANCE FISHERMEN SHARE ONE GATE. Pact, Dominion and Covenant
+    // Fisherman are the same achievement in three alliances, so 30 and 32 and
+    // 34 was three simultaneous unlocks dressed up as a ladder: no character
+    // ever sat between them long enough to notice an order. One honest
+    // threshold says what the three of them actually are.
+    "eso:pact-fisher-red":          [ { "type": "skill", "skill": "Alchemy", "min": 30 } ],  // Pact Fisherman
+    "eso:dominion-fisher-yellow":   [ { "type": "skill", "skill": "Alchemy", "min": 30 } ],  // Dominion Fisherman
+    "eso:covenant-fisher-blue":     [ { "type": "skill", "skill": "Alchemy", "min": 30 } ],  // Covenant Fisherman
+    "eso:nibenay-trout-green":      [ { "type": "skill", "skill": "Alchemy", "min": 50 } ],  // Cyrodiil Angler
+    "eso:recipe-reaper-red":        [ { "type": "skill", "skill": "Alchemy", "min": 55 } ],  // Recipe Compendium
+    "eso:viridian-venom":           [ { "type": "skill", "skill": "Alchemy", "min": 65 } ],  // Toxicologist
+    "eso:slaughterfish-flesh-pink": [ { "type": "skill", "skill": "Alchemy", "min": 65 } ],  // Master Fisher
+    "eso:provisioner-brown":        [ { "type": "skill", "skill": "Alchemy", "min": 70 } ],  // Master Provisioner
+    "eso:nirnroot-gray":            [ { "type": "skill", "skill": "Alchemy", "min": 80 } ],  // Botanist
+    // Brewing is alchemy, not rhetoric. This one sat on Speech 100 from the
+    // first pass, inherited rather than read off Master Chef, and it is the
+    // only rule in here the esoUnlock sweep did not author.
+    "eso:brewers-ale-brown":        [ { "type": "skill", "skill": "Alchemy", "min": 100 } ],  // Master Chef
+    "eso:kresh-flower-red":         [ { "type": "skill", "skill": "Alchemy", "min": 100 } ],  // Grand Master Crafting Harvester
+    "eso:alchemist-bilious":        [ { "type": "skill", "skill": "Alchemy", "min": 100 } ],  // Master Alchemist
+
+    // Armour: the clothier line, and the two colours a tank earns.
+    "eso:ironweed-violet":   [ { "type": "skill", "skill": "LightArmor", "min": 75 } ],  // Legendary Clothier
+    "eso:clothier-purple":   [ { "type": "skill", "skill": "LightArmor", "min": 100 } ],  // Master Clothier
+    "eso:brassy-brass":      [ { "type": "skill", "skill": "HeavyArmor", "min": 80 } ],  // Seasoned Construct Slayer
+    "eso:adamantine-silver": [ { "type": "skill", "skill": "HeavyArmor", "min": 100 } ],  // Dragonstar Arena Conqueror
+
+    // Weapons. Each of the six creature lines pairs a plain Slayer with a
+    // Seasoned one; the plain half is Common and stays free, so only the
+    // Seasoned half is gated.
+    "eso:brigand-brown":      [ { "type": "skill", "skill": "OneHanded", "min": 80 } ],  // Seasoned Humanoid Slayer
+    "eso:blademasters-mauve": [ { "type": "skill", "skill": "OneHanded", "min": 85 } ],  // Maelstrom Arena Champion
+    "eso:syffim-red":         [ { "type": "skill", "skill": "OneHanded", "min": 100 } ],  // Fighters Guild Skill Master
+    "eso:stendarr-white":     [ { "type": "skill", "skill": "TwoHanded", "min": 75 } ],  // Master Monster Slayer
+    "eso:anu-white":          [ { "type": "skill", "skill": "TwoHanded", "min": 90 } ],  // Seasoned Monster Slayer
+    "eso:champion-red":       [ { "type": "skill", "skill": "TwoHanded", "min": 100 } ],  // Fighters Guild Veteran
+    "eso:mastic-yellow":      [ { "type": "skill", "skill": "Archery", "min": 75 } ],  // Legendary Woodworker
+    "eso:vinebeard-green":    [ { "type": "skill", "skill": "Archery", "min": 80 } ],  // Seasoned Nature Slayer
+    "eso:woodworker-yellow":  [ { "type": "skill", "skill": "Archery", "min": 100 } ],  // Master Woodworker
+    "eso:tower-white-gold":   [ { "type": "skill", "skill": "Block", "min": 60 } ],  // Blockbuster
+    "eso:warriors-steel":     [ { "type": "skill", "skill": "Block", "min": 100 } ],  // Hel Ra Citadel Completed
+    // The third Skill Master, and it belongs beside the other two rather than
+    // on the deferred list it sat on until 2026-08-02. Undaunted Skill Master
+    // was read as a guild, needing an unverified quest form id, and it is not:
+    // it is the top of ESO's dungeon-delving SKILL LINE, exactly the shape
+    // Fighters Guild Skill Master and Mages Guild Skill Master are, and both
+    // of those are gated at 100. Block, because delving is taking a beating
+    // and continuing.
+    "eso:undaunted-bronze":   [ { "type": "skill", "skill": "Block", "min": 100 } ],  // Undaunted Skill Master
+
+    // The five schools.
+    "eso:spectral-blue":         [ { "type": "skill", "skill": "Alteration", "min": 50 } ],  // Grand Necromancer Slayer
+    "eso:sorcerers-bane-violet": [ { "type": "skill", "skill": "Illusion", "min": 50 } ],  // Grand Sorcerer Slayer
+    "eso:soul-gem-purple":       [ { "type": "skill", "skill": "Conjuration", "min": 50 } ],  // Chasing Shadows
+    "eso:necromancer-blue":      [ { "type": "skill", "skill": "Conjuration", "min": 75 } ],  // Radiant Champion
+    "eso:boethian-ash":          [ { "type": "skill", "skill": "Conjuration", "min": 90 } ],  // Seasoned Daedra Slayer
+    "eso:moras-mauve":           [ { "type": "skill", "skill": "Destruction", "min": 75 } ],  // Grand Arcanist Slayer
+    "eso:arcane-blue":           [ { "type": "skill", "skill": "Destruction", "min": 100 } ],  // Mages Guild Skill Master
+    "eso:draugr-flesh":          [ { "type": "skill", "skill": "Restoration", "min": 80 } ],  // Seasoned Undead Slayer
+    "eso:entoloma-blue":         [ { "type": "skill", "skill": "Restoration", "min": 100 } ],  // Truly Legendary
+
+    // Thief and talker.
+    "eso:adventurer-brown":              [ { "type": "skill", "skill": "Lockpicking", "min": 40 } ],  // Adventurer
+    "eso:10-year-anniversary-gold-leaf": [ { "type": "skill", "skill": "Lockpicking", "min": 45 } ],  // Commemorative Safebox Looter
+    "eso:indomitable-violet":            [ { "type": "skill", "skill": "Lockpicking", "min": 72 } ],  // Indomitable Adventurer
+    "eso:pit-daemons-poison":            [ { "type": "skill", "skill": "Lockpicking", "min": 80 } ],  // Grand Relic Hunter
+    "eso:master-adventurer-purple":      [ { "type": "skill", "skill": "Lockpicking", "min": 100 } ],  // Master Adventurer
+    "eso:forest-footpad-green":          [ { "type": "skill", "skill": "Sneak", "min": 60 } ],  // Sneak Thief Extraordinaire
+    "eso:shadowfoot-gray":               [ { "type": "skill", "skill": "Sneak", "min": 100 } ],  // Felonious Recompense
+    "eso:pillager-purple":               [ { "type": "skill", "skill": "Pickpocket", "min": 60 } ],  // Epic Acquirer
+    "eso:ransacker-blue":                [ { "type": "skill", "skill": "Pickpocket", "min": 100 } ],  // Superior Ransacker
+    "eso:scholarium-cerulean":           [ { "type": "skill", "skill": "Speech", "min": 40 } ],  // Pen is Mightier than the Sword
+    "eso:cardsharp-crimson":             [ { "type": "skill", "skill": "Speech", "min": 60 } ],  // Roister's Club Master
+    "eso:contraband-violet":             [ { "type": "skill", "skill": "Speech", "min": 70 } ],  // Black Market Mogul
+    "eso:patrons-gold":                  [ { "type": "skill", "skill": "Speech", "min": 80 } ],  // Tales of Tribute Master
+
+    // Uncommon, by level: zones and stories in roughly the order ESO puts them.
+    // Nothing below 10, which is the Uncommon tier.
+    "eso:khenarthi-red":                    [ { "type": "level", "min": 10 } ],  // Khenarthi's Roost Pathfinder
+    "eso:hunding-gold":                     [ { "type": "level", "min": 10 } ],  // Stros M'kai and Betnikh Explorer
+    "eso:netch-jelly-blue":                 [ { "type": "level", "min": 10 } ],  // Bleakrock and Bal Foyen Explorer
+    "eso:vine-green":                       [ { "type": "level", "min": 12 } ],  // Glenumbra Master Explorer
+    "eso:maormer-eyes-gray":                [ { "type": "level", "min": 12 } ],  // Auridon Master Explorer
+    "eso:telvanni-brown":                   [ { "type": "level", "min": 12 } ],  // Stonefalls Master Explorer
+    "eso:new-life-cerulean":                [ { "type": "level", "min": 14 } ],  // New Life Celebrant
+    "eso:deceit-orange":                    [ { "type": "level", "min": 14 } ],  // Easy as Pie
+    "eso:graht-bark-brown":                 [ { "type": "level", "min": 15 } ],  // Grahtwood Master Explorer
+    "eso:riften-copper":                    [ { "type": "level", "min": 15 } ],  // Shattered Remnants
+    "eso:indoril-blue":                     [ { "type": "level", "min": 16 } ],  // Deshaan Master Explorer
+    "eso:falinesti-green":                  [ { "type": "level", "min": 16 } ],  // Matchmaker
+    "eso:ruckus-rust":                      [ { "type": "level", "min": 17 } ],  // Ruckus Favored
+    "eso:glittering-gold":                  [ { "type": "level", "min": 17 } ],  // Goad Favored
+    "eso:thousand-eyes-ichor":              [ { "type": "level", "min": 17 } ],  // Eyes Favored
+    "eso:wyrd-tree-green":                  [ { "type": "level", "min": 18 } ],  // Ritual Destruction
+    "eso:10-year-anniversary-ivory":        [ { "type": "level", "min": 19 } ],  // Commemorative Mundus Missionary
+    "eso:flame-knight-light-red":           [ { "type": "level", "min": 20 } ],  // Stormhaven Master Explorer
+    "eso:dibellas-blush":                   [ { "type": "level", "min": 20 } ],  // Greenshade Master Explorer
+    "eso:silvenar-green":                   [ { "type": "level", "min": 21 } ],  // Malabal Tor Master Explorer
+    "eso:hist-green":                       [ { "type": "level", "min": 21 } ],  // Egg and Root
+    "eso:ashabah-hood-gray":                [ { "type": "level", "min": 22 } ],  // Alik'r Desert Master Explorer
+    "eso:welkynd-blue":                     [ { "type": "level", "min": 22 } ],  // Spirit of the Bosmer
+    "eso:hlaalu-gold":                      [ { "type": "level", "min": 23 } ],  // Plague Eater
+    "eso:wayrest-royal-purple":             [ { "type": "level", "min": 23 } ],  // Rude Awakening
+    "eso:windhelm-steel":                   [ { "type": "level", "min": 24 } ],  // Blood Feud
+    "eso:alikr-lapis":                      [ { "type": "level", "min": 24 } ],  // Consecrated Ground
+    "eso:antique-brass":                    [ { "type": "level", "min": 24 } ],  // The Sublime Protector
+    "eso:strangler-maw-red":                [ { "type": "level", "min": 25 } ],  // Shadowfen Master Explorer
+    "eso:haunted-moor-mauve":               [ { "type": "level", "min": 25 } ],  // Rivenspire Master Explorer
+    "eso:jode-red":                         [ { "type": "level", "min": 26 } ],  // Reaper's March Master Explorer
+    "eso:doomcrag-verdigris":               [ { "type": "level", "min": 26 } ],  // Curse Breaker
+    "eso:nightshade-purple":                [ { "type": "level", "min": 26 } ],  // Chainbreaker
+    "eso:colovian-deep-brown":              [ { "type": "level", "min": 27 } ],  // Cyrodiil Cave Delver
+    "eso:ashland-gray":                     [ { "type": "level", "min": 27 } ],  // Hearts of Darkness
+    "eso:dominion-vanquisher-green":        [ { "type": "level", "min": 27 } ],  // Vanquisher of the Dominion
+    "eso:covenant-vanquisher-violet":       [ { "type": "level", "min": 27 } ],  // Vanquisher of the Covenant
+    "eso:pact-vanquisher-brown":            [ { "type": "level", "min": 27 } ],  // Vanquisher of the Pact
+    "eso:senche-tiger-orange":              [ { "type": "level", "min": 28 } ],  // Hallowed Moons
+    "eso:sulfur-pools-yellow":              [ { "type": "level", "min": 28 } ],  // Eastmarch Master Explorer
+    "eso:varla-white":                      [ { "type": "level", "min": 28 } ],  // A Rule Unquestioned
+    "eso:starlight-gold":                   [ { "type": "level", "min": 29 } ],  // Dawn of a Champion
+    "eso:fire-drakes-flame":                [ { "type": "level", "min": 29 } ],  // Pit Hero
+    "eso:wisp-blue":                        [ { "type": "level", "min": 30 } ],  // Bangkorai Master Explorer
+    "eso:red-diamond-red":                  [ { "type": "level", "min": 30 } ],  // The Valley of Blades
+    "eso:evermore-gold":                    [ { "type": "level", "min": 30 } ],  // End of Empire
+    "eso:thalmor-black":                    [ { "type": "level", "min": 31 } ],  // Iconoclast
+    "eso:arc-master-moss":                  [ { "type": "level", "min": 31 } ],  // Arcing Onward
+    "eso:mammoth-fur-brown":                [ { "type": "level", "min": 32 } ],  // The Rift Master Explorer
+    "eso:10-year-anniversary-ebon-leather": [ { "type": "level", "min": 32 } ],  // Commemorative Activity Achiever
+    "eso:pact-conqueror-red":               [ { "type": "level", "min": 32 } ],  // Ebonheart Pact Conqueror
+    "eso:dominion-conqueror-yellow":        [ { "type": "level", "min": 32 } ],  // Aldmeri Dominion Conqueror
+    "eso:covenant-conqueror-blue":          [ { "type": "level", "min": 32 } ],  // Daggerfall Covenant Conqueror
+    "eso:craglorn-crimson":                 [ { "type": "level", "min": 33 } ],  // Lower Craglorn Master Explorer
+    "eso:dusky-bronze":                     [ { "type": "level", "min": 33 } ],  // Horror of Horrors
+    "eso:tribunes-steel":                   [ { "type": "level", "min": 33 } ],  // Alliance War Tribune
+    "eso:tainted-turquoise":                [ { "type": "level", "min": 34 } ],  // Imperial Transgressions
+    "eso:soul-shriven-pale":                [ { "type": "level", "min": 34 } ],  // Coldharbour Master Explorer
+    "eso:prefects-gray":                    [ { "type": "level", "min": 34 } ],  // Alliance War Prefect
+    "eso:anequina-sunrise":                 [ { "type": "level", "min": 36 } ],  // Savior of Elsweyr
+    "eso:shrike-blue":                      [ { "type": "level", "min": 36 } ],  // Savior of Summerset
+    "eso:marshnettle-titian":               [ { "type": "level", "min": 38 } ],  // Savior of Blackwood
+    "eso:chivalric-silver":                 [ { "type": "level", "min": 38 } ],  // Savior of High Isle
+    "eso:somber-cerise":                    [ { "type": "level", "min": 40 } ],  // Imperial City Warlord
+    "eso:shell-tide-green":                 [ { "type": "level", "min": 40 } ],  // Hero of Western Solstice
+    "eso:soulseeker-blue":                  [ { "type": "level", "min": 40 } ],  // Hero of Eastern Solstice
+    "eso:mad-gods-berry":                   [ { "type": "level", "min": 41 } ],  // Madness Catcher
+    "eso:stormlords-lightning":             [ { "type": "level", "min": 42 } ],  // Grand Standard-Bearer
+    "eso:telvanni-walnut":                  [ { "type": "level", "min": 42 } ],  // Hero of Necrom
+    "eso:glenbridge-green":                 [ { "type": "level", "min": 44 } ],  // Rockgrove Vanquisher
+    "eso:dolorous-indigo":                  [ { "type": "level", "min": 44 } ],  // Ossein Cage Vanquisher
+    "eso:west-weald-autumnal-orange":       [ { "type": "level", "min": 44 } ],  // Hero of the Gold Road
+    "eso:regicide-red":                     [ { "type": "level", "min": 45 } ],  // Emperor Slayer
+    "eso:murder-mahogany":                  [ { "type": "level", "min": 46 } ],  // Kill a Grand Overlord
+    "eso:lucentshard-azure":                [ { "type": "level", "min": 46 } ],  // Lucent Citadel Vanquisher
+
+    // Rare, by level: dungeons, trials, chapter finales, the Alliance War rank
+    // ladder. Nothing below 35, which is the Rare tier.
+    "eso:bloodroot-wine":         [ { "type": "level", "min": 35 } ],  // Horns of the Reach Delver
+    "eso:nacreous-purple":        [ { "type": "level", "min": 35 } ],  // Dragon Bones Delver
+    "eso:roisters-cerulean":      [ { "type": "level", "min": 35 } ],  // Tales of Travel
+    "eso:liars-linen":            [ { "type": "level", "min": 35 } ],  // I Like M'aiq
+    "eso:blood-gold":             [ { "type": "level", "min": 35 } ],  // Queenmaker
+    "eso:stalhrim-chrome":        [ { "type": "level", "min": 36 } ],  // Wolfhunter Delver
+    "eso:artifact-hunter-amber":  [ { "type": "level", "min": 36 } ],  // Retribution Takes Time
+    "eso:palatines-white":        [ { "type": "level", "min": 36 } ],  // Alliance War Palatine
+    "eso:glacial-topaz":          [ { "type": "level", "min": 37 } ],  // Wrathstone Delver
+    "eso:darkstorm-emerald":      [ { "type": "level", "min": 37 } ],  // Savior of the Reach
+    "eso:vehks-mystic-blue":      [ { "type": "level", "min": 37 } ],  // Champion of Vivec
+    "eso:blackreach-blue":        [ { "type": "level", "min": 37 } ],  // Savior of Western Skyrim
+    "eso:hollowfang-cruor":       [ { "type": "level", "min": 38 } ],  // Scalebreaker Delver
+    "eso:ayleid-gold":            [ { "type": "level", "min": 38 } ],  // Aldmeri Master Explorer
+    "eso:orichalc-green":         [ { "type": "level", "min": 38 } ],  // Daggerfall Master Explorer
+    "eso:atmoran-bronze":         [ { "type": "level", "min": 38 } ],  // Ebonheart Master Explorer
+    "eso:frozen-blood":           [ { "type": "level", "min": 39 } ],  // Harrowstorm Delver
+    "eso:sigil-orange":           [ { "type": "level", "min": 39 } ],  // City of Ash II Conqueror
+    "eso:sunforge-patina":        [ { "type": "level", "min": 39 } ],  // Hero of Fargrave
+    "eso:legates-black":          [ { "type": "level", "min": 39 } ],  // Alliance War Legate
+    "eso:hazardous-chartreuse":   [ { "type": "level", "min": 40 } ],  // Stonethorn Delver
+    "eso:magnus-setting-red":     [ { "type": "level", "min": 40 } ],  // Veteran White-Gold Tower
+    "eso:putrid-flesh-teal":      [ { "type": "level", "min": 40 } ],  // Veteran Imperial City Prison
+    "eso:king-orgnums-wine":      [ { "type": "level", "min": 39 } ],  // Savior of Galen
+    "eso:coldharbour-ash-black":  [ { "type": "level", "min": 43 } ],  // The God of Schemes
+    "eso:scintillating-scarlet":  [ { "type": "level", "min": 41 } ],  // Flames of Ambition Delver
+    "eso:transliminal-violet":    [ { "type": "level", "min": 41 } ],  // Imperial Lightbringer
+    "eso:pellitine-coral":        [ { "type": "level", "min": 41 } ],  // Return of the Dragonguard
+    "eso:warlords-red":           [ { "type": "level", "min": 41 } ],  // Alliance War Warlord
+    "eso:moonshadow-orchid":      [ { "type": "level", "min": 42 } ],  // Waking Flame Delver
+    "eso:pact-blood-red":         [ { "type": "level", "min": 42 } ],  // Hero of the Ebonheart Pact
+    "eso:dominion-yellow":        [ { "type": "level", "min": 42 } ],  // Hero of the Aldmeri Dominion
+    "eso:covenant-blue":          [ { "type": "level", "min": 42 } ],  // Hero of the Daggerfall Covenant
+    "eso:drowned-cobalt":         [ { "type": "level", "min": 43 } ],  // Ascending Tide Delver
+    "eso:akatoshs-scales-gold":   [ { "type": "level", "min": 43 } ],  // Complete All Speed Challenges
+    "eso:voidstone-violet":       [ { "type": "level", "min": 43 } ],  // Complete All Death Challenges
+    "eso:grand-warlords-violet":  [ { "type": "level", "min": 43 } ],  // Alliance War Grand Warlord
+    "eso:brightfern-green":       [ { "type": "level", "min": 44 } ],  // Lost Depths Delver
+    "eso:apricot-outrage":        [ { "type": "level", "min": 44 } ],  // Blackrose Prison Vanquisher
+    "eso:mundus-blue":            [ { "type": "level", "min": 44 } ],  // Weekly Trial Complete
+    "eso:julianos-white":         [ { "type": "level", "min": 44 } ],  // Aetherian Archive Completed
+    "eso:cyrodilic-steel":        [ { "type": "level", "min": 44 } ],  // Cyrodiil Champion
+    "eso:scriveners-ultramarine": [ { "type": "level", "min": 45 } ],  // Scribes of Fate Delver
+    "eso:daedric-red":            [ { "type": "level", "min": 45 } ],  // General Executioner
+    "eso:ophidian-jade":          [ { "type": "level", "min": 45 } ],  // Sanctum Ophidia Completed
+    "eso:overlords-purple":       [ { "type": "level", "min": 45 } ],  // Alliance War Overlord
+    "eso:colossus-brass":         [ { "type": "level", "min": 46 } ],  // Halls of Fabrication Completed
+    "eso:abyssal-beryl":          [ { "type": "level", "min": 46 } ],  // Maw of Lorkhaj Completed
+    "eso:bedlam-purple":          [ { "type": "level", "min": 46 } ],  // Cloudrest Conqueror
+    "eso:pyandonean-purple":      [ { "type": "level", "min": 47 } ],  // Dreadsail Reef Vanquisher
+    "eso:sanitys-orchid":         [ { "type": "level", "min": 47 } ],  // Sanity's Edge Vanquisher
+    "eso:grand-overlords-brass":  [ { "type": "level", "min": 47 } ],  // Alliance War Grand Overlord
+    "eso:dragonstar-red":         [ { "type": "level", "min": 48 } ],  // Time Trial: Hel Ra Citadel
+    "eso:aurora-green":           [ { "type": "level", "min": 48 } ],  // Time Trial: Aetherian Archive
+    "eso:celestial-violet":       [ { "type": "level", "min": 48 } ],  // Time Trial: Weekly
+    "eso:scaled-court-brown":     [ { "type": "level", "min": 48 } ],  // Time Trial: Sanctum Ophidia
+    "eso:aetherial-blue":         [ { "type": "level", "min": 49 } ],  // Tamriel Skyshard Hunter
+    "eso:generals-gold":          [ { "type": "level", "min": 49 } ],  // Alliance War General
+    "eso:ruby-throne-red":        [ { "type": "level", "min": 50 } ]  // Emperor!
+  }
+}

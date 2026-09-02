@@ -23,4 +23,14 @@ namespace OS::SamCompat {
     // via SKSE's SendModEvent. Call at kDataLoaded (after the overlay exists).
     void Register();
 
+    // Put the Escape guard back at the FRONT of MenuControls' handler list.
+    //
+    // ⚠ THE LIST IS FRONT-INSERTED, SO THE LAST REGISTRATION WINS, and SAM
+    // registers its own handler when its menu opens - which is after ours went
+    // in at kDataLoaded. Registering once at load therefore left us BEHIND SAM,
+    // and SAM consumed the Escape before we could (field 2026-08-07, "if we are
+    // in SM and pan and then press esc it closes both FR and SAM"). Re-arming
+    // when the editor opens puts us back in front of whatever registered since.
+    void ArmEscapeGuard();
+
 }  // namespace OS::SamCompat

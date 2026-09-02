@@ -1,5 +1,7 @@
 #include "RecentMods.h"
 
+#include "BuildChannel.h"
+
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -9,8 +11,8 @@
 namespace OS::RecentMods {
 
     namespace {
-        constexpr const char* kDir  = "Data/SKSE/Plugins/FittingRoom";
-        constexpr const char* kFile = "Data/SKSE/Plugins/FittingRoom/known_plugins.txt";
+        const auto kDir  = BuildChannel::DataRoot();
+        const auto kFile = BuildChannel::DataPath("known_plugins.txt");
 
         std::mutex            g_mutex;
         std::set<std::string> g_known;             // plugins seen last launch (guarded)

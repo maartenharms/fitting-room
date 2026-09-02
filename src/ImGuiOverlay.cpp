@@ -1,8 +1,11 @@
 #include "ImGuiOverlay.h"
 
+#include "ApparelPreviewSignal.h"
 #include "EditorStyle.h"
 #include "EditorUI.h"
+#include "HostGuard.h"  // the one list of menus the editor may be hosted by
 #include "KeyboardArbiter.h"
+#include "LoreModule.h"  // the Seamstone gate, asked here as well as at the hotkey
 #include "SamCompat.h"
 #include "SceneGuard.h"
 #include "Settings.h"
@@ -82,9 +85,6 @@ namespace OS {
     }
 
     namespace {
-        // Cross-mod contract with Apparel Preview: clear any hover preview.
-        constexpr std::uint32_t kClearPreviewMsg = 'CLRP';
-
         // Keyboard source arbitration. The keyboard is USUALLY non-exclusive in
         // menus (WM key/char messages flow; the WndProc backend owns them), but
         // the user hit a state where WM keyboard died on menu re-entry and
@@ -300,15 +300,31 @@ namespace OS {
                 if (overlay.IsOpen()) {
                     return;  // already open
                 }
+                // ⚠ THE SEAMSTONE GATE IS ASKED HERE TOO, AND IT WAS NOT.
+                // Only the hotkey checked it, so lore mode refused the key and
+                // then granted the very same editor to anything calling this,
+                // which made the requirement decorative. Silent when it fails,
+                // for the reason EditorGate::DecideGate spells out.
+                if (!LoreModule::GateSatisfied()) {
+                    spdlog::info("ImGuiOverlay: open refused, the lore module is active "
+                                 "and the player is not carrying the Seamstone. Nothing "
+                                 "shown, by design.");
+                    return;
+                }
                 // Only from a valid UI context - the editor hides the menu
                 // behind it; opening in the open world breaks its modal setup.
-                auto*      ui          = RE::UI::GetSingleton();
-                const bool inInventory = ui && ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME);
-                if (inInventory || SamCompat::IsMenuOpen()) {
+                // Through HostGuard like every other gate, so this legacy path
+                // cannot be revived one day holding a stale list.
+                if (HostGuard::HostMenuOpen()) {
                     overlay.Toggle();
                 } else {
-                    RE::DebugNotification(
-                        "Open your inventory or Screen Archer Menu to edit outfits.");
+                    // Silent, the same call the hotkey's kNeedContext arm got
+                    // (user 2026-08-11). A caller reaching this one is a SAM
+                    // addon or a mod event rather than a keypress, so the
+                    // player has even less reason to be told about our
+                    // contexts; the log carries it instead.
+                    spdlog::info("ImGuiOverlay: open refused, no menu this editor can be "
+                                 "hosted by is open. Nothing shown, by design.");
                 }
             });
         }
@@ -607,6 +623,15 @@ namespace OS {
                     case GKey::kY:             navKey = ImGuiKey_GamepadFaceUp; break;
                     case GKey::kLeftShoulder:  navKey = ImGuiKey_GamepadL1; break;
                     case GKey::kRightShoulder: navKey = ImGuiKey_GamepadR1; break;
+                    // ⚠⚠ NO kRightThumb CASE ANY MORE, AND IT NEVER DID
+                    // ANYTHING. It was fed for one reason, the editor's R3 dye
+                    // binding, and its own comment claimed the binding was dead
+                    // without it. Both are gone as of 2026-08-15: this feed
+                    // reaches the context created below by `ImGui::CreateContext`,
+                    // which is FR's own, while the editor draws through FUCK and
+                    // reads FUCK's. A key posted here could never answer a query
+                    // there. MEASURED with the navprobe: R3 produced not one
+                    // line over a run that pressed every control.
                     default:                   break;
                 }
                 if (navKey != ImGuiKey_None && (down || up)) {
@@ -661,12 +686,11 @@ namespace OS {
         // comment is the single documented handoff point.
         // Determine the open context. SAM (a Scaleform menu) means the posed,
         // lit character is already framed - we must NOT force the camera.
-        auto*      ui          = RE::UI::GetSingleton();
-        const bool inInventory = ui && ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME);
-        openedFromSam_         = !inInventory && SamCompat::IsMenuOpen();
-        // Opening from a menu (inventory OR SAM): the WM keyboard path is alive,
-        // so start the engine feed silent (prevents a doubled first keystroke).
-        if (inInventory || openedFromSam_) {
+        const auto host = HostGuard::CurrentHost();
+        openedFromSam_  = host.isSam;
+        // Opening from a menu at all: the WM keyboard path is alive, so start
+        // the engine feed silent (prevents a doubled first keystroke).
+        if (host.Present()) {
             g_lastWmKeyTick.store(::GetTickCount(), std::memory_order_relaxed);
         }
         auto& io = ImGui::GetIO();
@@ -692,13 +716,10 @@ namespace OS {
         mouseY_ = h * 0.35f;
         io.AddMousePosEvent(mouseX_, mouseY_);
 
-        // Ask Apparel Preview (when present) to clear any hover preview, so
-        // the editor always starts from the TRUE look (outfit/real gear), not
-        // a stale preview latched under the now-hidden inventory. Contract:
-        // message type 'CLRP', no payload, receiver plugin "ApparelPreview".
-        if (auto* messaging = SKSE::GetMessagingInterface()) {
-            messaging->Dispatch(kClearPreviewMsg, nullptr, 0, "ApparelPreview");
-        }
+        // Apparel Preview: clear the hover preview AND stay suspended while
+        // the editor owns the look (see ApparelPreviewSignal.h for the byte
+        // contract and why clear-once was not enough).
+        NotifyApparelPreview(true);
         // In SAM context the screenarcher has set up the camera/pose - leave it.
         if (!openedFromSam_) {
             if (auto* cam = RE::PlayerCamera::GetSingleton()) {
@@ -721,6 +742,7 @@ namespace OS {
 
     void ImGuiOverlay::OnClose() {
         EditorStyle::PlayUISound("UIMenuCancel");
+        NotifyApparelPreview(false);  // resume AP's hover preview (see ApparelPreviewSignal.h)
         ImGui::GetIO().ClearInputKeys();  // symmetric with OnOpen
         g_keyArbiter.Clear();
         EditorUI::OnClose();

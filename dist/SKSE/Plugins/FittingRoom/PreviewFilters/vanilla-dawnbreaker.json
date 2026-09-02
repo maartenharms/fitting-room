@@ -1,0 +1,34 @@
+{
+  "_readme": [
+    "Preview scene fixups. See ldd-lili-collection.json for the format."
+  ],
+  "scopes": [
+    {
+      "_why": [
+        "Dawnbreaker's card drew the honest cross and the item looked broken",
+        "(field 2026-08-10). It was not the FX skip, which is what the parked",
+        "note assumed. The whole sword is parented under a node literally",
+        "named Dummy, and dummy is one of the census-derived helper tokens",
+        "matched against the FULL name path, so every geometry in the file",
+        "was dropped: the log reads filtered=10/0 and then failed(geometry).",
+        "The four real pieces are dawnbreaker:0, dawnbreaker:1, gem:1 and",
+        "scb.",
+        "",
+        "A show beats the helper-token rule, which is exactly the over-match",
+        "this mechanism exists for. The patterns end at a colon rather than",
+        "at a bare star on purpose: dawnbreaker* would also match",
+        "dawnbreakerswordfx01, and those glow planes are correctly skipped as",
+        "FX. They draw additively through a shader path the thumbnail pass",
+        "does not have, and unskipped they photographed as an opaque cream",
+        "ellipse over the blade.",
+        "",
+        "Scoped to this one model rather than narrowing the dummy token",
+        "globally, because a token change moves pixels on cards whose keys",
+        "cannot tell the difference, and a scope tag re-keys exactly the card",
+        "it covers. That is also what clears this card's persisted failure."
+      ],
+      "path": "weapons/dawnbreaker/",
+      "show": ["dummy/dawnbreaker:*", "dummy/gem:*", "dummy/scb"]
+    }
+  ]
+}

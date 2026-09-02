@@ -11,6 +11,7 @@
 #include <cctype>
 #include <set>
 #include <string_view>
+#include <unordered_map>
 
 namespace OS {
 
@@ -134,8 +135,104 @@ namespace OS {
             }
         }
 
+        // The game's own OUTFIT records, flattened to catalog keys. See
+        // SetDetector::DetectOutfit for why no naming rule can replace this and
+        // CompleteFromOutfits for why it fills sets rather than making them.
+        //
+        // ⚠ AN OUTFIT NAMES A RECORD; THE CATALOG SHOWS A LOOK. StyleCatalog
+        // collapses enchanted variants onto the lowest-FormID representative
+        // (see StyleItem::variantIds), and an outfit record routinely names one
+        // of the collapsed ones, so a map keyed on the representative alone
+        // would miss them. Every id of the look points at the same key here.
+        std::unordered_map<RE::FormID, StyleRefKey> keyByForm;
+        for (const auto& it : items) {
+            if (it.IsWeapon() || !it.form) {
+                continue;
+            }
+            keyByForm.emplace(it.form->GetFormID(), it.key);
+            for (const RE::FormID variant : it.variantIds) {
+                keyByForm.emplace(variant, it.key);
+            }
+        }
+        std::vector<SetDetector::DetectOutfit> outfits;
+        std::size_t                            outfitRecords = 0;
+        if (auto* const handler = RE::TESDataHandler::GetSingleton()) {
+            const auto& records = handler->GetFormArray<RE::BGSOutfit>();
+            outfitRecords        = records.size();
+            outfits.reserve(records.size());
+            for (auto* const record : records) {
+                if (!record) {
+                    continue;
+                }
+                SetDetector::DetectOutfit flat;
+                const auto take = [&](RE::TESForm* a_form) {
+                    if (!a_form) {
+                        return;
+                    }
+                    if (const auto it = keyByForm.find(a_form->GetFormID());
+                        it != keyByForm.end()) {
+                        flat.pieces.push_back(it->second);
+                    }
+                };
+                for (auto* const item : record->outfitItems) {
+                    if (!item) {
+                        continue;
+                    }
+                    // ⚠ ONE LEVEL OF LEVELED LIST AND NO RECURSION. Guard
+                    // helmets are a LVLI rather than an ARMO, so a reader that
+                    // stopped at the outfit's own entries would miss them; a
+                    // reader that recursed would walk lists that nest into the
+                    // hundreds for a boot this pass may not even use. numEntries
+                    // is the count, because SimpleArray carries none.
+                    if (auto* const list = item->As<RE::TESLevItem>()) {
+                        for (std::uint32_t i = 0; i < list->numEntries; ++i) {
+                            take(list->entries[i].form);
+                        }
+                        continue;
+                    }
+                    take(item);
+                }
+                if (flat.pieces.size() > 1) {
+                    outfits.push_back(std::move(flat));
+                }
+            }
+        }
+
         SetDetector::Stats stats;
         auto               sets = SetDetector::Detect(styles, opts, &stats);
+        // ⚠ EVERY FILL IS NAMED, ONCE PER RESCAN AND NOT PER FRAME. Vanilla is
+        // not what anybody runs: measured offline, all twelve hold guard sets
+        // gain boots from the masters alone, so a field report of "some guard
+        // armour still has none" can only be answered by the records THIS load
+        // order resolved. Without these lines the answer is a single count, and
+        // a count cannot say which set missed out or what won the slot.
+        std::vector<SetDetector::Completion> fills;
+        std::vector<SetDetector::Completion> declined;
+        const std::size_t                    completed =
+            SetDetector::CompleteFromOutfits(sets, outfits, styles, &fills, &declined);
+        for (const auto& f : fills) {
+            spdlog::debug("complete: '{}' += '{}' on slot {}", f.setName, f.pieceName,
+                          f.bit + 30u);
+        }
+        // ⚠ THE DECLINED SLOTS ARE THE OTHER HALF OF THE ANSWER, and without
+        // them a set with no boot cannot say whether the load order offered
+        // none or offered four different ones. The named piece is whichever
+        // candidate arrived first; it is the loser being reported, not a
+        // choice. Field 2026-08-20 is the reason both rules exist: the old
+        // first-come fill put a Dwarven helmet on the Iron set, and the
+        // primary-bit test then put an Execution Hood on top of the Scaled
+        // set's own helmet.
+        for (const auto& c : declined) {
+            if (c.reason == SetDetector::Completion::Reason::kOverlaps) {
+                spdlog::debug("overlaps: '{}' refused '{}' on slot {}; it contests a "
+                              "slot the set already wears",
+                              c.setName, c.pieceName, c.bit + 30u);
+            } else {
+                spdlog::debug("contested: '{}' left slot {} empty; records disagree "
+                              "(first was '{}')",
+                              c.setName, c.bit + 30u, c.pieceName);
+            }
+        }
         SetDetector::LinkWeapons(sets, weapons);
 
         // Diagnostic pass 2: did each matching piece land in a final set? A
@@ -209,7 +306,17 @@ namespace OS {
                 alts += n;
             }
             if (alts > 0) {
-                p.description = std::to_string(alts) + " variant piece(s) available.";
+                // "piece(s)" was fine while this only ever rendered in the
+                // detail column's body text. That column is gone and this is
+                // the line under a preset's title in its hover now, where a
+                // parenthesised plural reads as unfinished copy. The count is
+                // right here, so the word can be.
+                // The alternates have their own browser rows now (user's
+                // call, 2026-08-20), so this says where they are rather than
+                // that they exist somewhere unnamed.
+                p.description = std::to_string(alts) +
+                                (alts == 1 ? " variant of this set has its own row"
+                                           : " variants of this set have their own rows");
             }
             built.push_back(std::move(p));
         }
@@ -249,11 +356,14 @@ namespace OS {
         spdlog::info("AutoPresets: {} fitting set(s) shown ({} modded) from {} "
                      "plugin(s) ({} modded); {} dropped as body-unfit; {} candidate "
                      "styles ({} modded across {} plugin(s)); Detect: {} clusters, {} "
-                     "residual ({} dropped), {} qualified, {} deduped.",
+                     "residual ({} dropped), {} qualified, {} deduped, {} variant "
+                     "row(s) ({} over the per-set cap); outfit records: "
+                     "{} read, {} usable, {} set(s) completed.",
                      total, moddedSets, setSrc.size(), moddedSetSrc.size(), droppedUnfit,
                      styles.size(), moddedFitting, moddedFitSrc.size(), stats.clusters,
                      stats.residualClusters, stats.residualDropped, stats.qualified,
-                     stats.deduped);
+                     stats.deduped, stats.variantRows, stats.variantsDropped,
+                     outfitRecords, outfits.size(), completed);
     }
 
     std::vector<JsonCodec::Preset> AutoPresets::Snapshot() const {

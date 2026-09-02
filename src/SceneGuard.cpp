@@ -66,10 +66,30 @@ namespace OS::SceneGuard {
                 }
                 const auto& s    = Settings::GetSingleton();
                 const char* name = a_event->eventName.c_str();
+                // ⚠⚠ EVERY MOD EVENT BY NAME, AND IT IS HERE BECAUSE GUESSING COST
+                // A ROUND. SexLab's own scripts carry the literals
+                // HookAnimationStarting and HookAnimationEnd, both were configured,
+                // and neither fired: the framework appends the registering hook's
+                // NAME to them, and whether it also sends a bare global form could
+                // not be settled off disk. One scene with this line on settles it
+                // for good, and a name we have never seen is the only thing that
+                // can. Debug level, so it costs a disabled log call otherwise.
+                spdlog::debug("SceneGuard: mod event '{}'.", name ? name : "(null)");
                 if (NameInList(name, s.sceneSuspendEvents)) {
                     SetActive(true);
                 } else if (NameInList(name, s.sceneResumeEvents)) {
                     SetActive(false);
+                }
+                // ⚠⚠ NOT A SCENE EVENT, AND IT IS HERE BECAUSE THIS IS THE ONLY
+                // MOD-EVENT SINK WE OWN. OBody announces its body rebuild by this
+                // name and that rebuild clears our push-up morph key, measured
+                // twenty-nine times out of twenty-nine on 2026-08-27. Handing the
+                // edge to OutfitSession costs one string compare on an event
+                // stream we are already walking, and adding a second sink for one
+                // name would be the worse trade. ⚠ NOT configurable: this is
+                // OBody's own event name and not a compatibility list.
+                if (name && std::strcmp(name, "Obody_ApplyMorph") == 0) {
+                    OutfitSession::NoteBodyRebuilt();
                 }
                 return RE::BSEventNotifyControl::kContinue;
             }

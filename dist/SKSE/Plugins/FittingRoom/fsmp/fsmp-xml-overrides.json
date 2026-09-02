@@ -1,0 +1,10 @@
+{
+  "comment": "Wig SMP xmls that register body-physics bones as collision anchors. FSMP re-poses registered bones from the animation after CBPC adds its offsets, so a wig on this list holds the body still. The replacement is the same xml with the body-family <bone> lines stripped (tools/fsmp_xml_strip.py); matching is by case-insensitive path suffix.",
+  "overrides": [
+    {
+      "sourceSuffix": "meshes\\00xml\\guanyinping.xml",
+      "replacement": "SKSE\\Plugins\\FittingRoom\\fsmp\\GuanYinping.nobody.xml",
+      "stripped": 29
+    }
+  ]
+}

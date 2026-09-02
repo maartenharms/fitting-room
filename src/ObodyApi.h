@@ -62,8 +62,29 @@ namespace OS::ObodyApi {
     // if unready or OBody rejected the name.
     bool AssignPreset(RE::Actor* a_actor, std::string_view a_presetName, bool a_applyMorphsNow);
 
+    // Proof-spike ownership handoff: unassign through OBody's API, then ask
+    // OBody to remove its own body/clothing morphs. This is the only sanctioned
+    // route into a direct RaceMenu-owned body; callers never clear OBody's key.
+    bool RemovePresetMorphsForCustom(RE::Actor* a_actor);
+
+    // Capture the player's original assignment before a proof-spike custom
+    // body can unassign it. Followers retain their existing per-NPC capture.
+    void EnsurePlayerBaselineCaptured(RE::Actor* a_actor);
+
+    // The load-boundary clear for the once-per-character baseline latch;
+    // BodyStudioProof::ForgetSession's sibling, called beside it.
+    void ForgetPlayerBaseline();
+
     // Force ORefit on/off for one actor, independent of the global setting.
     void ForceORefit(RE::Actor* a_actor, bool a_applied);
+
+    // Publish and apply the same transmog-aware ORefit policy used by an
+    // outfit, without assigning an installed body preset. Returns the resolved
+    // policy (0 follow OBody, 1 forced on, 2 forced off).
+    int ApplyORefitPolicy(RE::Actor* a_actor, int a_orefit,
+                          std::uint32_t a_torsoStyleMask,
+                          std::uint32_t a_torsoHideMask);
+    [[nodiscard]] bool ORefitApplied(RE::Actor* a_actor);
 
     // The GLOBAL ORefit setting (the MCM toggle), for reporting only.
     [[nodiscard]] bool GlobalORefitEnabled();

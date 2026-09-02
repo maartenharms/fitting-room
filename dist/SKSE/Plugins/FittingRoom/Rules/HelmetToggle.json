@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "fr-helmet-combat",
+      "name": "Helmet on in combat",
+      "enabled": true,
+      "priority": -10,
+      "base": "keep",
+      "conditions": [
+        {
+          "kind": "combat",
+          "negate": false
+        }
+      ],
+      "overlay": {
+        "31": {
+          "show": true
+        },
+        "41": {
+          "show": true
+        },
+        "42": {
+          "show": true
+        }
+      }
+    },
+    {
+      "id": "fr-helmet-vampire-daylight",
+      "name": "Helmet on in daylight (vampire)",
+      "enabled": true,
+      "priority": -20,
+      "base": "keep",
+      "conditions": [
+        {
+          "kind": "vampire",
+          "negate": false
+        },
+        {
+          "kind": "interior",
+          "negate": true
+        },
+        {
+          "kind": "timeOfDay",
+          "negate": false,
+          "start": 7.0,
+          "end": 19.0
+        }
+      ],
+      "overlay": {
+        "31": {
+          "show": true
+        },
+        "41": {
+          "show": true
+        },
+        "42": {
+          "show": true
+        }
+      }
+    },
+    {
+      "id": "fr-helmet-talking",
+      "name": "Helmet off while talking",
+      "enabled": true,
+      "priority": -30,
+      "base": "keep",
+      "overlay": {
+        "31": {
+          "hide": true
+        },
+        "41": {
+          "hide": true
+        },
+        "42": {
+          "hide": true
+        }
+      },
+      "conditions": [
+        {
+          "kind": "dialogue",
+          "negate": false
+        }
+      ]
+    },
+    {
+      "id": "fr-helmet-indoors",
+      "name": "Helmet off indoors",
+      "enabled": true,
+      "priority": -40,
+      "base": "keep",
+      "overlay": {
+        "31": {
+          "hide": true
+        },
+        "41": {
+          "hide": true
+        },
+        "42": {
+          "hide": true
+        }
+      },
+      "conditions": [
+        {
+          "kind": "interior",
+          "negate": false
+        }
+      ]
+    }
+  ]
+}

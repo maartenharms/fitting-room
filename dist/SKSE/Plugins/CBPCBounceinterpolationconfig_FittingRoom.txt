@@ -1,0 +1,19 @@
+UniqueName = FittingRoom
+
+# Fitting Room pushes this profile onto an actor while it SHOWS a chest
+# piece, so the bounce read follows the outfit on screen instead of the
+# worn armor's class. Values mirror the rig's baseline breast amplitudes
+# (CBPConfig_BreastAmplitude); first value is weight 100, second weight 0.
+
+ExtraBreast1L.amplitude 1.10 0.7
+ExtraBreast2L.amplitude 1.10 0.66
+ExtraBreast3L.amplitude 1.0 0.6
+
+ExtraBreast1R.amplitude 1.10 0.7
+ExtraBreast2R.amplitude 1.10 0.66
+ExtraBreast3R.amplitude 1.0 0.6
+
+LBreast.amplitude 1.0 0.64
+RBreast.amplitude 1.0 0.64
+
+Breast.amplitude 1.0 0.64

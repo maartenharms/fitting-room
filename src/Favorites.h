@@ -2,6 +2,7 @@
 
 #include "Outfit.h"  // StyleRefKey
 
+#include <cctype>
 #include <set>
 #include <string>
 #include <string_view>
@@ -19,21 +20,39 @@ namespace OS {
             return a_key.modName + "|" + std::to_string(a_key.localFormID);
         }
 
+        // A key for something that is NOT a form: OBody presets are bare names
+        // with no plugin and no form ID, so there is nothing to build a
+        // StyleRefKey out of.
+        //
+        // ⚠ THE "@" PREFIX IS WHAT KEEPS THE TWO KINDS APART. A form key's
+        // first field is a plugin filename, which always carries an extension
+        // and can never begin with "@", so a namespaced line cannot collide
+        // with one however a mod is named. The separator stays "|" so the file
+        // is still one flat list and LoadLines needs no cases.
+        static std::string NamedKeyLine(std::string_view a_kind, std::string_view a_name) {
+            return "@" + std::string{ a_kind } + "|" + std::string{ a_name };
+        }
+
         [[nodiscard]] bool Contains(const StyleRefKey& a_key) const {
-            return !a_key.Empty() && keys_.contains(KeyLine(a_key));
+            return !a_key.Empty() && ContainsLine(KeyLine(a_key));
+        }
+        [[nodiscard]] bool ContainsLine(std::string_view a_line) const {
+            return !a_line.empty() && keys_.contains(std::string{ a_line });
         }
 
         // Flip the star; returns the NEW state (true = now favorited).
         bool Toggle(const StyleRefKey& a_key) {
-            if (a_key.Empty()) {
+            return a_key.Empty() ? false : ToggleLine(KeyLine(a_key));
+        }
+        bool ToggleLine(std::string a_line) {
+            if (a_line.empty()) {
                 return false;
             }
-            auto line = KeyLine(a_key);
-            if (const auto it = keys_.find(line); it != keys_.end()) {
+            if (const auto it = keys_.find(a_line); it != keys_.end()) {
                 keys_.erase(it);
                 return false;
             }
-            keys_.insert(std::move(line));
+            keys_.insert(std::move(a_line));
             return true;
         }
 
@@ -100,6 +119,59 @@ namespace OS {
 
         // Flip + persist immediately; returns the new state (true = favorited).
         bool Toggle(const StyleRefKey& a_key);
+
+        // The same two, for things with no form behind them. Build the line
+        // with FavoriteSet::NamedKeyLine so the namespace prefix is applied in
+        // exactly one place.
+        [[nodiscard]] bool IsFavoriteLine(std::string_view a_line);
+        bool               ToggleLine(std::string a_line);
+
+        // The one body-preset key builder. ⚠ Keep every caller going through
+        // this rather than writing the kind string inline: the kind is part of
+        // the on-disk key, so a second spelling of it would silently orphan
+        // every star already saved.
+        [[nodiscard]] inline std::string BodyKey(std::string_view a_preset) {
+            return FavoriteSet::NamedKeyLine("body", a_preset);
+        }
+
+        // The one dye key builder, on exactly the terms BodyKey states: the
+        // kind is part of the on-disk line, so a second spelling of "dye"
+        // silently orphans every star already saved.
+        //
+        // ⚠ A DYE HAS NO FORM, which is why it takes this route rather than
+        // StyleRefKey. Its id is `pack:name` and is already the palette's
+        // stable identity across load orders, so it needs nothing built for it:
+        // the namespaced line and the file that holds the others were both
+        // already here.
+        [[nodiscard]] inline std::string DyeKey(std::string_view a_id) {
+            return FavoriteSet::NamedKeyLine("dye", a_id);
+        }
+
+        // The one skin-pack key builder (OS-214, user 2026-08-18: "we also
+        // want to be able to favorite cards"). A pack's id is its folder name
+        // under textures\FittingRoom\skins, which is what the SKIN record
+        // carries too, so a star follows the pack across saves and rigs that
+        // have it. Same terms as BodyKey: the kind is part of the on-disk line.
+        [[nodiscard]] inline std::string SkinKey(std::string_view a_packId) {
+            return FavoriteSet::NamedKeyLine("skin", a_packId);
+        }
+
+        // The one overlay-art key builder, for the overlay and makeup pickers'
+        // cards. The identity is the texture's override path (the same string
+        // the layer stores and the thumbnail cache keys on), lower-cased with
+        // backslashes so the two spellings authors ship are one star; the
+        // same texture offered by both pickers carries one star, which is the
+        // right answer for one file.
+        [[nodiscard]] inline std::string OverlayKey(std::string_view a_path) {
+            std::string folded;
+            folded.reserve(a_path.size());
+            for (const char c : a_path) {
+                folded.push_back(c == '/' ? '\\'
+                                          : static_cast<char>(std::tolower(
+                                                static_cast<unsigned char>(c))));
+            }
+            return FavoriteSet::NamedKeyLine("overlay", folded);
+        }
 
         [[nodiscard]] std::size_t Count();
 

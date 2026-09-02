@@ -11,7 +11,7 @@
             "cacheVariables": {
                 "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_MAKE_PROGRAM": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe",
-                "CMAKE_CXX_FLAGS": "/permissive- /Zc:preprocessor /EHsc /MP /W4 -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE",
+                "CMAKE_CXX_FLAGS": "/permissive- /Zc:preprocessor /EHsc /MP /W4 /we4062 -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE",
                 "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
                 "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
                 "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake",
@@ -30,6 +30,16 @@
             "inherits": ["base"],
             "displayName": "Debug",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "body-studio-dev",
+            "inherits": ["base"],
+            "displayName": "Body Studio Dev",
+            "binaryDir": "${sourceDir}/build/body-studio-dev",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "FR_BODY_STUDIO_DEV": "ON"
+            }
         }
     ]
 }

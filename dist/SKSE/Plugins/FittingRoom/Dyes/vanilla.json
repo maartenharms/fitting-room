@@ -1,0 +1,16 @@
+{
+  "dyes": [
+    { "id": "vanilla:ebony",     "name": "Ebony Black",    "hex": "1C1A1F" },
+    { "id": "vanilla:ash",       "name": "Ash Grey",       "hex": "8A8A8A" },
+    { "id": "vanilla:bone",      "name": "Bone White",     "hex": "E8E2D0" },
+    { "id": "vanilla:blood",     "name": "Blood Red",      "hex": "6E1B1B" },
+    { "id": "vanilla:rust",      "name": "Rust",           "hex": "9C4A1E" },
+    { "id": "vanilla:amber",     "name": "Amber",          "hex": "C8871B" },
+    { "id": "vanilla:moss",      "name": "Moss Green",     "hex": "4A5B32" },
+    { "id": "vanilla:nirn",      "name": "Nirnroot Glow",  "hex": "7FD4A8" },
+    { "id": "vanilla:sky",       "name": "Sky Blue",       "hex": "5B7FA8" },
+    { "id": "vanilla:midnight",  "name": "Midnight Blue",  "hex": "1F2740" },
+    { "id": "vanilla:imperial",  "name": "Imperial Purple","hex": "4A2B5B" },
+    { "id": "vanilla:gold",      "name": "Gilded",         "hex": "C9A227" }
+  ]
+}

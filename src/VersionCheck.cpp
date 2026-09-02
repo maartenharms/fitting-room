@@ -93,6 +93,24 @@ namespace {
         // BipedHooks worn-mask shim.
         inline constexpr REL::RelocationID WornMaskParent{ 24220, 24724 };   // caller
         inline constexpr REL::RelocationID GetWornMask{ 15806, 16044 };      // callee
+
+        // OS-154: the item-preview appender. ⚠ THE ONLY ENTRY DETOUR IN FITTING
+        // ROOM, so it is the only entry here with no caller id beside it - there
+        // is no call site to locate, which is the whole reason it needs
+        // SafetyHook. ⚠ The SE id was derived STRUCTURALLY from SE's own
+        // UpdateMagic3D, never by offsetting the AE one. Reported so a field log
+        // names the address it took.
+        inline constexpr REL::RelocationID AppendInventoryModel{ 50896, 51772 };
+
+        // BSFaceGenManager::PrepareHeadPartForShaders, the engine's only hair
+        // painter. ⚠ THE SECOND ENTRY DETOUR AND THE SECOND ID HERE WITH NO
+        // CALLER BESIDE IT, for the opposite reason to the appender above: that
+        // one has no call site worth locating, this one has too many. Catching
+        // every caller is the point, since the rebuild that drops the colour
+        // comes from one Fitting Room cannot see. Both ids are CommonLib's own
+        // (RE/B/BSFaceGenManager.h), not hand-measured. Reported so a field log
+        // names the address it took.
+        inline constexpr REL::RelocationID FaceGenHairPainter{ 26259, 26838 };
     }
 
     // Hand-measured hints. Fast path only - see the header comment.
@@ -301,6 +319,8 @@ namespace {
         { "weapon equip parent",       Ids::WeaponEquipParent },
         { "weapon equip (callee)",     Ids::WeaponEquipCallee },
         { "quiver parent",             Ids::QuiverParent },
+        { "item-preview appender",     Ids::AppendInventoryModel },
+        { "facegen hair painter",      Ids::FaceGenHairPainter },
     };
 
     std::string HexBytes(std::uintptr_t a_addr, std::size_t a_count) {

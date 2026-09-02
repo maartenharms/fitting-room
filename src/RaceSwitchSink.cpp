@@ -16,6 +16,12 @@ namespace OS::RaceSwitchSink {
         // thread.
         constexpr RE::FormID kActorTypeCreatureID = 0x00013795;
 
+        // Written on the game thread by the sink, read from the menu thread by
+        // HeadEditorSink. Atomic rather than plain, because those are not always
+        // the same thread and a torn read here decides whether something the
+        // player paid for is deleted.
+        std::atomic<std::uint32_t> g_playerSwitches{ 0 };
+
         RE::BGSKeyword* ActorTypeCreature() noexcept {
             static RE::BGSKeyword* kw = []() -> RE::BGSKeyword* {
                 auto* dh = RE::TESDataHandler::GetSingleton();
@@ -61,6 +67,12 @@ namespace OS::RaceSwitchSink {
             auto&       session = OutfitSession::GetSingleton();
             auto* const player  = RE::PlayerCharacter::GetSingleton();
             if (player && actor == player) {
+                // Counted before the branch below, and counted for EVERY
+                // completed switch rather than only the suspending ones. See
+                // the header: the reader asks whether the player's identity
+                // moved, and a switch to a race this sink does not suspend on
+                // moves it just as thoroughly.
+                g_playerSwitches.fetch_add(1, std::memory_order_relaxed);
                 // The GLOBAL player path (independent of the NPC suspension
                 // set below). Suspend()/Resume() already refresh internally -
                 // see OutfitSession.cpp - so nothing further is needed here.
@@ -111,6 +123,10 @@ namespace OS::RaceSwitchSink {
         Sink g_sink;
 
     }  // namespace
+
+    std::uint32_t PlayerSwitchCount() {
+        return g_playerSwitches.load(std::memory_order_relaxed);
+    }
 
     void Register() {
         if (auto* holder = RE::ScriptEventSourceHolder::GetSingleton()) {

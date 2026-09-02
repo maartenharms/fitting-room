@@ -1,0 +1,61 @@
+dye_name	hex	rarity	eso_achievement	stat	min	keep_level	note
+Hunding Gold	4B3A21	Uncommon	Stros M'kai and Betnikh Explorer	Locations Discovered	15	10	471 markers exist; this tops out at 132
+Khenarthi Red	723434	Uncommon	Khenarthi's Roost Pathfinder	Locations Discovered	15	10	471 markers exist; this tops out at 132
+Netch Jelly Blue	56A1BF	Uncommon	Bleakrock and Bal Foyen Explorer	Locations Discovered	15	10	471 markers exist; this tops out at 132
+Maormer-Eyes Gray	222A2B	Uncommon	Auridon Master Explorer	Locations Discovered	21	12	471 markers exist; this tops out at 132
+Telvanni Brown	724B34	Uncommon	Stonefalls Master Explorer	Locations Discovered	21	12	471 markers exist; this tops out at 132
+Vine Green	56BF77	Uncommon	Glenumbra Master Explorer	Locations Discovered	21	12	471 markers exist; this tops out at 132
+Graht-Bark Brown	573724	Uncommon	Grahtwood Master Explorer	Locations Discovered	30	15	471 markers exist; this tops out at 132
+Indoril Blue	1C3D72	Uncommon	Deshaan Master Explorer	Locations Discovered	33	16	471 markers exist; this tops out at 132
+Dibella's Blush	994467	Uncommon	Greenshade Master Explorer	Locations Discovered	45	20	471 markers exist; this tops out at 132
+Flame-Knight Light Red	994B44	Uncommon	Stormhaven Master Explorer	Locations Discovered	45	20	471 markers exist; this tops out at 132
+Silvenar Green	364B21	Uncommon	Malabal Tor Master Explorer	Locations Discovered	48	21	471 markers exist; this tops out at 132
+Ash'abah Hood Gray	8B7970	Uncommon	Alik'r Desert Master Explorer	Locations Discovered	51	22	471 markers exist; this tops out at 132
+Haunted Moor Mauve	9C56BF	Uncommon	Rivenspire Master Explorer	Locations Discovered	60	25	471 markers exist; this tops out at 132
+Strangler Maw Red	A63A3A	Uncommon	Shadowfen Master Explorer	Locations Discovered	60	25	471 markers exist; this tops out at 132
+Jode Red	721C28	Uncommon	Reaper's March Master Explorer	Locations Discovered	63	26	471 markers exist; this tops out at 132
+Colovian Deep Brown	472916	Uncommon	Cyrodiil Cave Delver	Locations Discovered	66	27	471 markers exist; this tops out at 132
+Sulfur Pools Yellow	BFB856	Uncommon	Eastmarch Master Explorer	Locations Discovered	69	28	471 markers exist; this tops out at 132
+Wisp Blue	5691BF	Uncommon	Bangkorai Master Explorer	Locations Discovered	75	30	471 markers exist; this tops out at 132
+Mammoth Fur Brown	CC885B	Uncommon	The Rift Master Explorer	Locations Discovered	81	32	471 markers exist; this tops out at 132
+Craglorn Crimson	481219	Uncommon	Lower Craglorn Master Explorer	Locations Discovered	84	33	471 markers exist; this tops out at 132
+Soul Shriven Pale	D9C4B7	Uncommon	Coldharbour Master Explorer	Locations Discovered	87	34	471 markers exist; this tops out at 132
+Atmoran Bronze	6D3B1F	Rare	Ebonheart Master Explorer	Locations Discovered	99	38	471 markers exist; this tops out at 132
+Ayleid Gold	533D1C	Rare	Aldmeri Master Explorer	Locations Discovered	99	38	471 markers exist; this tops out at 132
+Orichalc Green	3F3E29	Rare	Daggerfall Master Explorer	Locations Discovered	99	38	471 markers exist; this tops out at 132
+Aetherial Blue	5195A2	Rare	Tamriel Skyshard Hunter	Locations Discovered	132	49	471 markers exist; this tops out at 132
+Glittering Gold	CFAC3B	Uncommon	Goad Favored	Civil War Quests Completed	1	17	one side only, so never above 8
+Ruckus Rust	491600	Uncommon	Ruckus Favored	Civil War Quests Completed	1	17	one side only, so never above 8
+Thousand Eyes Ichor	347062	Uncommon	Eyes Favored	Civil War Quests Completed	1	17	one side only, so never above 8
+Covenant Vanquisher Violet	5D3472	Uncommon	Vanquisher of the Covenant	Civil War Quests Completed	3	27	one side only, so never above 8
+Dominion Vanquisher Green	34724D	Uncommon	Vanquisher of the Dominion	Civil War Quests Completed	3	27	one side only, so never above 8
+Pact Vanquisher Brown	72311C	Uncommon	Vanquisher of the Pact	Civil War Quests Completed	3	27	one side only, so never above 8
+Covenant Conqueror Blue	122546	Uncommon	Daggerfall Covenant Conqueror	Civil War Quests Completed	4	32	one side only, so never above 8
+Dominion Conqueror Yellow	4B4813	Uncommon	Aldmeri Dominion Conqueror	Civil War Quests Completed	4	32	one side only, so never above 8
+Pact Conqueror Red	4B1313	Uncommon	Ebonheart Pact Conqueror	Civil War Quests Completed	4	32	one side only, so never above 8
+Tribune's Steel	3D4A4B	Uncommon	Alliance War Tribune	Civil War Quests Completed	4	33	one side only, so never above 8
+Prefect's Gray	4B4B4B	Uncommon	Alliance War Prefect	Civil War Quests Completed	4	34	one side only, so never above 8
+Palatine's White	D1BCB0	Rare	Alliance War Palatine	Civil War Quests Completed	5	36	one side only, so never above 8
+Legate's Black	171919	Rare	Alliance War Legate	Civil War Quests Completed	6	39	one side only, so never above 8
+Somber Cerise	792C3F	Uncommon	Imperial City Warlord	Civil War Quests Completed	6	40	one side only, so never above 8
+Warlord's Red	56231F	Rare	Alliance War Warlord	Civil War Quests Completed	6	41	one side only, so never above 8
+Covenant Blue	222B54	Rare	Hero of the Daggerfall Covenant	Civil War Quests Completed	6	42	one side only, so never above 8
+Dominion Yellow	805A27	Rare	Hero of the Aldmeri Dominion	Civil War Quests Completed	6	42	one side only, so never above 8
+Pact Blood Red	632222	Rare	Hero of the Ebonheart Pact	Civil War Quests Completed	6	42	one side only, so never above 8
+Stormlord's Lightning	573464	Uncommon	Grand Standard-Bearer	Civil War Quests Completed	6	42	one side only, so never above 8
+Grand Warlord's Violet	232345	Rare	Alliance War Grand Warlord	Civil War Quests Completed	6	43	one side only, so never above 8
+Cyrodilic Steel	43535A	Rare	Cyrodiil Champion	Civil War Quests Completed	7	44	one side only, so never above 8
+Overlord's Purple	2D072D	Rare	Alliance War Overlord	Civil War Quests Completed	7	45	one side only, so never above 8
+Regicide Red	4B2121	Uncommon	Emperor Slayer	Civil War Quests Completed	7	45	one side only, so never above 8
+Grand Overlord's Brass	966E3C	Rare	Alliance War Grand Overlord	Civil War Quests Completed	7	47	one side only, so never above 8
+General's Gold	7B3C1F	Rare	Alliance War General	Civil War Quests Completed	8	49	one side only, so never above 8
+Ruby Throne Red	531111	Rare	Emperor!	Civil War Quests Completed	8	50	one side only, so never above 8
+Dried Blood Brown	997C6B	Common	Recruit of the Undaunted	Dungeons Cleared	5		the Undaunted are dungeon delvers
+Wolf's Fur Brown	4B3B36	Common	Lycanthropy	Werewolf Transformations	1		the first change
+Lycanthrope Gray	7C7C7C	Rare	Lycanthropy Master	Werewolf Transformations	25		a habit, not an accident
+Noxophilic Black	3A3E40	Common	Vampirism	Days as a Vampire	1		one day carries the infection
+Lamae's White	B0B0B0	Rare	Vampirism Master	Days as a Vampire	30		a month of it
+10-Year Anniversary Ivory	E6DFCF	Uncommon	Commemorative Mundus Missionary	Standing Stones Found	13	19	Skyrim's Mundus stones ARE its standing stones; 13 exist and 13 is the game's own achievement
+10-Year Anniversary Ebon Leather	242424	Uncommon	Commemorative Activity Achiever	Misc Objectives Completed	50	32	activity by the game's own reckoning; 50 is what Hero of the People asks and there is no ceiling under it
+Julianos White	CCCCCC	Rare	Aetherian Archive Completed	College of Winterhold Quests Completed	10	44	an archive of magic, so the magic questline rather than one ruin inside it; 24 quests carry the type, 10 asks for the line to be finished
+Void Pitch	000000	Rare	Honor to the Spiritblood	The Dark Brotherhood Quests Completed	12	44	the blackest grey in the set, so the darkest line in the game; 40 quests carry the type and most are radiant, 12 asks for the story to be seen through

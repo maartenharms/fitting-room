@@ -19,4 +19,18 @@ namespace OS::RaceSwitchSink {
     // once at kDataLoaded.
     void Register();
 
+    // How many race switches the PLAYER has completed this session.
+    //
+    // ⚠ A COUNTER RATHER THAN A FLAG, AND THAT IS THE WHOLE USE. HeadEditorSink
+    // reads it at both edges of a character-editor visit and compares, because
+    // the thing it has to detect is a switch that landed BETWEEN them - and a
+    // switch out and back leaves race and sex looking perfectly steady from
+    // inside the close handler. A deletion is authorised only when nothing
+    // moved, so an event that can be missed is one a purchase gets destroyed by.
+    //
+    // Session-scoped, monotonic, and it counts every completed switch of the
+    // player rather than only the beast forms this sink suspends on: the
+    // question is "did their identity move", not "did we stand down".
+    [[nodiscard]] std::uint32_t PlayerSwitchCount();
+
 }  // namespace OS::RaceSwitchSink

@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<system xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="description.xsd">
+	<per-triangle-shape name="VirtualGround">
+		<margin>0.2</margin>
+		<penetration>0.75</penetration>
+		<shared>private</shared>
+		<tag>VirtualGroundHair</tag>
+		<can-collide-with-tag>hair</can-collide-with-tag>
+	</per-triangle-shape>
+	<bone name="Kaysa L1"/>
+	<bone name="Kaysa R1"/>
+	<bone name="Kaysa Back 1"/>
+	<bone name="NPC Neck [Neck]"/>
+	<bone name="NPC L Calf [LClf]"/>
+	<bone name="NPC R Calf [RClf]"/>
+	<bone name="NPC R Foot [Rft ]"/>
+	<bone name="NPC L Foot [Lft ]"/>
+	<bone name="NPC Head [Head]"/>
+	<bone name="NPC L Clavicle [LClv]"/>
+	<bone name="NPC R Clavicle [RClv]"/>
+	<bone name="NPC L Forearm [LLar]"/>
+	<bone name="NPC R Forearm [RLar]"/>
+	<bone name="NPC L ForearmTwist1 [LLt1]"/>
+	<bone name="NPC R ForearmTwist1 [RLt1]"/>
+	<bone name="NPC L ForearmTwist2 [LLt2]"/>
+	<bone name="NPC R ForearmTwist2 [RLt2]"/>
+	<bone name="NPC L UpperArm [LUar]"/>
+	<bone name="NPC R UpperArm [RUar]"/>
+	<bone name="NPC L UpperarmTwist1 [LUt1]"/>
+	<bone name="NPC R UpperarmTwist1 [RUt1]"/>
+	<bone name="NPC L UpperarmTwist2 [LUt2]"/>
+	<bone name="NPC R UpperarmTwist2 [RUt2]"/>
+	<bone name="NPC Spine [Spn0]"/>
+	<bone name="NPC Spine2 [Spn2]"/>
+	<bone name="NPC Spine1 [Spn1]"/>
+	<bone name="NPC Pelvis [Pelv]"/>
+	<bone name="NPC L Thigh [LThg]"/>
+	<bone name="NPC R Thigh [RThg]"/>
+	<bone name="NPC L FrontThigh"/>
+	<bone name="NPC R FrontThigh"/>
+	<bone name="NPC L RearCalf [LrClf]"/>
+	<bone name="NPC R RearCalf [RrClf]"/>
+	<bone name="NPC L RearThigh"/>
+	<bone name="NPC R RearThigh"/>
+	<bone name="NPC L Hand [LHnd]"/>
+	<bone name="NPC R Hand [RHnd]"/>
+	<bone name="NPC LT Anus2"/>
+	<bone name="NPC RT Anus2"/>
+	<bone name="NPC LB Anus2"/>
+	<bone name="NPC RB Anus2"/>
+	<bone name="NPC Anus Deep2"/>
+	<bone-default>
+		<mass>0.3</mass>
+		<inertia x="10" y="10" z="10"/>
+		<centerOfMassTransform>
+			<basis x="0" y="0" z="0" w="1"/>
+			<origin x="0" y="0" z="0"/>
+		</centerOfMassTransform>
+		<linearDamping>0.6</linearDamping>
+		<angularDamping>0.6</angularDamping>
+		<friction>0</friction>
+		<rollingFriction>0</rollingFriction>
+		<restitution>0</restitution>
+	</bone-default>
+	<bone name="Kaysa L2"/>
+	<bone name="Kaysa L3"/>
+	<bone name="Kaysa L4"/>
+	<bone name="Kaysa L5"/>
+	<bone name="Kaysa R2"/>
+	<bone name="Kaysa R3"/>
+	<bone name="Kaysa R4"/>
+	<bone name="Kaysa R5"/>
+	<bone-default>
+		<mass>0.2</mass>
+		<inertia x="10" y="10" z="10"/>
+		<centerOfMassTransform>
+			<basis x="0" y="0" z="0" w="1"/>
+			<origin x="0" y="0" z="0"/>
+		</centerOfMassTransform>
+		<linearDamping>0.8</linearDamping>
+		<angularDamping>0.8</angularDamping>
+		<friction>0</friction>
+		<rollingFriction>0</rollingFriction>
+		<restitution>0</restitution>
+	</bone-default>
+	<bone name="Kaysa Back 2"/>
+	<bone name="Kaysa Back 3"/>
+	<bone name="Kaysa Back 4"/>
+	<bone name="Kaysa Back 5"/>
+	<bone name="Kaysa Back 6"/>
+	<generic-constraint-default>
+		<frameInA>
+			<basis x="0" y="0" z="0" w="1"/>
+			<origin x="0" y="0" z="0"/>
+		</frameInA>
+		<useLinearReferenceFrameA>false</useLinearReferenceFrameA>
+		<linearLowerLimit x="0" y="0" z="0"/>
+		<linearUpperLimit x="0" y="0" z="0"/>
+		<angularLowerLimit x="-0.4" y="-0.4" z="-0.4"/>
+		<angularUpperLimit x="0.4" y="0.4" z="0.4"/>
+		<linearStiffness x="0" y="0" z="0"/>
+		<angularStiffness x="1" y="1" z="1"/>
+		<linearDamping x="0" y="0" z="0"/>
+		<angularDamping x="1" y="1" z="1"/>
+		<linearEquilibrium x="0" y="0" z="0"/>
+		<angularEquilibrium x="0" y="0" z="0"/>
+	</generic-constraint-default>
+	<constraint-group>
+		<generic-constraint bodyA="Kaysa L2" bodyB="Kaysa L1"></generic-constraint>
+		<generic-constraint bodyA="Kaysa L3" bodyB="Kaysa L2"></generic-constraint>
+		<generic-constraint bodyA="Kaysa L4" bodyB="Kaysa L3"></generic-constraint>
+		<generic-constraint bodyA="Kaysa L5" bodyB="Kaysa L4"></generic-constraint>
+		<generic-constraint bodyA="Kaysa R2" bodyB="Kaysa R1"></generic-constraint>
+		<generic-constraint bodyA="Kaysa R3" bodyB="Kaysa R2"></generic-constraint>
+		<generic-constraint bodyA="Kaysa R4" bodyB="Kaysa R3"></generic-constraint>
+		<generic-constraint bodyA="Kaysa R5" bodyB="Kaysa R4"></generic-constraint>
+	</constraint-group>
+	<generic-constraint-default>
+		<frameInA>
+			<basis x="0" y="0" z="0" w="1"/>
+			<origin x="0" y="0" z="0"/>
+		</frameInA>
+		<useLinearReferenceFrameA>false</useLinearReferenceFrameA>
+		<linearLowerLimit x="0" y="0" z="0"/>
+		<linearUpperLimit x="0" y="0" z="0"/>
+		<angularLowerLimit x="-0.4" y="-0.3" z="-0.3"/>
+		<angularUpperLimit x="0.4" y="0.3" z="0.3"/>
+		<linearStiffness x="0" y="0" z="0"/>
+		<angularStiffness x="1" y="1" z="1"/>
+		<linearDamping x="0" y="0" z="0"/>
+		<angularDamping x="1" y="1" z="1"/>
+		<linearEquilibrium x="0" y="0" z="0"/>
+		<angularEquilibrium x="0" y="0" z="0"/>
+	</generic-constraint-default>
+	<constraint-group>
+		<generic-constraint bodyA="Kaysa Back 2" bodyB="Kaysa Back 1"></generic-constraint>
+		<generic-constraint bodyA="Kaysa Back 3" bodyB="Kaysa Back 2"></generic-constraint>
+		<generic-constraint bodyA="Kaysa Back 4" bodyB="Kaysa Back 3"></generic-constraint>
+		<generic-constraint bodyA="Kaysa Back 5" bodyB="Kaysa Back 4"></generic-constraint>
+		<generic-constraint bodyA="Kaysa Back 6" bodyB="Kaysa Back 5"></generic-constraint>
+	</constraint-group>
+	<per-vertex-shape name="GuanYinping">
+		<margin>0</margin>
+		<shared>private</shared>
+		<tag>hair</tag>
+		<can-collide-with-tag>VirtualHeadHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHairCollision</can-collide-with-tag>
+		<can-collide-with-tag>VirtualGroundHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHands</can-collide-with-tag>
+	</per-vertex-shape>
+	<per-vertex-shape name="GuanYinping_HL">
+		<margin>0</margin>
+		<shared>private</shared>
+		<tag>hair</tag>
+		<can-collide-with-tag>VirtualHeadHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHairCollision</can-collide-with-tag>
+		<can-collide-with-tag>VirtualGroundHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHands</can-collide-with-tag>
+	</per-vertex-shape>
+	<per-vertex-shape name="GuanYinping2">
+		<margin>0</margin>
+		<shared>private</shared>
+		<tag>hair</tag>
+		<can-collide-with-tag>VirtualHeadHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHairCollision</can-collide-with-tag>
+		<can-collide-with-tag>VirtualGroundHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHands</can-collide-with-tag>
+	</per-vertex-shape>
+	<per-vertex-shape name="GuanYinping2_HL">
+		<margin>0</margin>
+		<shared>private</shared>
+		<tag>hair</tag>
+		<can-collide-with-tag>VirtualHeadHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHairCollision</can-collide-with-tag>
+		<can-collide-with-tag>VirtualGroundHair</can-collide-with-tag>
+		<can-collide-with-tag>VirtualHands</can-collide-with-tag>
+	</per-vertex-shape>
+	<per-triangle-shape name="VirtualHead">
+		<margin>0.02</margin>
+		<penetration>0.01</penetration>
+		<shared>private</shared>
+		<tag>VirtualHeadHair</tag>
+		<can-collide-with-tag>hair</can-collide-with-tag>
+	</per-triangle-shape>
+	<per-triangle-shape name="VirtualHairCollision_2">
+		<margin>0.5</margin>
+		<penetration>0.01</penetration>
+		<shared>private</shared>
+		<tag>VirtualHairCollision</tag>
+		<can-collide-with-tag>hair</can-collide-with-tag>
+	</per-triangle-shape>
+</system>

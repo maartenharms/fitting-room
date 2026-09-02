@@ -1,0 +1,54 @@
+{
+  "_readme": [
+    "Preview scene fixups. See ldd-lili-collection.json for the format."
+  ],
+  "scopes": [
+    {
+      "_why": [
+        "The Bound Arrow card drew a hard-edged violet slab with the arrow",
+        "buried inside it (field 2026-08-21, twice). The slab is FlamesMesh02:",
+        "a glow plane carrying a LIGHTING shader and, in the copy this load",
+        "order actually loads, NO NiAlphaProperty at all. Nothing marks it as",
+        "transparent, so the pass drew it opaque and its quad edges are the",
+        "sharp rectangle.",
+        "",
+        "A code rule was tried first and was wrong: skipping geometry whose",
+        "blend modes the pass cannot reproduce. ENB Light re-authors the ARROW",
+        "ITSELF as blend on, srcAlpha to ONE, alpha test GREATER 128, so that",
+        "rule ate Arrow1 through Arrow6 and Arrow:0 while leaving the slab",
+        "untouched, because a shape with no alpha property has no blend modes",
+        "to judge. It was reverted. The lesson is in the tracker as OS-244.",
+        "",
+        "Censused with tools/nif_shape_alpha.py over every bound weapon mesh",
+        "in the load order (ENB Light, ENB Light - Misc Effects, Remove Arrow",
+        "and Bolt Trail VFX; ElSopa and LeanWolf ship none). The FX families",
+        "are named consistently across all of them: FlamesMesh, FlamesMesh01,",
+        "FlamesMesh02, FlamesHit01..04, RefractMesh2, RefractMesh03,",
+        "RefrectHit01, RefrectHit02 (the author's own spelling), ENBLight01,",
+        "trailShort and Flow:0. The real pieces are Arrow1..Arrow6, Arrow:0,",
+        "ArrowQuiver:0 and BoundArrowFlight:0, and not one of them contains",
+        "any of those tokens. That is checkable because this family was",
+        "censused whole, which is why the rule is scoped to this path rather",
+        "than added to the global helper tokens.",
+        "",
+        "⚠ The *encheffects.nif meshes in this folder are FX end to end and",
+        "would be hidden entirely by these patterns. They are enchantment",
+        "effect meshes rather than item models, so nothing builds a card from",
+        "one; if that ever changes, this scope has to narrow to the arrow.",
+        "",
+        "A scope tag re-keys exactly the cards it covers, which is also what",
+        "clears the slab already sitting in the PNG cache."
+      ],
+      "path": "weapons/boundweapons/",
+      "hide": [
+        "*flamesmesh*",
+        "*flameshit*",
+        "*refractmesh*",
+        "*refrecthit*",
+        "*enblight*",
+        "*trailshort*",
+        "*flow:*"
+      ]
+    }
+  ]
+}

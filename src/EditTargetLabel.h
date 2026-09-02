@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -43,6 +45,28 @@ namespace OS {
             }
         }
         return out;
+    }
+
+    // The roster walk hands people back in process-list order, which is
+    // nobody's order (Trello, user 2026-08-22: "make sure npcs that are
+    // closest to you appear first in the order of npcs to edit dropdown").
+    // Distances arrive index-aligned with the entries; the return is the
+    // order to visit them in, nearest first. stable_sort on purpose: equal
+    // distances keep the walk's order, so two people on one spot never swap
+    // between opens. Pure so the rule is unit-tested without RE:: types,
+    // exactly like the labels above (tests/test_npcsession.cpp), and the
+    // caller applies one permutation to every parallel array it keeps.
+    [[nodiscard]] inline std::vector<std::size_t> NearestFirstOrder(
+        const std::vector<float>& a_distances) {
+        std::vector<std::size_t> order(a_distances.size());
+        for (std::size_t i = 0; i < order.size(); ++i) {
+            order[i] = i;
+        }
+        std::stable_sort(order.begin(), order.end(),
+                         [&](std::size_t a_lhs, std::size_t a_rhs) {
+                             return a_distances[a_lhs] < a_distances[a_rhs];
+                         });
+        return order;
     }
 
 }  // namespace OS

@@ -35,10 +35,13 @@ int main() {
         o.SetStyle(kBitBody, StyleRefKey{ "Armors.esp", 0x801 });
         o.SetStyle(kBitFeet, StyleRefKey{ "Skyrim.esm", 0x1B3A3 });
         o.SetHide(kBitHair);
-        o.obodyPreset = "Umbral's Umbrage Nerfed";
+        o.obodyPreset = "Installed value must lose to the custom owner";
+        o.customBodyPresetId = "0123456789abcdef";
         o.orefit      = ORefitMode::kForceOff;
 
         const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(!json.isMember("obodyPreset"));
+        CHECK(json["customBodyPresetId"].asString() == "0123456789abcdef");
         Outfit     back;
         CHECK(JsonCodec::JsonToOutfit(json, back));
         CHECK(back.name == "Court Dress");
@@ -49,7 +52,8 @@ int main() {
         CHECK(back.EntryFor(kBitFeet).style.localFormID == 0x1B3A3);
         CHECK(back.EntryFor(kBitHair).kind == SlotEntry::Kind::kHide);
         CHECK(back.EntryFor(kBitHands).kind == SlotEntry::Kind::kPassthrough);
-        CHECK(back.obodyPreset == "Umbral's Umbrage Nerfed");
+        CHECK(back.obodyPreset.empty());
+        CHECK(back.customBodyPresetId == "0123456789abcdef");
         CHECK(back.orefit == ORefitMode::kForceOff);
     }
 
@@ -123,6 +127,296 @@ int main() {
         CHECK(malformed.orefit == ORefitMode::kDefault);
     }
 
+    {  // Hair survives a JSON round trip by NAME, not by number - the file is a
+       // hand-editable authoring surface (see PRESETS.md).
+        Outfit o;
+        o.name = "Hooded";
+        o.hair = HairMode::kHide;
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json["hair"].asString() == "hide");
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.hair == HairMode::kHide);
+    }
+
+    {  // Auto is omitted, so a file written before this is byte-identical.
+        Outfit o;
+        o.name = "Plain";
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(!json.isMember("hair"));
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.hair == HairMode::kAuto);
+    }
+
+    {  // An unknown value degrades to auto rather than refusing the outfit.
+        Json::Value json(Json::objectValue);
+        json["name"] = "Weird";
+        json["hair"] = "banana";
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.hair == HairMode::kAuto);
+    }
+
+    {  // Hair colour survives an export/import round trip, and is OMITTED when
+       // disabled so a file written before this feature stays byte-identical.
+        Outfit o;
+        o.hairTint = HairTint{ true, 200, 40, 90 };
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json.isMember("hairColor"));
+        CHECK(json["hairColor"].asString() == "C8285A");  // 200,40,90 = C8,28,5A
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.hairTint.set);
+        CHECK(back.hairTint.r == 200);
+        CHECK(back.hairTint.g == 40);
+        CHECK(back.hairTint.b == 90);
+
+        Outfit plain;
+        CHECK(!JsonCodec::OutfitToJson(plain).isMember("hairColor"));
+
+        // A malformed value decodes to disabled rather than to a half-parsed
+        // colour: an imported file is untrusted input.
+        Json::Value bad;
+        bad["hairColor"] = "nonsense";
+        Outfit fromBad;
+        CHECK(JsonCodec::JsonToOutfit(bad, fromBad));
+        CHECK(!fromBad.hairTint.set);
+
+        // A human hand-editing an exported file types what their colour
+        // picker gave them - typically lowercase ("c8285a"), not the
+        // uppercase this codec itself emits. The round trip must accept it.
+        Json::Value lower;
+        lower["hairColor"] = "c8285a";
+        Outfit fromLower;
+        CHECK(JsonCodec::JsonToOutfit(lower, fromLower));
+        CHECK(fromLower.hairTint.set);
+        CHECK(fromLower.hairTint.r == 200);
+        CHECK(fromLower.hairTint.g == 40);
+        CHECK(fromLower.hairTint.b == 90);
+
+        // Strict means exactly six, not "at least six": eight valid hex digits
+        // must be rejected outright rather than silently read as the last six
+        // (which would quietly apply a colour close to, but not, the one in
+        // the file - worse than leaving hair alone, because it looks correct).
+        Json::Value overlong;
+        overlong["hairColor"] = "C8285A00";
+        Outfit fromOverlong;
+        CHECK(JsonCodec::JsonToOutfit(overlong, fromOverlong));
+        CHECK(!fromOverlong.hairTint.set);
+    }
+
+    {  // Eye colour survives an export/import round trip on the same rules as
+       // hair: omitted when disabled, one RRGGBB hex, malformed decodes to
+       // disabled. An exported outfit was losing its eye colour because this
+       // codec never carried the field.
+        Outfit o;
+        o.eyeTint = HairTint{ true, 0, 176, 0 };
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json.isMember("eyeColor"));
+        CHECK(json["eyeColor"].asString() == "00B000");
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.eyeTint.set);
+        CHECK(back.eyeTint.r == 0);
+        CHECK(back.eyeTint.g == 176);
+        CHECK(back.eyeTint.b == 0);
+
+        Outfit plain;
+        CHECK(!JsonCodec::OutfitToJson(plain).isMember("eyeColor"));
+
+        Json::Value bad;
+        bad["eyeColor"] = "nonsense";
+        Outfit fromBad;
+        CHECK(JsonCodec::JsonToOutfit(bad, fromBad));
+        CHECK(!fromBad.eyeTint.set);
+
+        // Lowercase hex from a human's colour picker is accepted, exactly as
+        // hairColor's is: one parser serves both.
+        Json::Value lower;
+        lower["eyeColor"] = "00b000";
+        Outfit fromLower;
+        CHECK(JsonCodec::JsonToOutfit(lower, fromLower));
+        CHECK(fromLower.eyeTint.set);
+        CHECK(fromLower.eyeTint.g == 176);
+    }
+
+    {  // The sclera colour rides beside the eye colour on identical rules.
+        Outfit o;
+        o.scleraTint = HairTint{ true, 200, 40, 90 };
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json.isMember("scleraColor"));
+        CHECK(json["scleraColor"].asString() == "C8285A");
+        CHECK(!json.isMember("eyeColor"));  // the halves omit independently
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.scleraTint.set);
+        CHECK(back.scleraTint.r == 200);
+        CHECK(!back.eyeTint.set);
+
+        Json::Value bad;
+        bad["scleraColor"] = "nonsense";
+        Outfit fromBad;
+        CHECK(JsonCodec::JsonToOutfit(bad, fromBad));
+        CHECK(!fromBad.scleraTint.set);
+    }
+
+    {  // ⚠⚠ THE SECOND EYE COLOUR AND THE EYE BLEND RIDE HERE TOO, and their
+       // absence was a real defect: the co-save carried both and the EXPORT
+       // dropped them, so one outfit rendered two ways depending on which door
+       // it came back through. Each eye field has been added to this file the
+       // day it landed, for exactly this reason; these two were missed.
+        Outfit o;
+        o.eyeTint  = HairTint{ true, 0, 176, 0 };
+        o.eyeTint2 = HairTint{ true, 200, 40, 90 };
+        o.eyeBlend = 3;  // screen
+
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json.isMember("eyeColor2"));
+        CHECK(json["eyeColor2"].asString() == "C8285A");
+        CHECK(json.isMember("eyeBlend"));
+        CHECK(json["eyeBlend"].asUInt() == 3u);
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.eyeTint2.set);
+        CHECK(back.eyeTint2.r == 200 && back.eyeTint2.g == 40 && back.eyeTint2.b == 90);
+        CHECK(back.eyeBlend == 3);
+
+        // Omitted when they carry nothing, so a file written before either
+        // field existed stays byte-identical.
+        Outfit plain;
+        plain.eyeTint     = HairTint{ true, 1, 2, 3 };
+        const auto minimal = JsonCodec::OutfitToJson(plain);
+        CHECK(!minimal.isMember("eyeColor2"));
+        CHECK(!minimal.isMember("eyeBlend"));
+
+        // ⚠ AN UNREADABLE BLEND DEFERS RATHER THAN REFUSING, DyeBlend.h's rule:
+        // a hand-edited file costs the eye its curve, never its colour.
+        Json::Value wild;
+        wild["eyeColor"] = "00B000";
+        wild["eyeBlend"] = 99;
+        Outfit fromWild;
+        CHECK(JsonCodec::JsonToOutfit(wild, fromWild));
+        CHECK(fromWild.eyeTint.set);   // the colour survives
+        CHECK(fromWild.eyeBlend == 0);  // the curve defers
+    }
+
+    {  // Dye survives an export/import round trip, and is OMITTED when no
+       // slot is dyed so a pre-dye file stays byte-identical. Slots speak the
+       // same editor numbers the slots array does; channels are the same bare
+       // RRGGBB hex hairColor uses.
+        Outfit o;
+        o.SetDye(BitForEditorSlot(32), DyeChannelId::kPrimary,
+                 DyeChannel{ true, 200, 40, 90 });
+        o.SetDye(BitForEditorSlot(32), DyeChannelId::kAccent,
+                 DyeChannel{ true, 1, 2, 3 });
+        o.SetDye(BitForEditorSlot(46), DyeChannelId::kSecondary,
+                 DyeChannel{ true, 9, 8, 7 });
+        const auto json = JsonCodec::OutfitToJson(o);
+        CHECK(json.isMember("dyes"));
+        CHECK(json["dyes"].size() == 2);
+        CHECK(json["dyes"][0]["slot"].asUInt() == 32);
+        // A "colours" ARRAY now, not three named keys: past three pieces there
+        // is no name for the sixth. Position is the channel, so an unset one in
+        // the middle is a null placeholder rather than a closed gap, which would
+        // slide every later colour onto the wrong piece.
+        CHECK(json["dyes"][0]["colours"].size() == 3);
+        CHECK(json["dyes"][0]["colours"][0].asString() == "C8285A");
+        CHECK(json["dyes"][0]["colours"][1].isNull());
+        CHECK(json["dyes"][0]["colours"][2].asString() == "010203");
+        CHECK(json["dyes"][1]["slot"].asUInt() == 46);
+        // Trailing unset channels are trimmed, so one colour on the second
+        // channel writes two entries and not eight.
+        CHECK(json["dyes"][1]["colours"].size() == 2);
+        CHECK(json["dyes"][1]["colours"][0].isNull());
+        CHECK(json["dyes"][1]["colours"][1].asString() == "090807");
+
+        Outfit back;
+        CHECK(JsonCodec::JsonToOutfit(json, back));
+        CHECK(back.DyeFor(BitForEditorSlot(32)).channels[0] ==
+              (DyeChannel{ true, 200, 40, 90 }));
+        CHECK(!back.DyeFor(BitForEditorSlot(32)).channels[1].set);
+        CHECK(back.DyeFor(BitForEditorSlot(32)).channels[2] ==
+              (DyeChannel{ true, 1, 2, 3 }));
+        CHECK(back.DyeFor(BitForEditorSlot(46)).channels[1] ==
+              (DyeChannel{ true, 9, 8, 7 }));
+
+        Outfit plain;
+        CHECK(!JsonCodec::OutfitToJson(plain).isMember("dyes"));
+
+        // A channel past the old three round trips, which is the whole point of
+        // the widening: the Abyss boots carry six pieces.
+        Outfit wide;
+        wide.SetDye(BitForEditorSlot(37), static_cast<DyeChannelId>(5),
+                    DyeChannel{ true, 11, 22, 33 });
+        Outfit wideBack;
+        CHECK(JsonCodec::JsonToOutfit(JsonCodec::OutfitToJson(wide), wideBack));
+        CHECK(wideBack.DyeFor(BitForEditorSlot(37)).channels[5] ==
+              (DyeChannel{ true, 11, 22, 33 }));
+    }
+
+    {  // A preset written before the widening used primary/secondary/accent as
+       // named keys. Those files still parse: there is no reason to strand one
+       // that reads perfectly well, and presets ship inside other people's mods.
+        Json::Value legacy;
+        Json::Value d;
+        d["slot"]      = 32;
+        d["primary"]   = "C8285A";
+        d["accent"]    = "010203";
+        legacy["dyes"].append(d);
+
+        Outfit out;
+        CHECK(JsonCodec::JsonToOutfit(legacy, out));
+        CHECK(out.DyeFor(BitForEditorSlot(32)).channels[0] ==
+              (DyeChannel{ true, 200, 40, 90 }));
+        CHECK(!out.DyeFor(BitForEditorSlot(32)).channels[1].set);
+        CHECK(out.DyeFor(BitForEditorSlot(32)).channels[2] ==
+              (DyeChannel{ true, 1, 2, 3 }));
+    }
+
+    {  // Dye import tolerance mirrors hairColor's: malformed channels decode
+       // to "leave this alone", out-of-range slots are skipped whole, and
+       // lowercase hex from a human's colour picker is accepted.
+        Json::Value root;
+        Json::Value d0;
+        d0["slot"]    = 32;
+        d0["primary"] = "nonsense";          // malformed: channel stays off
+        d0["accent"]  = "c8285a";            // lowercase: accepted
+        Json::Value d1;
+        d1["slot"]      = 99;                // out of range: skipped whole
+        d1["primary"]   = "FF0000";
+        Json::Value dyes(Json::arrayValue);
+        dyes.append(d0);
+        dyes.append(d1);
+        dyes.append("not an object");        // non-object: skipped
+        root["dyes"] = std::move(dyes);
+
+        Outfit out;
+        CHECK(JsonCodec::JsonToOutfit(root, out));
+        CHECK(!out.DyeFor(BitForEditorSlot(32)).channels[0].set);
+        CHECK(out.DyeFor(BitForEditorSlot(32)).channels[2] ==
+              (DyeChannel{ true, 200, 40, 90 }));
+        // Nothing else anywhere: the bad slot and bad channel landed nowhere.
+        bool anyOther = false;
+        for (std::uint32_t bit = 0; bit < Outfit::kBitCount; ++bit) {
+            for (std::size_t c = 0; c < kDyeChannelCount; ++c) {
+                if (bit == BitForEditorSlot(32) && c == 2) {
+                    continue;
+                }
+                if (out.DyeFor(bit).channels[c].set) {
+                    anyOther = true;
+                }
+            }
+        }
+        CHECK(!anyOther);
+    }
+
     {  // preset happy path (flat schema: metadata + outfit on one object)
         const auto root = Parse(R"({
             "version": 1,
@@ -158,6 +452,14 @@ int main() {
                                "slots": [ { "slot": 31, "kind": "hide" } ] })");
         CHECK(!JsonCodec::ParsePreset(root, p, err));
         CHECK(err.find("version 2") != std::string::npos);
+
+        // A hand-edited "version": "1" (string, not a number) is a wrong
+        // type, not a coercible match - it must be rejected like any other
+        // junk version, not crash reading it (jsoncpp's asInt() throws on a
+        // non-numeric Value with exceptions compiled in).
+        root = Parse(R"({ "version": "1", "name": "X",
+                          "slots": [ { "slot": 31, "kind": "hide" } ] })");
+        CHECK(!JsonCodec::ParsePreset(root, p, err));
 
         root = Parse(R"({ "version": 1,
                           "slots": [ { "slot": 31, "kind": "hide" } ] })");
@@ -373,6 +675,91 @@ int main() {
         CHECK(!JsonCodec::ParsePreset(empty, p, err));
         CHECK(err.find("slots") != std::string::npos);
         CHECK(err.find("weapons") != std::string::npos);
+    }
+
+    {  // The unsupported-hair sidecar: a style the follower attach has
+       // measured and declined stays declined across sessions, so the one
+       // visible dud attach happens once EVER rather than once per session.
+       // Bone counts and partition maps are mesh properties, so the answer is
+       // load-order-scoped like outfits.json, not save-scoped.
+        std::vector<StyleRefKey> keys{
+            { "KSHairdosSMP.esp", 0x0123ABu },
+            { "KS Hairdo's.esp", 0x000D62u },
+        };
+        const auto j = JsonCodec::UnsupportedHairToJson(keys);
+        std::vector<StyleRefKey> back;
+        CHECK(JsonCodec::JsonToUnsupportedHair(j, back));
+        CHECK(back == keys);
+    }
+
+    {  // Tolerance matches every other reader in this file: junk entries are
+       // skipped, not fatal, and an empty or wrong-typed root reads as an
+       // empty list rather than an error a load would abort on.
+        const auto j = Parse(R"({ "version": 3, "entries": [
+            { "mod": "A.esp", "id": "0x10" },
+            { "mod": "", "id": "0x11" },
+            "not-an-object",
+            { "mod": "B.esp", "id": "junk" },
+            { "mod": "C.esp", "id": "0x30" } ] })");
+        std::vector<StyleRefKey> back;
+        CHECK(JsonCodec::JsonToUnsupportedHair(j, back));
+        CHECK(back.size() == 2);
+        CHECK(back[0].modName == "A.esp");
+        CHECK(back[0].localFormID == 0x10u);
+        CHECK(back[1].modName == "C.esp");
+        CHECK(back[1].localFormID == 0x30u);
+
+        std::vector<StyleRefKey> none;
+        CHECK(!JsonCodec::JsonToUnsupportedHair(Parse("[]"), none));
+        CHECK(none.empty());
+    }
+
+    {  // OS-248: schema v3. Any other version is OUTDATED, not corrupt:
+       // reject it so the loader starts empty and styles re-measure once.
+       // ⚠⚠ v2 MUST NOW BE REFUSED, and that is the point of the bump rather
+       // than bookkeeping: v2 files were written by a partition gate that
+       // refused any single-partition mesh whose bone map was shorter than its
+       // bone list, and that rule was measured wrong. Every decline it
+       // persisted is a mesh that may well be fine, and a persisted verdict
+       // outliving the rule that made it greys a style out for good.
+        std::vector<StyleRefKey> keys;
+        keys.push_back({ "KSHairdosSMP.esp", 0x000801u });
+        const auto j = JsonCodec::UnsupportedHairToJson(keys);
+        CHECK(j["version"].asInt() == 3);
+
+        std::vector<StyleRefKey> back;
+        CHECK(JsonCodec::JsonToUnsupportedHair(j, back));
+        CHECK(back.size() == 1);
+
+        Json::Value v1(Json::objectValue);
+        v1["version"] = 1;
+        v1["entries"] = j["entries"];
+        std::vector<StyleRefKey> none;
+        CHECK(!JsonCodec::JsonToUnsupportedHair(v1, none));
+        CHECK(none.empty());
+
+        Json::Value v2(Json::objectValue);
+        v2["version"] = 2;
+        v2["entries"] = j["entries"];
+        CHECK(!JsonCodec::JsonToUnsupportedHair(v2, none));
+        CHECK(none.empty());
+
+        Json::Value noVersion(Json::objectValue);
+        noVersion["entries"] = j["entries"];
+        CHECK(!JsonCodec::JsonToUnsupportedHair(noVersion, none));
+        CHECK(none.empty());
+    }
+
+    {  // A hand-edited "version": "2" (string, not a number) must not crash
+       // the loader. jsoncpp's asInt() throws Json::LogicError on a
+       // non-numeric Value when exceptions are compiled in (they are, in
+       // this build) - the version read has to treat a wrong JSON type as
+       // junk, the same tolerance every other field in this file gets.
+        Json::Value strVersion(Json::objectValue);
+        strVersion["version"] = "3";
+        std::vector<StyleRefKey> out;
+        CHECK(!JsonCodec::JsonToUnsupportedHair(strVersion, out));
+        CHECK(out.empty());
     }
 
     if (g_failures == 0) {
