@@ -8,6 +8,8 @@
 #include "PreviewFraming.h"
 #include "PreviewGrid.h"
 #include "PreviewManifest.h"
+// The hand-built stream's teardown rule, header-only like the rest.
+#include "NifStreamTeardown.h"
 
 #include <cmath>
 #include <array>
@@ -2064,6 +2066,21 @@ int main() {
         CHECK(RootPublishesHeadAnchor(true, false, PreviewGrid::SceneKind::kHair));
         CHECK(!RootPublishesHeadAnchor(true, false, PreviewGrid::SceneKind::kGear));
         CHECK(!RootPublishesHeadAnchor(false, false, PreviewGrid::SceneKind::kHair));
+    }
+
+    {  // ⚠⚠ THE HAND-BUILT STREAM'S TEARDOWN (field 2026-09-15, the UBE crash).
+       // The engine's destructor deletes the input stream it was handed and
+       // walks the objects the parse built, so a parse the engine FAULTED
+       // out of is abandoned rather than destroyed; every other outcome, the
+       // refused file included, gets the destructor the engine's own loader
+       // would run.
+        using OS::NifStreamTeardown::For;
+        using OS::NifStreamTeardown::Parse;
+        using OS::NifStreamTeardown::Teardown;
+        CHECK(For(Parse::kFaulted) == Teardown::kAbandon);
+        CHECK(For(Parse::kNotRun) == Teardown::kEngineDestructor);
+        CHECK(For(Parse::kRefused) == Teardown::kEngineDestructor);
+        CHECK(For(Parse::kLoaded) == Teardown::kEngineDestructor);
     }
 
     if (g_failures == 0) {

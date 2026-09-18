@@ -1,4 +1,6 @@
 #include "DyeGpu.h"
+#include "GpuAccess.h"
+#include "RendererData.h"
 
 #include "Settings.h"
 
@@ -366,14 +368,8 @@ void main(uint3 id : SV_DispatchThreadID)
         // is too slow and 2048 is not, tinting a capped mip is a real answer
         // rather than a compromise nobody measured.
         void RunTask2() {
-            auto* const rm = RE::BSRenderManager::GetSingleton();
-            if (!rm) {
-                spdlog::error("DyeGpu: no BSRenderManager, task 2 cannot run.");
-                return;
-            }
-            auto& rd = rm->GetRuntimeData();
-            auto* const device = rd.forwarder;
-            auto* const ctx    = rd.context;
+            auto* const device = OS::Gpu::Device();
+            auto* const ctx    = OS::Gpu::Context();
             if (!device || !ctx) {
                 spdlog::error("DyeGpu: no device/context, task 2 cannot run.");
                 return;
@@ -402,16 +398,10 @@ void main(uint3 id : SV_DispatchThreadID)
 
         // ---- task 1 ------------------------------------------------------
         void RunTask1() {
-            auto* const rm = RE::BSRenderManager::GetSingleton();
-            if (!rm) {
-                spdlog::error("DyeGpu: no BSRenderManager, task 1 cannot run.");
-                return;
-            }
-            auto& rd = rm->GetRuntimeData();
-            // Same two members ImGuiOverlay::EnsureInit reads. 'forwarder' is
-            // the device; the name is CommonLib's, not ours.
-            auto* const device = rd.forwarder;
-            auto* const ctx    = rd.context;
+            // The same two objects ImGuiOverlay::EnsureInit reads, through the
+            // one seam that turns the library's D3D types into the SDK's.
+            auto* const device = OS::Gpu::Device();
+            auto* const ctx    = OS::Gpu::Context();
             if (!device || !ctx) {
                 spdlog::error("DyeGpu: device={} context={}, task 1 cannot run.",
                               static_cast<void*>(device), static_cast<void*>(ctx));
@@ -681,7 +671,7 @@ void main(uint3 id : SV_DispatchThreadID)
         // must hand back the very ID3D11Texture2D read from +0x00. Nothing but
         // a correct pair of offsets can produce that, and a mismatch aborts the
         // task rather than dyeing something on a wrong pointer.
-        using RendererData = RE::NiTexture::RendererData;
+        using RendererData = OS::RendererData;  // the SDK-typed mirror, RendererData.h
 
         // ---- the dye pass ------------------------------------------------
         //
@@ -909,7 +899,7 @@ void main(uint3 id : SV_DispatchThreadID)
             t->next = nullptr;
             // Nothing streams this texture off disk. The model's stream belongs
             // to the model.
-            t->unk40 = nullptr;
+            t->resourceStream = nullptr;
             t->rendererTexture = reinterpret_cast<RE::BSGraphics::Texture*>(a_rd);
             // ⚠ ZERO BEFORE ASSIGNING. `name` is a BSFixedString and the memcpy
             // copied a string-pool pointer this object never acquired a
@@ -948,7 +938,7 @@ void main(uint3 id : SV_DispatchThreadID)
             // nothing is drawing and read as a silent no.
             auto* const live = netimmerse_cast<RE::BSLightingShaderProperty*>(
                 geom->GetGeometryRuntimeData()
-                    .properties[RE::BSGeometry::States::kEffect]
+                    .shaderProperty
                     .get());
             if (live != prop) {
                 spdlog::warn("DyeGpu: task 3 target went stale before the swap "
@@ -1023,13 +1013,8 @@ void main(uint3 id : SV_DispatchThreadID)
         // caller can try again on a later frame. Returns true once it has
         // reached a verdict, pass or fail.
         bool RunTask3() {
-            auto* const rm = RE::BSRenderManager::GetSingleton();
-            if (!rm) {
-                return false;
-            }
-            auto& rd_    = rm->GetRuntimeData();
-            auto* const device = rd_.forwarder;
-            auto* const ctx    = rd_.context;
+            auto* const device = OS::Gpu::Device();
+            auto* const ctx    = OS::Gpu::Context();
             if (!device || !ctx) {
                 return false;
             }
@@ -1050,7 +1035,7 @@ void main(uint3 id : SV_DispatchThreadID)
                 root, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
                     auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                         a_geom->GetGeometryRuntimeData()
-                            .properties[RE::BSGeometry::States::kEffect]
+                            .shaderProperty
                             .get());
                     if (!prop || !prop->material ||
                         prop->material->GetType() != RE::BSShaderMaterial::Type::kLighting) {

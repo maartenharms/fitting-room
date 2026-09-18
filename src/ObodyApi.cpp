@@ -108,7 +108,7 @@ namespace OS::ObodyApi {
             const auto* changedArmor =
                 a_changed ? a_changed->As<RE::TESObjectARMO>() : nullptr;
             const auto changedMask = changedArmor
-                                         ? static_cast<std::uint32_t>(changedArmor->GetSlotMask())
+                                         ? changedArmor->GetSlotMask().underlying()
                                          : 0u;
             std::uint32_t wornMask = 0;
             using Slot = RE::BGSBipedObjectForm::BipedObjectSlot;

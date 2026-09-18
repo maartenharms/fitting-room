@@ -1,4 +1,6 @@
 #include "OverlayBake.h"
+#include "GpuAccess.h"
+#include "RendererData.h"
 
 #include "WorkerGuard.h"  // no worker body may reach terminate
 #include "Settings.h"     // iOverlayBakeCapPx, iOverlayBakeCacheMiB
@@ -25,7 +27,7 @@ namespace OS::OverlayBake {
     namespace {
 
         using Microsoft::WRL::ComPtr;
-        using RendererData = RE::NiTexture::RendererData;
+        using RendererData = OS::RendererData;  // the SDK-typed mirror, RendererData.h
 
         // ---- limits ---------------------------------------------------------
 
@@ -522,7 +524,7 @@ void main(uint3 gid : SV_GroupThreadID, uint gi : SV_GroupIndex)
             t->_refCount      = 0;
             t->prev           = nullptr;
             t->next           = nullptr;
-            t->unk40          = nullptr;
+            t->resourceStream = nullptr;
             t->rendererTexture = reinterpret_cast<RE::BSGraphics::Texture*>(a_rd);
             std::memset(&t->name, 0, sizeof(t->name));
             t->name = a_name.c_str();
@@ -569,7 +571,7 @@ void main(uint3 gid : SV_GroupThreadID, uint gi : SV_GroupIndex)
                 }
                 auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                     geom->GetGeometryRuntimeData()
-                        .properties[RE::BSGeometry::States::kEffect]
+                        .shaderProperty
                         .get());
                 if (!prop || !prop->material) {
                     return;
@@ -782,7 +784,7 @@ void main(uint3 gid : SV_GroupThreadID, uint gi : SV_GroupIndex)
                 auto* const geom = obj ? obj->AsGeometry() : nullptr;
                 auto* const prop = geom ? netimmerse_cast<RE::BSLightingShaderProperty*>(
                                               geom->GetGeometryRuntimeData()
-                                                  .properties[RE::BSGeometry::States::kEffect]
+                                                  .shaderProperty
                                                   .get())
                                         : nullptr;
                 if (!prop || !prop->material) {
@@ -970,13 +972,8 @@ void main(uint3 gid : SV_GroupThreadID, uint gi : SV_GroupIndex)
             return;
         }
 
-        auto* const rm = RE::BSRenderManager::GetSingleton();
-        if (!rm) {
-            return;
-        }
-        auto&       rt     = rm->GetRuntimeData();
-        auto* const device = rt.forwarder;
-        auto* const ctx    = rt.context;
+        auto* const device = OS::Gpu::Device();
+        auto* const ctx    = OS::Gpu::Context();
         const auto  putBack = [&] {
             std::scoped_lock lock{ g_lock };
             if (havePreview) {

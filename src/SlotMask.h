@@ -259,6 +259,65 @@ namespace OS {
     // No ghosts, no change.
     static_assert(DropGhostHeadPartBits(0x0000108Eu, 0u) == 0x0000108Eu);
 
+    // ⚠⚠ A DRAWING PIECE ON SLOT 30 OWNS THE HAIR HIDE ON 31, and the entry
+    // carrying its clone is not the entry the hide is read from. Field
+    // 2026-09-14: the outfit 'Ebony - Mail' injected a styled Ebony Helmet
+    // which MEASURED onto slot 30 alone (`style bit 0 inject 'Ebony Helmet'
+    // -> true staged=0x1`), so its addon, part and clone sit on biped ENTRY
+    // 30 while entries 31, 42 and 43 carry `.item` only. The real Iron Helmet
+    // underneath staged NOTHING (`head displace: DECLINED, worn 'Iron Helmet'
+    // ... staged 0x0`). The sweep judged each slot by its OWN entry's clone,
+    // so it called worn slot 31 a ghost at every rung with a helmet plainly on
+    // screen, published that verdict, and the mask shim dropped the hair hide.
+    //
+    // ⚠⚠ AND THE VERDICT OUTLIVES THE STYLE, which is the half that reached
+    // the user. MeasuredGhosts keys a verdict on (actor, race, occupant), and
+    // the occupant of 31 is the REAL worn helmet all through a transmog, so
+    // switching that row back to base gear changes nothing it tracks. With no
+    // sweep armed on that path the settled ghost was served on every head
+    // build for four minutes: `ghost occupant on head-part slot(s) 00000003`
+    // at 13:09:46 with the real Iron Helmet drawing, and the hair came through
+    // it (the user's screenshot). NOT WRITING the verdict is the fix; racing
+    // it with another ladder would only shorten the window.
+    //
+    // ⚠ ONE DIRECTION ONLY, AND IT IS HeadDisplacementCull's ASYMMETRY. Slot
+    // 30 vouches for 31 because a full-face piece legitimately covers a hood;
+    // 31 never vouches for 30, because a hood does not cover a face.
+    //
+    // ⚠⚠ 42 AND 43 VOUCH FOR NOTHING, AND THAT GUARD IS WHAT KEEPS r25 FIXED.
+    // A circlet declares 42 alone and leaves the hair and the ears showing
+    // (field 2026-08-12). Letting a drawing circlet vouch for 31 would hand the
+    // hair hide back to an invisible helmet with the circlet as its alibi,
+    // which is the bald-behind-a-ghost bug this whole filter exists to end.
+    //
+    // ⚠ THE INPUT IS NARROWED TO THE HEADGEAR GROUP, guard 5's doctrine: the
+    // result feeds a drawn-mask that also carries body bits, so a stray bit
+    // from a future caller must not be able to call a body slot covered.
+    //
+    //   a_entryDraws  head-family bits whose OWN biped entry holds staged,
+    //                 attached, un-culled geometry, measured off the biped by
+    //                 the caller. `.item` is deliberately NOT consulted:
+    //                 RestoreRealItems overwrites it with the skin, so the
+    //                 entry that draws a style names the skin form.
+    constexpr std::uint32_t VouchedHeadCoverage(std::uint32_t a_entryDraws) {
+        const std::uint32_t group = a_entryDraws & kHeadgearSlotMask;
+        return (group & MaskForEditorSlot(30)) ? (group | MaskForEditorSlot(31))
+                                               : group;
+    }
+    // The field case: the style's clone draws on entry 30, nothing draws on 31,
+    // and the hair hide stands.
+    static_assert(VouchedHeadCoverage(MaskForEditorSlot(30)) ==
+                  (MaskForEditorSlot(30) | MaskForEditorSlot(31)));
+    // A circlet drawing on its own vouches for nothing: r25 stays fixed.
+    static_assert(VouchedHeadCoverage(MaskForEditorSlot(42)) == MaskForEditorSlot(42));
+    // The other direction is not the mirror case.
+    static_assert(VouchedHeadCoverage(MaskForEditorSlot(31)) == MaskForEditorSlot(31));
+    // Nothing drawing on the head family vouches for nothing.
+    static_assert(VouchedHeadCoverage(0u) == 0u);
+    // And nothing outside the headgear group survives the narrowing.
+    static_assert((VouchedHeadCoverage(MaskForEditorSlot(30) | MaskForEditorSlot(32)) &
+                   MaskForEditorSlot(32)) == 0u);
+
     // Which worn-mask bits still describe geometry Fitting Room actually
     // renders. Both inputs are measured by the render pass and published to the
     // shim - see PublishRenderedCoverage in BipedHooks.cpp. Nothing here is

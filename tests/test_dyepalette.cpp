@@ -449,6 +449,11 @@ int main() {
         CHECK(modeOf("flat") == 0);
         CHECK(modeOf("nacre") == 1);
         CHECK(modeOf("iridescent") == 2);
+        // The envmask modes (2026-09-04): the shape's own environment mask
+        // draws the metal-versus-cloth line these three read.
+        CHECK(modeOf("metal") == 3);
+        CHECK(modeOf("cloth") == 4);
+        CHECK(modeOf("twotone") == 5);
         CHECK(modeOf("holographic") == 0);
         CHECK(modeOf("") == 0);
     }
@@ -621,6 +626,43 @@ int main() {
         Dye e{};
         CHECK(DyePalette::DyeFromJson(k, 0, e));
         CHECK(e.colour.flake == 0);
+    }
+
+    {  // "cut", the per-piece "Metal starts" byte (2026-09-04): optional,
+       // clamped like flake, absent means 128, which is "the dye says
+       // nothing" and the halfway cut every mask measured wanted.
+        auto cutOf = [](int c) {
+            Json::Value j;
+            j["id"]   = "x";
+            j["name"] = "x";
+            j["hex"]  = "808080";
+            j["cut"]  = c;
+            Dye d{};
+            DyePalette::DyeFromJson(j, 0, d);
+            return static_cast<int>(d.colour.cut);
+        };
+        CHECK(cutOf(51) == 51);
+        CHECK(cutOf(400) == 255);
+        CHECK(cutOf(-5) == 0);
+
+        Json::Value j;
+        j["id"]   = "x";
+        j["name"] = "x";
+        j["hex"]  = "808080";
+        Dye d{};
+        CHECK(DyePalette::DyeFromJson(j, 0, d));
+        CHECK(d.colour.cut == 128);
+
+        // Wrong type says nothing, not a refusal: the colour is worth more
+        // than where its metal starts.
+        Json::Value k;
+        k["id"]   = "x";
+        k["name"] = "x";
+        k["hex"]  = "808080";
+        k["cut"]  = "low";
+        Dye e{};
+        CHECK(DyePalette::DyeFromJson(k, 0, e));
+        CHECK(e.colour.cut == 128);
     }
 
     {  // gloss is clamped rather than wrapped, in both directions. A pack author

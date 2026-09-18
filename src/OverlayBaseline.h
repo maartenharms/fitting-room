@@ -231,7 +231,7 @@ namespace OS::OverlayBaseline {
     // the 21:41 tint loss hid behind the 21:03 art story for a whole evening.
     [[nodiscard]] inline const char* LayerDisagreement(
         const OverlayPlan::LayerState& a_rec, const OverlayPlan::LayerState& a_live) {
-        const auto near = [](float a_lhs, float a_rhs) {
+        const auto nearEq = [](float a_lhs, float a_rhs) {
             const float d = a_lhs - a_rhs;
             return (d < 0.0f ? -d : d) < 0.01f;
         };
@@ -243,11 +243,11 @@ namespace OS::OverlayBaseline {
             return "tint";
         }
         if (a_rec.hasAlpha != a_live.hasAlpha ||
-            (a_rec.hasAlpha && !near(a_rec.alpha, a_live.alpha))) {
+            (a_rec.hasAlpha && !nearEq(a_rec.alpha, a_live.alpha))) {
             return "alpha";
         }
         if (!(a_rec.glow == a_live.glow) ||
-            !near(a_rec.glowStrength, a_live.glowStrength)) {
+            !nearEq(a_rec.glowStrength, a_live.glowStrength)) {
             return "glow";
         }
         return nullptr;

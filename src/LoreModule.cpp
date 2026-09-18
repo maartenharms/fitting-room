@@ -208,17 +208,17 @@ namespace OS::LoreModule {
                 return;
             }
             const bool wanted = !PlayerHas(g_seamstone);
-            const auto held   = stock->CountObjectsInContainer(g_seamstone);
+            const auto held   = stock->GetObjectCount(g_seamstone);
             if (wanted && held <= 0) {
                 stock->AddObjectToContainer(g_seamstone, 1, nullptr);
                 spdlog::info("Lore module: the Seamstone is on Farengar's stock list "
                              "now, {} -> {} ({}).", held,
-                             stock->CountObjectsInContainer(g_seamstone), a_why);
+                             stock->GetObjectCount(g_seamstone), a_why);
             } else if (!wanted && held > 0) {
                 stock->RemoveObjectFromContainer(g_seamstone, held);
                 spdlog::info("Lore module: the player has a Seamstone, so it comes off "
                              "Farengar's stock list, {} -> {} ({}).", held,
-                             stock->CountObjectsInContainer(g_seamstone), a_why);
+                             stock->GetObjectCount(g_seamstone), a_why);
             } else {
                 spdlog::debug("Lore module: the stock list already reads {} and that is "
                               "right ({}).", held, a_why);

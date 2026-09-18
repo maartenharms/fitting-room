@@ -1,5 +1,7 @@
 #include "DyeUnlockCard.h"
 
+#include "DyePromotion.h"  // AnnouncesCards: the economy switch gates the cards
+
 #include "DyeCardQueue.h"
 #include "DyePalette.h"
 #include "EditorStyle.h"  // PlayUISound, for the arrival cue
@@ -490,7 +492,11 @@ namespace OS::DyeUnlockCard {
             std::scoped_lock lk(g_lock);
             g_queue.SetTiming(t);
         }
-        const bool on = cfg.dyeUnlockCards;
+        // ⚠ AND THE ECONOMY SWITCH (2026-09-04). With bDyeUnlocks off every
+        // colour is already pickable, so "Dye unlocked" announces nothing; the
+        // field had the switch off in every session read and the cards still
+        // fired, because only the pane's padlock ever read it.
+        const bool on = OS::AnnouncesCards(cfg.dyeUnlocks, cfg.dyeUnlockCards);
         g_enabled.store(on, std::memory_order_relaxed);
         if (!on) {
             // Switched off mid-session: what is already on screen goes too,

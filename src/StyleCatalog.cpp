@@ -152,7 +152,7 @@ namespace OS {
             spdlog::info("[diag/catalog] {:08X} '{}' [{}] slot=0x{:X} type={} -> {}",
                          a_armo ? a_armo->GetFormID() : 0u, a_name ? a_name : "",
                          f ? f->GetFilename() : "?",
-                         a_armo ? static_cast<std::uint32_t>(a_armo->GetSlotMask()) : 0u,
+                         a_armo ? a_armo->GetSlotMask().underlying() : 0u,
                          a_armo ? static_cast<int>(a_armo->GetArmorType()) : -1, a_fate);
         };
 
@@ -179,7 +179,7 @@ namespace OS {
                 if (dhit) diagFate(armo, name, "DROP: is the player skin");
                 continue;  // the naked body is not a style
             }
-            const auto mask = static_cast<std::uint32_t>(armo->GetSlotMask());
+            const auto mask = armo->GetSlotMask().underlying();
             if (mask == 0 || (mask & ~kNeverStyleMask) == 0) {
                 if (dhit) diagFate(armo, name, "DROP: no styleable slot");
                 continue;

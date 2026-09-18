@@ -400,7 +400,7 @@ namespace OS::ProfileApply {
                     for (std::int32_t i = 0; i < rd.numPartitions; ++i) {
                         parts += fmt::format("{}{}{}", i ? " " : "",
                                              rd.partitions[i].slot,
-                                             rd.partitions[i].editorVisible ? "+" : "-");
+                                             rd.partitions[i].visible ? "+" : "-");
                     }
                     if (parts.empty()) {
                         parts = "0-partitions";

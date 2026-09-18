@@ -17,7 +17,7 @@ https://www.nexusmods.com/skyrimspecialedition/mods/185342
 
 ## User Requirements
 
-* Skyrim SE 1.5.97, or AE 1.6.317 and later. VR is not supported.
+* Skyrim SE 1.5.97, or AE 1.6.317 and later. Support for 1.7.104 is in testing. VR is not supported.
 * [SKSE64](https://skse.silverlock.org/) for your runtime
 * [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
 	* The SE or the AE database, whichever matches your game

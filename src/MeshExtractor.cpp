@@ -542,8 +542,8 @@ namespace OS::MeshExtractor {
         MaterialInfo ResolveMaterial(RE::BSGeometry* a_geometry, ExtractStats& a_stats,
                                      bool a_greyBody) {
             auto& rt = a_geometry->GetGeometryRuntimeData();
-            return ResolveMaterialFrom(rt.properties[RE::BSGeometry::States::kEffect].get(),
-                                       rt.properties[RE::BSGeometry::States::kProperty].get(),
+            return ResolveMaterialFrom(rt.shaderProperty.get(),
+                                       rt.alphaProperty.get(),
                                        a_stats, a_greyBody);
         }
 
@@ -1750,8 +1750,8 @@ namespace OS::MeshExtractor {
             RE::NiProperty* alphaProp  = nullptr;
             if (geometry) {
                 auto& geomRt = geometry->GetGeometryRuntimeData();
-                shaderProp   = geomRt.properties[RE::BSGeometry::States::kEffect].get();
-                alphaProp    = geomRt.properties[RE::BSGeometry::States::kProperty].get();
+                shaderProp   = geomRt.shaderProperty.get();
+                alphaProp    = geomRt.alphaProperty.get();
             } else if (a_cand.legacy) {
                 shaderProp = LegacyGeometry::ShaderProperty(a_cand.legacy);
                 alphaProp  = LegacyGeometry::AlphaProperty(a_cand.legacy);
@@ -2369,7 +2369,7 @@ namespace OS::MeshExtractor {
             if (swapsByName && cand.geometry) {
                 auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                     cand.geometry->GetGeometryRuntimeData()
-                        .properties[RE::BSGeometry::States::kEffect]
+                        .shaderProperty
                         .get());
                 auto* const material =
                     prop ? static_cast<RE::BSLightingShaderMaterialBase*>(prop->material)

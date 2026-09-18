@@ -162,7 +162,7 @@ namespace OS::SkinApi {
                 }
                 auto* const lighting = netimmerse_cast<RE::BSLightingShaderProperty*>(
                     geom->GetGeometryRuntimeData()
-                        .properties[RE::BSGeometry::States::kEffect]
+                        .shaderProperty
                         .get());
                 auto* const material =
                     lighting ? static_cast<RE::BSLightingShaderMaterialBase*>(lighting->material)
@@ -338,7 +338,7 @@ namespace OS::SkinApi {
                 const char* name     = geom->name.c_str();
                 auto* const lighting = netimmerse_cast<RE::BSLightingShaderProperty*>(
                     geom->GetGeometryRuntimeData()
-                        .properties[RE::BSGeometry::States::kEffect]
+                        .shaderProperty
                         .get());
                 auto* const material =
                     lighting ? static_cast<RE::BSLightingShaderMaterialBase*>(lighting->material)
@@ -510,7 +510,7 @@ namespace OS::SkinApi {
                 }
                 auto* const lighting = netimmerse_cast<RE::BSLightingShaderProperty*>(
                     geom->GetGeometryRuntimeData()
-                        .properties[RE::BSGeometry::States::kEffect]
+                        .shaderProperty
                         .get());
                 auto* const material =
                     lighting ? static_cast<RE::BSLightingShaderMaterialBase*>(lighting->material)
@@ -1562,7 +1562,7 @@ namespace OS::SkinApi {
                 a_face, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
                     auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                         a_geom->GetGeometryRuntimeData()
-                            .properties[RE::BSGeometry::States::kEffect]
+                            .shaderProperty
                             .get());
                     if (prop && prop->material &&
                         prop->material->GetFeature() ==

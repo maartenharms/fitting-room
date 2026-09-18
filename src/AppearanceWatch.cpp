@@ -210,7 +210,7 @@ namespace OS::AppearanceWatch {
                     face, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
                         auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                             a_geom->GetGeometryRuntimeData()
-                                .properties[RE::BSGeometry::States::kEffect]
+                                .shaderProperty
                                 .get());
                         if (!prop) {
                             return RE::BSVisit::BSVisitControl::kContinue;
@@ -231,12 +231,28 @@ namespace OS::AppearanceWatch {
                         auto* const fg =
                             static_cast<RE::BSLightingShaderMaterialFacegen*>(mat);
                         auto* const tt = fg->tintTexture.get();
+                        // What BACKS the tint texture (2026-09-09). A head
+                        // build's texture owns a copied D3D texture; the
+                        // chargen retint (AE 52396) binds a view straight onto
+                        // the player tint render target with no texture of its
+                        // own, and every tint job in the game is drawn into that
+                        // target, so ALIAS here is a face anybody's tint job can
+                        // paint over. A backing change under the same texture is
+                        // a private copy landing, and it prints as a transition.
+                        auto* const rd =
+                            tt ? reinterpret_cast<RE::NiTexture::RendererData*>(
+                                     tt->rendererTexture)
+                               : nullptr;
+                        const char* backing = OS::MakeupPlan::TintBackingLabel(
+                            OS::MakeupPlan::JudgeTintBacking(rd != nullptr,
+                                                             rd && rd->texture != nullptr));
                         s.headFace = fmt::format(
-                            "'{}' bound='{}' mat=0x{:X} tintTex=0x{:X} '{}'",
+                            "'{}' bound='{}' mat=0x{:X} tintTex=0x{:X} '{}' backing=0x{:X} {}",
                             a_geom->name.c_str(), bound,
                             reinterpret_cast<std::uintptr_t>(mat),
                             reinterpret_cast<std::uintptr_t>(tt),
-                            tt ? tt->name.c_str() : "");
+                            tt ? tt->name.c_str() : "", reinterpret_cast<std::uintptr_t>(rd),
+                            backing);
                         return RE::BSVisit::BSVisitControl::kStop;
                     });
             }

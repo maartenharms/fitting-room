@@ -307,6 +307,72 @@ int main() {
         }
     }
 
+    {  // VouchedHeadCoverage: WHICH ENTRY the hide is read from versus which
+       // one carries the geometry. The 2026-09-14 field case, plus the guard
+       // that stops the fix undoing r25.
+        const auto head    = MaskForEditorSlot(30);
+        const auto hair    = MaskForEditorSlot(31);
+        const auto longer  = MaskForEditorSlot(41);
+        const auto circlet = MaskForEditorSlot(42);
+        const auto ears    = MaskForEditorSlot(43);
+        const auto body    = MaskForEditorSlot(32);
+
+        {  // THE REPORT ITSELF. A styled Ebony Helmet measured onto slot 30, so
+           // its clone sits on entry 30 and entry 31 stages nothing at all. The
+           // worn Iron Helmet on 31 is NOT a ghost, because the head is covered,
+           // and publishing it as one is what left the hair showing through a
+           // real helmet four minutes later.
+            CHECK(VouchedHeadCoverage(head) == (head | hair));
+        }
+
+        {  // THE r25 GUARD, AND IT IS THE ONE THAT MATTERS. A circlet declares 42
+           // alone and leaves the hair and the ears showing (field 2026-08-12).
+           // A drawing circlet must never vouch for 31: that hands the hair hide
+           // back to an invisible helmet and puts the bald character back.
+            CHECK(VouchedHeadCoverage(circlet) == circlet);
+            CHECK(VouchedHeadCoverage(ears) == ears);
+            CHECK(VouchedHeadCoverage(circlet | ears) == (circlet | ears));
+            CHECK((VouchedHeadCoverage(circlet | ears) & hair) == 0u);
+        }
+
+        {  // ONE DIRECTION, HeadDisplacementCull's asymmetry. A hood drawing on
+           // 31 does not cover a face, so it vouches for nothing on 30.
+            CHECK(VouchedHeadCoverage(hair) == hair);
+            CHECK((VouchedHeadCoverage(hair) & head) == 0u);
+        }
+
+        {  // Nothing drawing on the head family vouches for nothing, which IS the
+           // r25 case: a worn helmet staging no geometry anywhere stays a ghost
+           // and the hair comes back rather than the character going bald.
+            CHECK(VouchedHeadCoverage(0u) == 0u);
+        }
+
+        {  // The narrowing, guard 5's doctrine. The result feeds a drawn-mask
+           // that also carries body bits, so nothing outside the headgear group
+           // may survive - a vouched body slot would be an un-restorable hide.
+            CHECK((VouchedHeadCoverage(head | body) & body) == 0u);
+            CHECK(VouchedHeadCoverage(head | body) == (head | hair));
+            CHECK((VouchedHeadCoverage(head) & ~kHeadgearSlotMask) == 0u);
+            // 41 is long hair, not headgear, so it neither vouches nor rides along.
+            CHECK(VouchedHeadCoverage(longer) == 0u);
+            CHECK(VouchedHeadCoverage(head | longer) == (head | hair));
+        }
+
+        {  // Already drawing on its own entry: the vouch changes nothing, which
+           // is the ordinary real-helmet case, and it is idempotent.
+            CHECK(VouchedHeadCoverage(head | hair) == (head | hair));
+            CHECK(VouchedHeadCoverage(hair | circlet) == (hair | circlet));
+            CHECK(VouchedHeadCoverage(VouchedHeadCoverage(head)) ==
+                  VouchedHeadCoverage(head));
+        }
+
+        {  // It only ever ADDS the hair bit, never removes a group bit the
+           // caller measured, so a vouch can never take a hide away.
+            const auto all = head | hair | circlet | ears;
+            CHECK((VouchedHeadCoverage(all) & all) == all);
+            CHECK(VouchedHeadCoverage(head | circlet) == (head | hair | circlet));
+        }
+    }
     {  // SharesAnyArmature: guard 2's input. Identity only, both directions,
        // and a null-tolerant walk - a null entry in either list is not a match.
         struct FakeArmo {
@@ -3199,6 +3265,35 @@ int main() {
         const auto twice = ApplyPaletteDye(once, dye);
         CHECK(once == twice);
     }
+    {   // ⚠ THE CUT IS THE PIECE'S, NOT THE DYE'S (2026-09-04). Where metal
+        // starts is a fact about a piece's own mask (the cloak wants a fifth
+        // of the class gap, vanilla iron half), so a swatch click keeps the
+        // staged byte exactly as it keeps strength: a player who tuned the
+        // cape must not get the patches back on every colour they compare.
+        CHECK(DyeChannel{}.cut == 128);
+        CHECK((DyeChannel{ true, 1, 2, 3 }).cut == 128);  // four positional, as ever
+        DyeChannel staged{};
+        staged.set = true;
+        staged.cut = 51;
+        DyeChannel dye{};
+        dye.set = true; dye.r = 1; dye.g = 2; dye.b = 3;
+        dye.mode = 5;  // twotone, and nothing said about the cut
+        CHECK(ApplyPaletteDye(staged, dye).cut == 51);
+        // A dye that DECLARES a cut brings it, the way a dye that declares a
+        // finish does; 128 is the struct's "nothing said", which is also the
+        // default picture, so no shipped dye moves a piece.
+        dye.cut = 200;
+        CHECK(ApplyPaletteDye(staged, dye).cut == 200);
+        // A plain dye leaves the piece's cut alone too: it is not the dye's
+        // ramp to clear.
+        DyeChannel plain{};
+        plain.set = true; plain.r = 9;
+        CHECK(ApplyPaletteDye(staged, plain).cut == 51);
+        // And the deed cannot see it: SameDyeColour names its four fields.
+        DyeChannel moved = staged;
+        moved.cut = 30;
+        CHECK(SameDyeColour(staged, moved));
+    }
 
     {  // The Special section's writes: each helper changes ONE authored fact
        // and nothing else. Strength and player are the player's; set/r/g/b
@@ -3235,6 +3330,10 @@ int main() {
         const auto moded  = WithDyeMode(ch, 2);
         const auto flaked = WithDyeFlake(ch, 150);
         CHECK(moded.mode == 2 && flaked.flake == 150);
+        // The cut, the same one-fact rule (2026-09-04).
+        const auto cutAt = WithDyeCut(ch, 51);
+        CHECK(cutAt.cut == 51);
+        CHECK(cutAt.strength == 7 && cutAt.player.sheenSet && cutAt.set && cutAt.r == 0x11);
 
         // The blend is one more authored fact on the same terms, and its
         // ZERO is the cleared state rather than a seventh named curve, which

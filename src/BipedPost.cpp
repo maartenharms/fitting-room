@@ -220,7 +220,7 @@ namespace OS::BipedPost {
                     if (((a_slots >> bit) & 1u) == 0) {
                         continue;
                     }
-                    if (rd.partitions[i].editorVisible) {
+                    if (rd.partitions[i].visible) {
                         continue;  // already on; nothing to put back
                     }
                     dis->UpdateDismemberPartion(slot, true);
@@ -302,7 +302,61 @@ namespace OS::BipedPost {
         // piece swapped into the same slot, and MeasuredGhosts cannot tell the
         // two apart from a mask (MeasuredGhosts.h).
         std::uint32_t occupants[MeasuredGhosts::kTrackedBits]{};
-        auto* const   biped = a_actor->GetCurrentBiped().get();
+        // ⚠⚠ THE THIRD-PERSON BIPED, NEVER GetCurrentBiped(). For the player in
+        // first person, GetCurrentBiped() is the FIRST-PERSON biped, and that one
+        // carries no head geometry at all: every helmet and hood on it reads as
+        // "worn, stages nothing", the partition below gets re-enabled and the
+        // verdict goes to MeasuredGhosts, while the piece is drawing on the model
+        // this very walk restores (Get3D(false)). Measured 2026-09-14 12:18: the
+        // `1p` pass dumped `awmBiped=0x1e4afb53600 currentBiped=0x1e4afb53600
+        // match=true`, the third-person pass that injected the Ebony Helmet dumped
+        // `awmBiped=0x1e41d0ed200 currentBiped=0x1e4afb53600 match=false`, and
+        // seven rungs then called slot 31 a ghost with the helmet on screen. The
+        // hair through that helmet, and a hood's head showing through, were this
+        // one read. NPCs have one biped and GetBiped1(false) is it.
+        auto* const   biped = a_actor->GetBiped1(false).get();
+        // What the third-person biped holds on the head family, once per rung, so
+        // a field log says which entry carries the clone and which does not.
+        //
+        // ⚠⚠ entryDraws IS AN INPUT, NOT JUST AN INSTRUMENT. A style measured
+        // onto slot 30 puts its addon, part and clone on ENTRY 30 while the worn
+        // helmet's own entry keeps `.item` and nothing else, so the worn walk
+        // below cannot see what is covering the head unless this walk hands it
+        // over. VouchedHeadCoverage in SlotMask.h carries the field case, the
+        // one-direction rule and the circlet guard.
+        std::uint32_t entryDraws = 0;
+        if (biped) {
+            std::string held;
+            for (const std::uint32_t bit : { 0u, 1u, 11u, 12u, 13u }) {
+                const auto& obj = biped->objects[bit];
+                if (!obj.item && !obj.partClone) {
+                    continue;
+                }
+                auto* const node = obj.partClone.get();
+                // Staged AND attached AND not culled. The addon term is what stops
+                // a bare entry, or a physics helper that stages no geometry of its
+                // own, from vouching for anything.
+                if (obj.addon && node && !node->GetAppCulled()) {
+                    entryDraws |= 1u << bit;
+                }
+                held += fmt::format("{}{}={:08X} addon={} part={} clone={}{}", held.empty() ? "" : " | ",
+                                    bit + 30, obj.item ? obj.item->GetFormID() : 0u,
+                                    obj.addon ? "set" : "null", obj.part ? "set" : "null",
+                                    node ? "set" : "null",
+                                    node ? (node->GetAppCulled() ? " CULLED" : " drawn") : "");
+            }
+            spdlog::info("dismember: [{}] third-person biped {}: {}.", a_note,
+                         static_cast<const void*>(biped), held.empty() ? "no head-family entry" : held);
+        }
+        // A drawing piece on slot 30 covers the whole head, so the hair hide on
+        // 31 belongs to it even when 31's own entry stages nothing.
+        const std::uint32_t vouched = VouchedHeadCoverage(entryDraws);
+        if (vouched != entryDraws) {
+            spdlog::info("dismember: [{}] entry 30 draws, so it vouches for the hair "
+                         "hide on 31: entryDraws 0x{:X} -> 0x{:X}. Judged by its own "
+                         "entry alone, slot 31 would read as a ghost here.",
+                         a_note, entryDraws, vouched);
+        }
         for (std::uint32_t bit = 0; bit <= 13; ++bit) {
             const auto  slotMask = 1u << bit;
             auto* const armo     = a_actor->GetWornArmor(
@@ -318,6 +372,15 @@ namespace OS::BipedPost {
                                           : nullptr;
             if (clone && !clone->GetAppCulled()) {
                 drawnMask |= slotMask;
+            } else if ((vouched & slotMask) != 0) {
+                // Covered by a piece the engine filed on another head-family
+                // entry. Not a ghost: no verdict to publish and no partition to
+                // put back, which is what keeps the hair under the helmet.
+                drawnMask |= slotMask;
+                spdlog::info("dismember: [{}] slot {} worn by {:08X} '{}' stages nothing "
+                             "on its own entry, but slot 30 draws over it - the hide "
+                             "stands and no ghost is published.",
+                             a_note, bit + 30, armo->GetFormID(), armo->GetName());
             } else {
                 spdlog::info("dismember: [{}] slot {} worn by {:08X} '{}' but {} - a "
                              "ghost occupant does not own a hide.",
@@ -381,7 +444,7 @@ namespace OS::BipedPost {
                         continue;  // the body-slot restorer's space, or caps
                     }
                     ++headParts;
-                    if (rd.partitions[i].editorVisible) {
+                    if (rd.partitions[i].visible) {
                         continue;
                     }
                     ++offBefore;
@@ -525,9 +588,14 @@ namespace OS::BipedPost {
 
     void DumpBipedObjects(const char* a_when, RE::BipedAnim* a_biped) {
         auto* const current = CurrentPlayerBiped();
-        spdlog::info("[dump {}] awmBiped={} currentBiped={} match={}", a_when,
+        auto* const player  = RE::PlayerCharacter::GetSingleton();
+        auto* const third   = player ? player->GetBiped1(false).get() : nullptr;
+        // ⚠ currentBiped is GetCurrentBiped(), which is the FIRST-PERSON biped while
+        // the player is in first person; thirdPerson is GetBiped1(false), the one
+        // whose head the dismember sweep restores.
+        spdlog::info("[dump {}] awmBiped={} currentBiped={} match={} thirdPerson={}", a_when,
                      static_cast<const void*>(a_biped), static_cast<const void*>(current),
-                     a_biped == current);
+                     a_biped == current, static_cast<const void*>(third));
 
         auto* const biped = a_biped ? a_biped : current;
         if (!biped) {

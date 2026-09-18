@@ -2747,7 +2747,11 @@ namespace OS {
                 return;
             }
             processLists->ForEachHighActor(
-                [&](RE::Actor& a_actor) -> RE::BSContainer::ForEachResult {
+                [&](RE::Actor* a_actorPtr) -> RE::BSContainer::ForEachResult {
+                    if (!a_actorPtr) {
+                        return RE::BSContainer::ForEachResult::kContinue;
+                    }
+                    auto& a_actor = *a_actorPtr;
                     auto* base = a_actor.GetActorBase();
                     if (!base || base->IsDynamicForm()) {
                         return RE::BSContainer::ForEachResult::kContinue;

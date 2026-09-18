@@ -1,6 +1,9 @@
 #include "DyeTexture.h"
+#include "GpuAccess.h"
+#include "RendererData.h"
 
 #include "DyeKey.h"      // the RAMP half of the cache key, kept pure and tested
+#include "DyeRamp.h"     // CutFor and WindowFor, the metal split's cut, tested
 #include "DyeQuality.h"  // OS-140: which mip, how many bytes, has it settled
 #include "EditorWindow.h"  // PumpPreviews, the preview grid's per-present tick
 // Portrait.h is deliberately not included: the portrait pump is parked (tag portrait-capture-parked).
@@ -37,7 +40,7 @@ namespace OS::DyeTexture {
         // on all eleven worn shapes of a dressed character. The engine does not
         // populate them. Do not build on the rest of this struct without
         // measuring it first.
-        using RendererData = RE::NiTexture::RendererData;
+        using RendererData = OS::RendererData;  // the SDK-typed mirror, RendererData.h
 
         // ⚠ THE OVERLAY, NOT A MULTIPLY, AND THAT IS A CHOICE RATHER THAN AN
         // INHERITANCE. Writing new pixels escapes the vanilla shader's
@@ -472,28 +475,64 @@ void main(uint3 id : SV_DispatchThreadID)
         uint2 msz  = uint2(max(mw >> mmip, 1u), max(mh >> mmip, 1u));
         float2 uv  = (float2(id.xy) + 0.5) / float2(w, h);
         int2   mxy = int2(min(uint2(uv * float2(msz)), msz - 1u));
-        float maskA = Msk.Load(int3(mxy, mmip)).a;
-        float meanA = Msk.Load(int3(0, 0, mlv - 1u)).a;
-        float t = (mlv < 4u || meanA > 0.5)
-                      ? 1.0
-                      : smoothstep(meanA * gRampLo,
-                                   max(meanA * gRampHi, meanA * gRampLo + 1e-4),
-                                   maskA);
-        // ⚠⚠ THE MASK MAY MARK THE EYE RATHER THAN THE IRIS, and on the eye
-        // sets that do, everything above is correct arithmetic on the wrong
-        // question: it feathers a disc that covers the entire eyeball, so a
-        // green iris colour paints a green eye. The analysis pass measures the
-        // marked area and hands back a disc at its centre; when it says the
-        // mask was that broad, the disc replaces the alpha entirely rather than
-        // multiplying it, because the alpha inside the region carries no
-        // information about where the iris is.
-        float4 disc = Disc.Load(0);
-        if (disc.w > 0.5) {
-            float d2 = length(uv - disc.xy);
-            float r  = max(disc.z, 1e-4);
-            t = 1.0 - smoothstep(r * (1.0 - gIrisSoft),
-                                 max(r * (1.0 + gIrisSoft), r * (1.0 - gIrisSoft) + 1e-4),
-                                 d2);
+        float t = 1.0;
+        if ((gFlags & 65536u) != 0u) {
+            // ---- the METAL SPLIT, bit 16 (2026-09-04) ----------------------
+            //
+            // The mask is the shape's reflection-strength map, read through
+            // red (an environment mask) or alpha (a normal map standing in),
+            // and the classes came back from the analysis pass in the map's
+            // own units: x the DARK class mean, y the gap between the class
+            // means, z the mean, w 2 plus half the metal fraction. gRampLo is
+            // the feather as a fraction of that gap, gRampHi the one-material
+            // floor, and gIrisRadius carries t, the piece's own "Metal starts"
+            // byte over 255 (2026-09-04): the cut is t of the way up the gap.
+            //
+            // ⚠ ONE MATERIAL TAKES ONE SIDE WHOLE, by its mean: a black cloth
+            // mask is all outside, a flat bright plate all inside. And with no
+            // verdict at all (the analysis buffer missing) the whole shape is
+            // inside, which is the unmasked build the eye path also falls to.
+            float4 ms  = Msk.Load(int3(mxy, mmip));
+            float  v   = ((gFlags & 131072u) != 0u) ? ms.r : ms.a;
+            float4 cut = Disc.Load(0);
+            if (cut.w < 1.5) {
+                t = 1.0;
+            } else if (cut.y < gRampHi) {
+                t = (cut.z >= 0.5) ? 1.0 : 0.0;
+            } else {
+                // DyeRamp::WindowFor, mirrored: the band is the feather,
+                // centred on the cut, its low edge never below the midpoint
+                // of the dark mean and the cut, so a low cut narrows the band
+                // rather than sliding it over the cloth. Pinned in
+                // DyeRampTests on the cloak's own numbers.
+                float c    = cut.x + saturate(gIrisRadius) * cut.y;
+                float half = min(cut.y * gRampLo * 0.5, (c - cut.x) * 0.5);
+                t = smoothstep(c - half, max(c + half, c - half + 1e-4), v);
+            }
+        } else {
+            float maskA = Msk.Load(int3(mxy, mmip)).a;
+            float meanA = Msk.Load(int3(0, 0, mlv - 1u)).a;
+            t = (mlv < 4u || meanA > 0.5)
+                    ? 1.0
+                    : smoothstep(meanA * gRampLo,
+                                 max(meanA * gRampHi, meanA * gRampLo + 1e-4),
+                                 maskA);
+            // ⚠⚠ THE MASK MAY MARK THE EYE RATHER THAN THE IRIS, and on the eye
+            // sets that do, everything above is correct arithmetic on the wrong
+            // question: it feathers a disc that covers the entire eyeball, so a
+            // green iris colour paints a green eye. The analysis pass measures
+            // the marked area and hands back a disc at its centre; when it says
+            // the mask was that broad, the disc replaces the alpha entirely
+            // rather than multiplying it, because the alpha inside the region
+            // carries no information about where the iris is.
+            float4 disc = Disc.Load(0);
+            if (disc.w > 0.5) {
+                float d2 = length(uv - disc.xy);
+                float r  = max(disc.z, 1e-4);
+                t = 1.0 - smoothstep(r * (1.0 - gIrisSoft),
+                                     max(r * (1.0 + gIrisSoft), r * (1.0 - gIrisSoft) + 1e-4),
+                                     d2);
+            }
         }
         float3 inside  = ((gFlags & 512u) != 0u) ? d.rgb : o;
         float3 outside = d.rgb;
@@ -562,6 +601,78 @@ void main()
     uint w, h, lv;
     Msk.GetDimensions(0u, w, h, lv);
     Out[0] = float4(0.0, 0.0, 0.0, 0.0);
+
+    // ---- the METAL SPLIT, bit 16 (2026-09-04) ----------------------------
+    //
+    // The mask is a shape's reflection-strength map and the question is where
+    // metal stops and cloth starts on THIS map, which no fixed number answers
+    // (vanilla iron's metal sits at 0.12-0.27, imperial's at 0.45-0.70). So:
+    // a 32-bin histogram over a strided grid of at most 64x64 samples on a mip
+    // no longer than 256, and Otsu's cut, the one that maximises the variance
+    // between the two classes. Out carries the DARK CLASS MEAN (x), the gap
+    // between the class means (y), the mean (z) and 2 plus half the metal
+    // fraction (w), which is also the marker the tint pass keys on. The cut
+    // itself is t of the way up that gap (2026-09-04), t the piece's own
+    // "Metal starts" byte riding gIrisRadius on a region build, derived in
+    // the tint pass and in the C++ readback alike. No mip chain needed:
+    // the grid strides mip 0 when there is none.
+    if ((gFlags & 65536u) != 0u) {
+        uint mip = 0u;
+        while (mip + 1u < lv && max(w >> mip, h >> mip) > 256u) { mip += 1u; }
+        uint2 sz   = uint2(max(w >> mip, 1u), max(h >> mip, 1u));
+        uint2 step = max(sz / 64u, uint2(1u, 1u));
+        uint hist[32];
+        for (uint i = 0u; i < 32u; i += 1u) { hist[i] = 0u; }
+        uint  n   = 0u;
+        float sum = 0.0;
+        for (uint y = 0u; y < sz.y; y += step.y) {
+            for (uint x = 0u; x < sz.x; x += step.x) {
+                float4 s = Msk.Load(int3(int(x), int(y), int(mip)));
+                float  v = ((gFlags & 131072u) != 0u) ? s.r : s.a;
+                uint   b = min(uint(saturate(v) * 32.0), 31u);
+                hist[b] += 1u;
+                n += 1u;
+                sum += v;
+            }
+        }
+        if (n == 0u) { return; }
+        float mean = sum / float(n);
+        float mt = 0.0;
+        for (uint i = 0u; i < 32u; i += 1u) { mt += float(hist[i]) * ((float(i) + 0.5) / 32.0); }
+        mt /= float(n);
+        float bestVar = 0.0;
+        float bestMu0 = 0.0;
+        float bestGap = 0.0;
+        float w0 = 0.0;
+        float m0 = 0.0;
+        for (uint i = 0u; i < 31u; i += 1u) {
+            float p = float(hist[i]) / float(n);
+            float c = (float(i) + 0.5) / 32.0;
+            w0 += p;
+            m0 += p * c;
+            if (w0 <= 0.0 || w0 >= 1.0) { continue; }
+            float w1  = 1.0 - w0;
+            float mu0 = m0 / w0;
+            float mu1 = (mt - m0) / w1;
+            float bv  = w0 * w1 * (mu0 - mu1) * (mu0 - mu1);
+            if (bv > bestVar) {
+                bestVar = bv;
+                bestMu0 = mu0;
+                bestGap = mu1 - mu0;
+            }
+        }
+        // The metal fraction is counted above the EFFECTIVE cut, the one the
+        // tint pass will draw, so the log's percentage moves with the slider.
+        float cutAt = bestMu0 + saturate(gIrisRadius) * bestGap;
+        uint  above = 0u;
+        for (uint i = 0u; i < 32u; i += 1u) {
+            if ((float(i) + 0.5) / 32.0 >= cutAt) { above += hist[i]; }
+        }
+        float frac = float(above) / float(n);
+        Out[0] = float4(bestMu0, bestGap, mean, 2.0 + saturate(frac) * 0.5);
+        return;
+    }
+
     if (lv < 4u) { return; }               // no mip chain, no mean to read
 
     uint mip = 0u;
@@ -1031,11 +1142,7 @@ void main(uint3 id : SV_DispatchThreadID)
             if (g_hookInstalled.load(std::memory_order_acquire)) {
                 return;
             }
-            auto* const rm = RE::BSRenderManager::GetSingleton();
-            if (!rm) {
-                return;
-            }
-            auto* const chain = rm->GetRuntimeData().swapChain;
+            auto* const chain = OS::Gpu::SwapChain();
             if (!chain) {
                 return;
             }
@@ -1128,8 +1235,12 @@ void main(uint3 id : SV_DispatchThreadID)
             // the picture with every other input identical, which is the whole
             // reason each suffix here exists; empty at the shipped defaults, so
             // no existing entry changes key.
+            // ⚠ AND THE METAL SPLIT'S OWN TERMS, on a region build only: the
+            // feather, the floor and the channel read. DyeKey::EnvMaskSuffix
+            // is never empty, because a region build of a mask and an iris
+            // build of the same mask are two pictures under one name.
             const auto& cfgK = Settings::GetSingleton();
-            return fmt::format("{}|{:02X}{:02X}{:02X}|{}{}{}{}{}{}", name ? name : "<unnamed>",
+            return fmt::format("{}|{:02X}{:02X}{:02X}|{}{}{}{}{}{}{}", name ? name : "<unnamed>",
                                r, g, b, BlendTag(a_blend),
                                OS::DyeKey::RampSuffix(a_ramp.mode, a_ramp.secondSet, a_ramp.r2,
                                                       a_ramp.g2, a_ramp.b2, a_ramp.gloss),
@@ -1147,6 +1258,12 @@ void main(uint3 id : SV_DispatchThreadID)
                                    ? OS::DyeKey::IrisDiscSuffix(cfgK.dyeEyeIrisRadius,
                                                                 cfgK.dyeEyeIrisSoft,
                                                                 cfgK.dyeEyeMaskBroad)
+                                   : std::string{},
+                               (a_maskName && *a_maskName && a_maskDye.region)
+                                   ? OS::DyeKey::EnvMaskSuffix(cfgK.dyeMetalMaskFeather,
+                                                               cfgK.dyeMetalMaskGap,
+                                                               a_maskDye.red,
+                                                               a_maskDye.cut)
                                    : std::string{});
         }
 
@@ -1298,7 +1415,7 @@ void main(uint3 id : SV_DispatchThreadID)
             // know about it.
             t->prev            = nullptr;
             t->next            = nullptr;
-            t->unk40           = nullptr;  // nothing streams this off disk
+            t->resourceStream  = nullptr;  // nothing streams this off disk
             t->rendererTexture = reinterpret_cast<RE::BSGraphics::Texture*>(a_rd);
             // ⚠ ZERO BEFORE ASSIGNING. `name` is a BSFixedString and the memcpy
             // copied a string-pool pointer this object never acquired. Assigning
@@ -1798,6 +1915,12 @@ void main(uint3 id : SV_DispatchThreadID)
                       (masked && a_req.maskDye.scleraSet ? 256u : 0u) |
                       (masked && !a_req.maskDye.irisSet ? 512u : 0u) |
                       (masked && a_req.maskDye.splitSet ? 1024u : 0u) |
+                      // Bits 16 and 17: the metal split (2026-09-04). The mask
+                      // is a region cut in its own histogram rather than an
+                      // iris, and read through red (an environment mask) or
+                      // alpha (a normal map standing in for one).
+                      (masked && a_req.maskDye.region ? 65536u : 0u) |
+                      (masked && a_req.maskDye.red ? 131072u : 0u) |
                       // ⚠ ONE BIT EACH AND MUTUALLY EXCLUSIVE BY CONSTRUCTION,
                       // because the blend is one enum value. BlendCurve reads
                       // them in a fixed order and falls through to soft light,
@@ -1846,8 +1969,17 @@ void main(uint3 id : SV_DispatchThreadID)
             // ⚠ AND gStopB CARRIES THE SCLERA'S COLOUR, the ramp's second stop
             // being the other thing a flat request never sends.
             if (masked) {
-                p.rampLo = cfg.dyeEyeMaskLo;
-                p.rampHi = cfg.dyeEyeMaskHi;
+                // ⚠ THE SAME TWO SCALARS, A THIRD MEANING, behind bit 16: on a
+                // metal split they are the feather (a fraction of the class
+                // gap) and the one-material floor (absolute), and the cut
+                // itself comes back from the analysis pass, never from an INI.
+                if (a_req.maskDye.region) {
+                    p.rampLo = cfg.dyeMetalMaskFeather;
+                    p.rampHi = cfg.dyeMetalMaskGap;
+                } else {
+                    p.rampLo = cfg.dyeEyeMaskLo;
+                    p.rampHi = cfg.dyeEyeMaskHi;
+                }
                 if (a_req.maskDye.scleraSet) {
                     p.stopB[0] = static_cast<float>(a_req.maskDye.r) / 255.0f;
                     p.stopB[1] = static_cast<float>(a_req.maskDye.g) / 255.0f;
@@ -1863,7 +1995,15 @@ void main(uint3 id : SV_DispatchThreadID)
                     p.stopB[2] = static_cast<float>(a_req.maskDye.b2) / 255.0f;
                 }
             }
-            p.irisRadius = cfg.dyeEyeIrisRadius;
+            // ⚠ ON A REGION BUILD gIrisRadius CARRIES THE CUT'S t INSTEAD
+            // (2026-09-04): the eye's disc radius is never read behind bit 16,
+            // the Params buffer is 64 bytes and full, and this is the same
+            // fill-site discipline gRampLo/gRampHi already follow here. Both
+            // passes read it, the analysis pass to count the metal above the
+            // cut and the tint pass to place it.
+            p.irisRadius = (masked && a_req.maskDye.region)
+                               ? static_cast<float>(a_req.maskDye.cut) / 255.0f
+                               : cfg.dyeEyeIrisRadius;
             p.irisSoft   = cfg.dyeEyeIrisSoft;
             p.maskBroad  = cfg.dyeEyeMaskBroad;
             a_ctx->UpdateSubresource(g_cb, 0, nullptr, &p, 0, 0);
@@ -1896,7 +2036,34 @@ void main(uint3 id : SV_DispatchThreadID)
                     if (SUCCEEDED(a_ctx->Map(g_discStaging, 0, D3D11_MAP_READ, 0, &m)) &&
                         m.pData) {
                         const float* const v = static_cast<const float*>(m.pData);
-                        if (v[3] > 0.5f) {
+                        if (v[3] >= 1.5f) {
+                            // The metal split's verdict: x the DARK CLASS MEAN, y
+                            // the class gap, z the mean, w 2 plus half the metal
+                            // fraction above the effective cut. The cut itself is
+                            // derived here exactly as the tint pass derives it,
+                            // from the piece's own byte, so a field log says where
+                            // it landed (DyeRamp::CutFor and WindowFor, tested).
+                            const float frac  = (v[3] - 2.0f) * 2.0f;
+                            const auto  cutB  = a_req.maskDye.cut;
+                            const float cutAt = OS::DyeRamp::CutFor(v[0], v[0] + v[1], cutB);
+                            const auto  win   = OS::DyeRamp::WindowFor(
+                                v[0], v[0] + v[1], cutB, cfg.dyeMetalMaskFeather);
+                            if (v[1] < cfg.dyeMetalMaskGap) {
+                                spdlog::info(
+                                    "MetalMask: '{}' reads as ONE material (class gap "
+                                    "{:.2f} under the floor {:.2f}, mean {:.2f}), so the "
+                                    "whole shape counts as {}.",
+                                    a_req.key, v[1], cfg.dyeMetalMaskGap, v[2],
+                                    v[2] >= 0.5f ? "metal" : "cloth");
+                            } else {
+                                spdlog::info(
+                                    "MetalMask: '{}' splits at {:.2f} (metal starts {}%: "
+                                    "dark class {:.2f}, class gap {:.2f}, mean {:.2f}), "
+                                    "{:.0f}% of it metal, feathered over {:.3f}.",
+                                    a_req.key, cutAt, (static_cast<int>(cutB) * 100 + 127) / 255,
+                                    v[0], v[1], v[2], frac * 100.0f, win.hi - win.lo);
+                            }
+                        } else if (v[3] > 0.5f) {
                             spdlog::info(
                                 "EyeIris: '{}' has a mask that marks the whole eye rather "
                                 "than the iris, so the tint takes a disc worked out from "
@@ -2330,9 +2497,9 @@ void main(uint3 id : SV_DispatchThreadID)
             if (g_refused.insert(slot).second) {
                 ++g_stats.refused;
                 spdlog::warn("DyeTexture: the mask of '{}' is one of the engine's own "
-                             "placeholder textures, so the iris disc is not in it; "
-                             "refused. The shape stays undyed until the real normal map "
-                             "resolves and the next repaint finds it.",
+                             "placeholder textures or has nothing to key on, so it cannot "
+                             "be read; refused. The shape stays undyed until a real mask "
+                             "resolves there and the next repaint finds it.",
                              slot);
             }
             return nullptr;
@@ -2446,13 +2613,8 @@ void main(uint3 id : SV_DispatchThreadID)
             }
         }
 
-        auto* const rm = RE::BSRenderManager::GetSingleton();
-        if (!rm) {
-            return;
-        }
-        auto& rt = rm->GetRuntimeData();
-        auto* const device = rt.forwarder;
-        auto* const ctx    = rt.context;
+        auto* const device = OS::Gpu::Device();
+        auto* const ctx    = OS::Gpu::Context();
         if (!device || !ctx || !EnsureShader(device)) {
             // Put them back rather than dropping them: a device that is not up
             // yet is a "not now", and g_queued still names them so nothing

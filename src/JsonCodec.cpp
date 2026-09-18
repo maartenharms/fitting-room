@@ -94,8 +94,8 @@ namespace OS::JsonCodec {
         // trio fixes comes straight back for the new field.
         [[nodiscard]] bool ChannelIsPlain(const DyeChannel& a_ch) {
             return a_ch.strength == 255 && a_ch.mode == 0 && !a_ch.secondSet &&
-                   a_ch.flake == 0 && a_ch.blend == 0 && !a_ch.palette.Any() &&
-                   !a_ch.player.Any();
+                   a_ch.flake == 0 && a_ch.blend == 0 && a_ch.cut == 128 &&
+                   !a_ch.palette.Any() && !a_ch.player.Any();
         }
 
         [[nodiscard]] std::string BytesToHex(std::uint8_t a_r, std::uint8_t a_g,
@@ -124,6 +124,7 @@ namespace OS::JsonCodec {
             if (a_ch.secondSet) c["second"] = BytesToHex(a_ch.r2, a_ch.g2, a_ch.b2);
             if (a_ch.flake != 0) c["flake"] = a_ch.flake;
             if (a_ch.blend != 0) c["blend"] = a_ch.blend;
+            if (a_ch.cut != 128) c["cut"] = a_ch.cut;
             if (a_ch.palette.sheenSet) {
                 c["sheen"] = BytesToHex(a_ch.palette.sheenR, a_ch.palette.sheenG,
                                         a_ch.palette.sheenB);
@@ -170,6 +171,7 @@ namespace OS::JsonCodec {
             }
             ch.flake = ByteOr(a_json, "flake", 0);
             ch.blend = ByteOr(a_json, "blend", 0);
+            ch.cut   = ByteOr(a_json, "cut", 128);
             if (const auto sheen =
                     ColourFromHex(a_json.get("sheen", "").asString());
                 sheen.set) {

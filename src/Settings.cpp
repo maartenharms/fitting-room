@@ -171,6 +171,16 @@ namespace OS {
         dyeCensus = ini.GetBoolValue("Debug", "bDyeCensus", dyeCensus);
         appearanceWatch =
             ini.GetBoolValue("Debug", "bAppearanceWatch", appearanceWatch);
+        privateFaceTint =
+            ini.GetBoolValue("Debug", "bPrivateFaceTint", privateFaceTint);
+#ifdef FR_DIAG
+        // ⚠⚠ THE WATCH IS THE FACE EVIDENCE, so a diagnostic build does not
+        // let an INI turn it off. It is what prints the HEAD TEXTURE
+        // transitions, which are the before and after of the bound face tint,
+        // and a reporter who had it off would send back a log with the one
+        // thing missing that the build was sent for.
+        appearanceWatch = true;
+#endif
         // ⚠ bHeadCensus and bHeadPartTypeCounter are GONE, like the hair probe
         // keys above. They drove src/HeadCensus.* and the type counter in
         // HeadBuildHook, the dyeing-eyes instruments, and both were deleted at
@@ -551,6 +561,10 @@ namespace OS {
             ini.GetDoubleValue("Dye", "fDyeEyeIrisSoft", static_cast<double>(dyeEyeIrisSoft)));
         dyeEyeMaskBroad   = static_cast<float>(
             ini.GetDoubleValue("Dye", "fDyeEyeMaskBroad", static_cast<double>(dyeEyeMaskBroad)));
+        dyeMetalMaskFeather = static_cast<float>(ini.GetDoubleValue(
+            "Dye", "fDyeMetalMaskFeather", static_cast<double>(dyeMetalMaskFeather)));
+        dyeMetalMaskGap     = static_cast<float>(
+            ini.GetDoubleValue("Dye", "fDyeMetalMaskGap", static_cast<double>(dyeMetalMaskGap)));
 
         heartbeatSeconds = static_cast<float>(
             ini.GetDoubleValue("Rules", "fHeartbeatSeconds", static_cast<double>(heartbeatSeconds)));
@@ -772,6 +786,11 @@ namespace OS {
                          "colour form's own value, skin tone, overlays, head parts. "
                          "On by default and silent on a settled save. Turn it off to "
                          "keep the log to what the mod itself did");
+        ini.SetBoolValue("Debug", "bPrivateFaceTint", privateFaceTint,
+                         "; give the face its own copy of its tint composite after every "
+                         "retint, instead of the shared render target the game's own "
+                         "retint binds, which any NPC's tint job can paint over. On by "
+                         "default. Off only to show the fault again for a diagnostic");
         // ⚠ ACTIVELY REMOVED, NOT MERELY NO LONGER WRITTEN, and for the reason
         // iHeadPartSlotProbe below records: SimpleIni keeps every key an INI
         // already on disk has, so a rig that ran the dyeing-eyes instruments
@@ -1373,6 +1392,16 @@ namespace OS {
                            "read as the iris. Many eye sets mark the whole eye instead, "
                            "and dyeing that gives a coloured eyeball. Above this the "
                            "iris is worked out from the marked area instead");
+        ini.SetDoubleValue("Dye", "fDyeMetalMaskFeather", static_cast<double>(dyeMetalMaskFeather),
+                           "; for the metal, cloth and twotone dyes: how soft the edge "
+                           "between metal and cloth is, as a fraction of the distance "
+                           "between the two on the piece's own reflection map. 0 is a "
+                           "hard edge; 1 fades across the whole distance");
+        ini.SetDoubleValue("Dye", "fDyeMetalMaskGap", static_cast<double>(dyeMetalMaskGap),
+                           "; how far apart metal and cloth must sit on that map before "
+                           "a piece counts as having both. A piece closer than this is "
+                           "one material and takes one side of the dye whole. Lower it "
+                           "if a piece you know is mixed comes out one colour");
         ini.SetDoubleValue("Dye", "fDyeEyeIrisRadius", static_cast<double>(dyeEyeIrisRadius),
                            "; the size of that worked-out iris, as a fraction of the "
                            "marked area's shorter side. Raise it if a dyed iris looks "

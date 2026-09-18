@@ -238,7 +238,8 @@ namespace OS {
         if (!pad) {
             return;
         }
-        NoteRightStick(pad->curRX, pad->curRY, RightThumbHeld(pad));
+        NoteRightStick(pad->GetRuntimeData().currentRX, pad->GetRuntimeData().currentRY,
+                       RightThumbHeld(pad));
     }
 
     // OS-80 ROOT CAUSE. The editor runs as a FLICK IWindow, and FLICK owns the
@@ -347,7 +348,7 @@ namespace OS {
                               OS::RequipDiff::ChangedMask(
                                   requipBefore, OS::RequipDiff::SnapshotActive(nowActive)),
                               [] { OutfitSession::RequestRefresh(); });
-            RE::DebugNotification(("Outfit: " + name).c_str());
+            RE::SendHUDMessage::ShowHUDMessage(("Outfit: " + name).c_str());
             spdlog::info("quick-switch: '{}' activated.", name);
             // The hotkey is a hand pick just like a tab click - pin. Always
             // the player: CycleOutfit drives the player's own OutfitSession

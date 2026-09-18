@@ -1,5 +1,8 @@
 #include "NpcHair.h"
 
+#include "NpcHairNames.h"  // OwnRootName: the one prefix the dye walk reads back
+#include "OutfitDye.h"     // QueueRepaint: a re-attached style gets its ornament colour back
+
 #include "FsmpXmlOverrides.h"  // SwapIfMapped: wig xmls that hold the body's bones
 
 #include "BuildChannel.h"
@@ -392,7 +395,7 @@ namespace OS::NpcHair {
         // OURS. No engine system resolves our attachments by name afterwards;
         // everything of ours that does (reassert, restore, detach, the SMP
         // deferred look) reads the recorded, renamed strings.
-        constexpr const char* kOwnPrefix = "FR|";
+        constexpr std::string_view kOwnPrefix = NpcHairNames::kOwnPrefix;
 
         // ⚠ FOUND IS NOT THE SAME QUESTION AS SHOWING, and the reassert needs
         // the second one. SetHiddenByName below answers "was there a node by
@@ -1085,7 +1088,7 @@ namespace OS::NpcHair {
                     char        tintRGB[32]{};
                     if (auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                             a_geom->GetGeometryRuntimeData()
-                                .properties[RE::BSGeometry::States::kEffect]
+                                .shaderProperty
                                 .get());
                         prop && prop->material) {
                         using F = RE::BSShaderMaterial::Feature;
@@ -1167,7 +1170,7 @@ namespace OS::NpcHair {
                 a_faceNode, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
                     auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                         a_geom->GetGeometryRuntimeData()
-                            .properties[RE::BSGeometry::States::kEffect]
+                            .shaderProperty
                             .get());
                     if (!prop || !prop->material ||
                         prop->material->GetFeature() !=
@@ -2788,6 +2791,14 @@ namespace OS::NpcHair {
                      a_actor->GetFormID(), KindWord(kind),
                      a_part->GetFormEditorID() ? a_part->GetFormEditorID() : "(no edid)",
                      hid, toHide.size(), landedN, toAttach.size());
+        // ⚠ THE DYE WALK RUNS AGAIN FOR HER, because the roots it painted are
+        // gone: every attach is fresh geometry (a restyle, or Reassert after a
+        // cell change), and a follower's dyed hair ornament would otherwise come
+        // back plain until something else repainted her (2026-09-04).
+        // QueueRepaint touches no 3D here; it arms the chain that does.
+        if (landed) {
+            OutfitDye::QueueRepaint(a_actor->GetHandle());
+        }
         // Every publish arms the settle ladder, because every publish is a
         // moment something later and silent can undo: the cell-return
         // repro's own re-apply logged culled 3/3 and still lost to a pass
@@ -3164,6 +3175,16 @@ namespace OS::NpcHair {
         }
         const auto it = g_applied.find(slot);
         return it == g_applied.end() ? nullptr : it->second.part;
+    }
+
+    std::vector<std::string> AttachedRootNames(RE::Actor* a_actor, Kind a_kind) {
+        if (!a_actor) {
+            return {};
+        }
+        const Slot       slot = SlotKey(a_actor->GetFormID(), a_kind);
+        std::scoped_lock l(g_lock);
+        const auto       it = g_applied.find(slot);
+        return it == g_applied.end() ? std::vector<std::string>{} : it->second.attached;
     }
 
     void Reassert(RE::Actor* a_actor) {

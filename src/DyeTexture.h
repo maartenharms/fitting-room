@@ -467,6 +467,9 @@ namespace OS::DyeTexture {
         // into the marker mip's alpha as roughness (see the marker note in the
         // .cpp). 128 is the struct's own neutral, exactly DyeMaterial's.
         std::uint8_t gloss{ 128 };
+        // Where metal starts on the piece, the channel's own byte (2026-09-04),
+        // read only on a region build: the kSplit arm copies it into MaskDye.
+        std::uint8_t cut{ 128 };
     };
 
     // a_waiter is the actor whose walk asked. A build that completes queues a
@@ -567,6 +570,31 @@ namespace OS::DyeTexture {
         std::uint8_t r2{ 0 };
         std::uint8_t g2{ 0 };
         std::uint8_t b2{ 0 };
+        // ---- the METAL SPLIT (2026-09-04): the mask as a region, not an iris --
+        //
+        // The envmask dye modes hand in the shape's own reflection-strength
+        // map and ask for a two-sided build across it: inside is the metal (the
+        // map high), outside the rest, with the same irisSet/scleraSet/rgb
+        // saying which side takes colour. What changes is how the map is READ.
+        // Nothing here is an iris: no disc is derived, no mean-relative window
+        // applies. The analysis pass finds the cut in the map's own histogram
+        // (Otsu on a coarse grid) and the tint pass feathers across it; a map
+        // whose two classes sit closer than [Dye] fDyeMetalMaskGap is one
+        // material and takes one side whole, by its mean.
+        //
+        // ⚠ `red` SAYS WHICH CHANNEL. An environment mask carries its strength
+        // in .x, which is the channel the engine samples; a shape with no mask
+        // bound is read by the engine through its NORMAL MAP'S ALPHA instead,
+        // so the caller hands in that texture with red false. MEASURED
+        // 2026-09-04: the vanilla BSAs ship six armour or clothes `_m.dds` in
+        // total, so the alpha fallback is the vanilla case, not the corner.
+        bool         region{ false };
+        bool         red{ false };
+        // Where metal starts on THIS piece (2026-09-04): t of the way up the
+        // class gap the analysis pass measures, the channel's own byte, 128
+        // halfway. Read only on a region build, where it rides gIrisRadius
+        // into both passes, and in the key through DyeKey::EnvMaskSuffix.
+        std::uint8_t cut{ 128 };
     };
 
     RE::NiSourceTexture* Acquire(RE::NiSourceTexture* a_source, const RE::NiColor& a_tint,

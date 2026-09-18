@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <set>
+#include <string>
 
 namespace OS::DyeTick {
 
@@ -45,6 +47,24 @@ namespace OS::DyeTick {
     // Stop ticking and forget where we were. kPreLoadGame, and the setting
     // going to 0.
     void Stop();
+
+    // Ask for a pass SOON rather than at the next tick (2026-09-04). The engine
+    // just did something a rule can gate on (a quest stage, a tracked stat the
+    // rules name, a level, a skill), or the editor bumped the channels deed.
+    // Coalesced: one pass about a second and a half after the first poke of a
+    // burst, never within five seconds of the last pass, never while the
+    // editor is open (it waits), and never before the tick has taken its
+    // baseline (dropped; the first ticks own that window). Any thread.
+    void Poke(const char* a_why);
+
+    // The engine events that poke, registered once at kDataLoaded.
+    void InstallEventSinks();
+
+    // Which tracked stats are worth a poke: the ones the rules name. Set
+    // beside the stats request, so it follows a rules reload; an empty filter
+    // pokes on none of them, and kills or steps must never run the gather
+    // every five seconds of a fight for a rule nobody wrote.
+    void SetStatFilter(std::set<std::string, std::less<>> a_names);
 
     // Re-read the interval from the INI. The thread is started on the first
     // Start with a non-zero interval and lives for the process; a zero interval

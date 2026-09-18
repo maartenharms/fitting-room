@@ -1,0 +1,28 @@
+{
+  "dyes": [
+    { "id": "fr:crimson-and-steel",  "name": "Crimson and Steel",  "hex": "8E1F2E",
+      "hex2": "9AA3AD", "mode": "twotone", "rarity": "Material" },
+    { "id": "fr:forest-and-brass",   "name": "Forest and Brass",   "hex": "2F5D3A",
+      "hex2": "C99A3B", "mode": "twotone", "gloss": 190, "rarity": "Material" },
+    { "id": "fr:midnight-and-silver","name": "Midnight and Silver","hex": "1C2340",
+      "hex2": "D6DDE6", "mode": "twotone", "gloss": 200, "rarity": "Material" },
+    { "id": "fr:ivory-and-gold",     "name": "Ivory and Gold",     "hex": "E8DFC8",
+      "hex2": "D4A017", "mode": "twotone", "gloss": 210, "sheen": "FFF1C1", "rarity": "Material" },
+    { "id": "fr:plum-and-copper",    "name": "Plum and Copper",    "hex": "5A2A5E",
+      "hex2": "B87333", "mode": "twotone", "gloss": 190, "rarity": "Material" },
+    { "id": "fr:bone-and-iron",      "name": "Bone and Iron",      "hex": "D9CDB4",
+      "hex2": "3A3D42", "mode": "twotone", "rarity": "Material" },
+    { "id": "fr:blackened-steel",    "name": "Blackened Steel",    "hex": "2B2F33",
+      "mode": "metal", "gloss": 170, "rarity": "Material" },
+    { "id": "fr:gilded",             "name": "Gilded",             "hex": "D4AF37",
+      "mode": "metal", "gloss": 220, "sheen": "FFF1C1", "rarity": "Material" },
+    { "id": "fr:verdigris",          "name": "Verdigris",          "hex": "43B3AE",
+      "mode": "metal", "rarity": "Material" },
+    { "id": "fr:sable-cloth",        "name": "Sable Cloth",        "hex": "1E1B1A",
+      "mode": "cloth", "rarity": "Material" },
+    { "id": "fr:undyed-linen",       "name": "Undyed Linen",       "hex": "D9CDB4",
+      "mode": "cloth", "rarity": "Material" },
+    { "id": "fr:heather-cloth",      "name": "Heather Cloth",      "hex": "8A6BA3",
+      "mode": "cloth", "rarity": "Material" }
+  ]
+}

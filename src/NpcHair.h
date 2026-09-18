@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace RE {
     class Actor;
@@ -74,6 +76,15 @@ namespace OS::NpcHair {
     // when nothing. The editor reads it to label a reset control and to seed
     // the picker.
     [[nodiscard]] RE::BGSHeadPart* AppliedTo(RE::Actor* a_actor, HeadPart::Kind a_kind);
+
+    // The roots ApplyNow stamped for this (actor, kind), in attach order: the
+    // names NpcHairNames::OwnRootName gives the part and each of its extra
+    // parts. A walk that must find OUR pieces and never hers (the head-part
+    // dye, 2026-09-04) looks them up by exactly these and reads the part back
+    // out of each. Empty when nothing of ours is on her in that kind. Any
+    // thread.
+    [[nodiscard]] std::vector<std::string> AttachedRootNames(RE::Actor* a_actor,
+                                                              HeadPart::Kind a_kind);
 
     // Does this actor wear ANY head part through us, in any kind?
     //

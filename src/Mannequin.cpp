@@ -135,7 +135,7 @@ namespace OS::Mannequin {
             if (!path || !*path) {
                 continue;
             }
-            const auto slots = static_cast<std::uint32_t>(arma->GetSlotMask());
+            const auto slots = arma->GetSlotMask().underlying();
             // ⚠ NO GENITALS ON A SHOP MANNEQUIN. Biped slot 52 is the
             // community's schlong slot, which is how The New Gentleman and SOS
             // both reach the body, so the slot is the rule and the path is the

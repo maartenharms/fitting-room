@@ -324,6 +324,15 @@ namespace OS {
         // them is over. AppearanceWatch.h argues the rest.
         bool appearanceWatch{ true };  // [Debug] bAppearanceWatch
 
+        // [Debug] bPrivateFaceTint - after every face retint, and once a second
+        // for a face the chargen left on the shared tint render target, draw
+        // the face its own copy of its tint composite. Read 2026-09-09 from
+        // the engine: the chargen's retint binds the render target itself to
+        // the face, and every NPC tint job Face Discoloration Fix files is
+        // drawn into that same target, which is the black face on a cell
+        // change. On by default; off shows the fault again for a diagnostic.
+        bool privateFaceTint{ true };  // [Debug] bPrivateFaceTint
+
         // Eye dye spike, TEMPORARY - delete with SpikeEyeDye in OutfitDye.cpp.
         // Step 3 of docs/superpowers/research/dyeing-eyes.md: put a colour on a
         // real iris and look at it, before any of it is persisted.
@@ -1762,6 +1771,28 @@ namespace OS {
         // is nearer the low one because a mask that covers a quarter of an eye
         // texture is already too big to be an iris.
         float dyeEyeMaskBroad{ 0.25f };  // [Dye] fDyeEyeMaskBroad (coverage)
+
+        // ---- the metal split, for the envmask dye modes (2026-09-04) --------
+        //
+        // A metal, cloth or twotone dye splits a shape along its own
+        // reflection-strength map: the environment mask's red where one is
+        // bound, the normal map's alpha where none is (the engine reads the
+        // same two, in the same order). The cut is not an INI number, because
+        // no single number serves: MEASURED 2026-09-04, vanilla iron's metal
+        // sits at alpha 0.12 to 0.27 and imperial's at 0.45 to 0.70, and the
+        // rig's mods ship 684 masks of their own scale. So the analysis pass
+        // finds the cut in each map's own histogram (Otsu), and these two say
+        // how to treat what it found.
+        //
+        // The feather: how wide the fade across the cut is, as a fraction of
+        // the gap between the two classes' means. 0 is a hard edge.
+        float dyeMetalMaskFeather{ 0.5f };  // [Dye] fDyeMetalMaskFeather (x class gap)
+        // The floor: a map whose two classes sit closer than this is ONE
+        // material and takes one side whole, by its mean. MEASURED on the same
+        // day: every real two-material map read 0.20 to 0.66, every
+        // one-material map (a black cloth mask, a flat leather alpha) 0.03 to
+        // 0.09, so 0.12 sits between them with room either side.
+        float dyeMetalMaskGap{ 0.12f };  // [Dye] fDyeMetalMaskGap (absolute)
 
         // Which dye path actually runs, once the player setting and the spike
         // override are both taken into account.

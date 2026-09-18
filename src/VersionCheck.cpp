@@ -2,6 +2,8 @@
 
 #include "VersionCheck.h"
 
+#include "HitEffects.h"
+
 #include <unordered_set>
 
 // WHY THIS FILE EXISTS
@@ -122,13 +124,15 @@ namespace {
     std::ptrdiff_t QuiverHint() { return REL::Relocate(std::ptrdiff_t{ 0x141 }, std::ptrdiff_t{ 0x199 }); }
 
     // ---- database ----------------------------------------------------------
-    // Built from IDDatabase::Offset2ID because that is the only PUBLIC route to
-    // the id table. It copies and sorts the whole database (~380k entries) and
-    // we throw the sort away, which is wasteful but happens once at startup.
+    // Built from REL::Offset2ID because that is the only PUBLIC route to the
+    // id table. It copies and sorts the whole database (~380k entries) and we
+    // throw the sort away, which is wasteful but happens once at startup. It
+    // reads whichever file format the library loaded, so on 1.7.99 and later
+    // it walks the format-5 table the same way.
     const std::unordered_set<std::uint64_t>& IdSet() {
         static const std::unordered_set<std::uint64_t> set = [] {
             std::unordered_set<std::uint64_t> out;
-            const REL::IDDatabase::Offset2ID  db{};
+            const REL::Offset2ID db{};
             out.reserve(db.size());
             for (const auto& entry : db) {
                 out.insert(entry.id);
@@ -175,12 +179,22 @@ namespace {
         const char*    how{ "absent" };
     };
 
-    // TRUE on the two runtimes whose call-site offsets were measured by hand
-    // against the real binary. On those the hint is KNOWN correct, which is
+    // TRUE on the runtimes whose call-site offsets were measured by hand
+    // against the real binary: 1.5.97, and the 1.6.1130 to 1.6.1179 line
+    // (measured on 1.6.1170). On those the hint is KNOWN correct, which is
     // what lets LocateCall fall back to it - see the chaining case there.
+    //
+    // ⚠ 1.7.99 AND LATER ARE NOT ON THE LIST. Those builds shifted function
+    // bodies (the CommonLibSSE-NG changelog: "model AE 1.7.99 layout
+    // changes"), so a hint measured on 1.6.1170 is a guess there, and a
+    // guess that lands on an E8 by luck is a five-byte write into the
+    // middle of an unrelated instruction. On 1.7 the call's target must
+    // match or the site is refused, and the first clean 1.7 log is what
+    // turns the located offsets into measured hints of their own.
     bool HintIsHandMeasured() {
         const auto v = REL::Module::get().version();
-        return v == REL::Version(1, 5, 97, 0) || v >= REL::Version(1, 6, 1130, 0);
+        return v == REL::Version(1, 5, 97, 0) ||
+               (v >= REL::Version(1, 6, 1130, 0) && v < REL::Version(1, 7, 0, 0));
     }
 
     // Find the call to a_callee inside the function at a_start.
@@ -321,6 +335,10 @@ namespace {
         { "quiver parent",             Ids::QuiverParent },
         { "item-preview appender",     Ids::AppendInventoryModel },
         { "facegen hair painter",      Ids::FaceGenHairPainter },
+        // The two hit-effect bodies this mod carries since the library stopped
+        // defining them (HitEffects.h). Called by id, never hooked.
+        { "hit shader (requip aura)",  OS::HitFx::kInstantiateHitShader },
+        { "hit art (requip aura)",     OS::HitFx::kInstantiateHitArt },
     };
 
     std::string HexBytes(std::uintptr_t a_addr, std::size_t a_count) {
@@ -401,9 +419,24 @@ namespace OS::VersionCheck {
         }
         g_ran = true;
 
-        spdlog::info("--- address self-check, runtime {} ---", REL::Module::get().version().string());
-        spdlog::info("  reading Address Library...");
+        // The first lines are what a tester's log from a runtime we do not
+        // have is read against: which library, which game, which Address
+        // Library file format (1 = SE, 2 = AE up to 1.6.1179, 5 = 1.7.99 and
+        // later), and whether the hand-measured hints were trusted at all.
+        const auto  ver    = REL::Module::get().version();
+        const char* family = REL::Module::IsAE() ? "AE" : REL::Module::IsSE() ? "SE" : "VR";
+        const int   format = ver >= REL::Version(1, 7, 99, 0) ? 5 : REL::Module::IsAE() ? 2 : 1;
+        spdlog::info("--- address self-check, runtime {} ({}) ---", ver.string(), family);
+        spdlog::info("  CommonLibSSE-NG {} (alandtse, branch ng); Address Library v5 flag set.",
+                     FR_COMMONLIB_VERSION);
+        // Before anything else touches the database: with no Address Library
+        // for this build CommonLib fails hard here, and the log should show
+        // which step died.
+        spdlog::info("  reading Address Library (format {})...", format);
         spdlog::info("  Address Library: {} ids.", IdSet().size());
+        spdlog::info("  hand-measured hints: {}.",
+                     HintIsHandMeasured() ? "trusted on this runtime"
+                                          : "NOT trusted on this runtime, every site must name its callee");
 
         for (const auto& entry : kTable) {
             ReportEntry(entry);

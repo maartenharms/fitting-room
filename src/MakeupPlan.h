@@ -473,6 +473,43 @@ namespace OS::MakeupPlan {
                                        : FaceTintVerdict::kDisplaced;
     }
 
+    // ---- what backs the head's tint texture ---------------------------------
+    //
+    // Read from the AE binary on 2026-09-09. The chargen's own retint (52396,
+    // the call behind MakeupApi::Retint) hands the face a texture whose
+    // renderer data is a view straight onto the player tint render target,
+    // with no texture of its own. Every tint job in the game is drawn into
+    // that target, so a face backed that way shows whoever was painted last,
+    // which under Face Discoloration Fix is the last NPC to build. A head
+    // build's texture owns a copied D3D texture and is private. The record's
+    // texture pointer is the whole distinction, and both readers of it, the
+    // watch's label and the privatise, come here rather than each holding a
+    // null test of their own.
+    enum class TintBacking {
+        kNone,     // no renderer data at all: nothing bound yet
+        kPrivate,  // a texture of its own, copied out of the render target
+        kAlias,    // a view onto the render target itself: anybody's job paints it
+    };
+
+    [[nodiscard]] inline constexpr TintBacking JudgeTintBacking(bool a_hasRecord,
+                                                                 bool a_hasTexture) {
+        if (!a_hasRecord) {
+            return TintBacking::kNone;
+        }
+        return a_hasTexture ? TintBacking::kPrivate : TintBacking::kAlias;
+    }
+
+    [[nodiscard]] inline constexpr const char* TintBackingLabel(TintBacking a_backing) {
+        switch (a_backing) {
+        case TintBacking::kPrivate:
+            return "private";
+        case TintBacking::kAlias:
+            return "ALIAS of the tint render target";
+        default:
+            return "no backing";
+        }
+    }
+
     // ---- the PRESET's packed colour ------------------------------------------
     //
     // The same 0xAARRGGBB the presets store and OverlayPlan::PackTint already

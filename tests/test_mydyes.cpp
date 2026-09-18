@@ -1,6 +1,8 @@
 #include "MyDyes.h"
 
 #include <cstdio>
+#include <initializer_list>
+#include <utility>
 
 static int g_failures = 0;
 #define CHECK(expr)                                                     \
@@ -34,6 +36,7 @@ int main() {
         d.colour.g2        = 0x50;
         d.colour.b2        = 0x60;
         d.colour.flake     = 77;
+        d.colour.cut       = 51;  // the per-piece cut, authored here
         d.colour.blend     = 3;  // screen
         d.colour.palette.glossSet = true;
         d.colour.palette.gloss    = 200;
@@ -58,6 +61,7 @@ int main() {
             CHECK(p.colour.secondSet && p.colour.r2 == 0x40 && p.colour.g2 == 0x50 &&
                   p.colour.b2 == 0x60);
             CHECK(p.colour.flake == 77);
+            CHECK(p.colour.cut == 51);
             CHECK(p.colour.blend == 3);
             CHECK(p.colour.palette.glossSet && p.colour.palette.gloss == 200);
             CHECK(p.colour.palette.sheenSet && p.colour.palette.sheenR == 1 &&
@@ -79,11 +83,43 @@ int main() {
         const auto o = MyDyes::DyeToJson(d);
         CHECK(!o.isMember("hex2") && !o.isMember("mode") && !o.isMember("flake") &&
               !o.isMember("gloss") && !o.isMember("sheen"));
+        // And no "cut" at the default: 128 is "the dye says nothing", so a
+        // dye that says nothing looks exactly like one authored before the
+        // byte existed.
+        CHECK(!o.isMember("cut"));
         // ⚠ AND NO BLEND KEY EITHER. A dye that defers must look on disk
         // exactly like every dye authored before blends existed, so writing
         // "default" would put a word in a hand-editable file that means
         // nothing to a reader and nothing to the parser.
         CHECK(!o.isMember("blend"));
+    }
+
+    {  // The envmask modes round trip by name (2026-09-04): a custom dye
+       // authored as metal, cloth or twotone comes back as the same byte
+       // through the real parser, and the pack spells them as words a
+       // hand-editor can read.
+        for (const auto [mode, word] : { std::pair{ 3, "metal" }, std::pair{ 4, "cloth" },
+                                         std::pair{ 5, "twotone" } }) {
+            Dye d;
+            d.id     = MyDyes::IdForName(word);
+            d.name   = word;
+            d.custom = true;
+            d.colour = DyeChannel{ true, 0x10, 0x20, 0x30 };
+            d.colour.mode      = static_cast<std::uint8_t>(mode);
+            d.colour.secondSet = true;
+            d.colour.r2        = 0x40;
+            d.colour.g2        = 0x50;
+            d.colour.b2        = 0x60;
+            const auto o = MyDyes::DyeToJson(d);
+            CHECK(o.isMember("mode") && o["mode"].asString() == word);
+            std::vector<Dye> parsed;
+            (void)DyePalette::DyesFromJson(MyDyes::PackToJson({ d }), 0, parsed);
+            CHECK(parsed.size() == 1);
+            if (parsed.size() == 1) {
+                CHECK(parsed[0].colour.mode == mode);
+                CHECK(parsed[0].colour.secondSet && parsed[0].colour.r2 == 0x40);
+            }
+        }
     }
 
     {  // ⚠⚠ THE SAVE RACE, AND THIS IS THE TEST THAT NAMES IT. The list a save

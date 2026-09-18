@@ -1,5 +1,7 @@
 #include "PCH.h"
 
+#include <ctime>  // LocalNow
+
 #include "ApparelPreviewSignal.h"
 #include "AutoPresets.h"
 #include "BipedHooks.h"
@@ -94,30 +96,33 @@
 
 namespace {
     // Keep in sync with project(... VERSION) in CMakeLists.txt and vcpkg.json; used only for the load log line.
-    constexpr auto kVersion = "1.1.8";
+    //
+    // ⚠ A DIAGNOSTIC BUILD SAYS SO IN ITS OWN VERSION STRING. A field report
+    // names a DLL rather than a commit, and the only thing that survives the
+    // trip back is what the log says on line 3, so the marker lives there
+    // rather than in a comment. tools/make_fomod.sh greps the built DLL for
+    // this literal and refuses to give it the release name.
+#ifdef FR_DIAG
+    constexpr auto kVersion = "1.2.0-diag4";
+#else
+    constexpr auto kVersion = "1.2.0";
+#endif
 
     // Resolve where the log goes, and never fail silently.
     //
-    // The old version asked CommonLib for the SKSE log directory and simply
-    // RETURNED if it got nothing back - the mod then ran with no log at all and
-    // no way to tell. That is what happened on AE 1.6.1170 under MO2 on
-    // 2026-07-18: skse64.log recorded "plugin FittingRoom.dll (... 00020000)
-    // loaded correctly" while no FittingRoom.log was written anywhere on disk,
-    // which cost a debugging session and blocked the field test.
+    // One place since the CommonLibSSE-NG migration (2026-09-14): the SKSE
+    // folder, `Documents\My Games\Skyrim Special Edition\SKSE`, next to
+    // skse64.log, with the GOG and VR names on those games. The library derives
+    // it from the game's own DLLs, so a renamed INI folder (Nolvus's
+    // `Skyrim.INI`) no longer moves it and a launcher's working directory no
+    // longer redirects it, which were the two reasons a copy beside the DLL
+    // (Overwrite under MO2) used to exist. That copy is gone, the diagnostic
+    // builds included: every mod of this studio logs to the SKSE folder only.
     //
-    // Two things in SKSE::log::log_directory() can produce that: the Documents
-    // known-folder lookup can fail outright (-> nullopt), and it distinguishes a
-    // Steam install from a GOG one by probing for "steam_api64.dll" with a
-    // RELATIVE path - i.e. against the process working directory, not the game
-    // folder - so any launcher whose CWD is elsewhere silently redirects us to a
-    // "Skyrim Special Edition GOG" path. A diagnostic you cannot rely on is
-    // worse than no diagnostic, so try each candidate in turn, create the
-    // directory first (a missing one must not throw), never let a throwing sink
-    // escape, and state which candidate won on the first line.
-    //
-    // The fallback is Data/SKSE/Plugins next to the DLL: MO2 maps that to
-    // Overwrite, and several mods in a normal load order already log there, so
-    // it is proven writable in exactly the setup where the primary path failed.
+    // What stays: the directory is created first (a missing one must not
+    // throw), a throwing sink never escapes, the previous run is rotated to
+    // .prev.log rather than destroyed, and the first line names the folder and
+    // the session's date, so a log read weeks later still says which day it is.
     // ⚠⚠ THE ONLY INSTRUMENT THAT CAN NAME A 0xC0000409, AND A WEEK OF SILENT
     // CRASHES IS WHY IT EXISTS. Windows recorded eighteen SkyrimSE faults
     // between 2026-08-21 and 2026-08-28, every one of them ucrtbase.dll,
@@ -208,65 +213,190 @@ namespace {
                      "no crash logger can see it, because a fail-fast skips their hook.");
     }
 
-    void SetupLog() {
+    // Where this DLL is on disk. Under MO2 that folder IS Overwrite, so a copy
+    // written beside the DLL is one a reporter can always find, whatever folder
+    // the game's own name sent the other copy to.
+    //
+    // The session's date for the first line. The log pattern carries the time
+    // of day only, so a log read weeks later would not say which day it is
+    // from, and a session that runs past midnight reads as one. Nothing here
+    // throws.
+    std::string LocalNow() {
+        const auto now = std::time(nullptr);
+        std::tm    tm{};
+        localtime_s(&tm, &now);
+        char buf[32]{};
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm);
+        return buf;
+    }
+
+    // Open the log in a_dir, rotating the previous run out of the way first.
+    // Returns nullptr when the directory will not take it, so the caller can
+    // carry on with whatever else worked: a directory that resolves is not the
+    // same as one we may write to.
+    spdlog::sink_ptr OpenSink(const std::filesystem::path& a_dir) {
         const auto logName     = OS::BuildChannel::LogName();
         const auto prevLogName = OS::BuildChannel::PreviousLogName();
-        struct Candidate {
-            std::filesystem::path dir;
-            const char*           what;
-        };
 
-        std::vector<Candidate> candidates;
-        if (auto dir = SKSE::log::log_directory()) {
-            candidates.push_back({ *dir, "SKSE log directory" });
-        }
-        std::error_code ec;
-        if (auto cwd = std::filesystem::current_path(ec); !ec) {
-            candidates.push_back({ cwd / "Data" / "SKSE" / "Plugins", "Data/SKSE/Plugins fallback" });
-        }
+        std::error_code mkdirEc;
+        std::filesystem::create_directories(a_dir, mkdirEc);  // best effort; the open decides
 
-        for (const auto& candidate : candidates) {
-            std::error_code mkdirEc;
-            std::filesystem::create_directories(candidate.dir, mkdirEc);  // best effort; the open decides
-
-            // ⚠ KEEP THE PREVIOUS RUN. The sink below opens with truncate, so
-            // launching the game destroys the log of the run before it. That is
-            // exactly backwards after a crash: the first thing anyone does is
-            // relaunch, and relaunching is what deletes the evidence. It cost a
-            // real diagnosis on 2026-08-05, where the run that produced a
-            // trainwreck dump had already been overwritten by the time the log
-            // was read.
-            //
-            // Rename rather than copy, and ignore every failure: the old file
-            // may not exist yet, or may still be held by a previous process,
-            // and neither is a reason to start the game without a log.
-            std::error_code rotateEc;
-            std::filesystem::rename(candidate.dir / logName, candidate.dir / prevLogName,
-                                    rotateEc);
-            try {
-                auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
-                    (candidate.dir / logName).string(), true);
-                auto logger = std::make_shared<spdlog::logger>("global", std::move(sink));
-                logger->set_level(spdlog::level::debug);
-                logger->flush_on(spdlog::level::debug);
-
-                spdlog::set_default_logger(std::move(logger));
-                spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
-                // ⚠ AFTER THE SINK, NOT BEFORE IT. A handler that fires with no
-                // logger behind it writes into the void, which is the state
-                // this whole instrument exists to end.
-                InstallFaultHandlers();
-                // First line, every run: names the directory that won and how we
-                // got there, so "the log is missing" is one glance from an answer.
-                spdlog::info("log: writing to '{}' ({}).", candidate.dir.string(), candidate.what);
-                return;
-            } catch (const std::exception&) {
-                // Try the next candidate. Nothing else in the plugin needs a
-                // sink, so exhausting them leaves spdlog's default logger and
-                // the mod still loads - quietly, but it loads.
-            }
+        // ⚠ KEEP THE PREVIOUS RUN. The sink below opens with truncate, so
+        // launching the game destroys the log of the run before it. That is
+        // exactly backwards after a crash: the first thing anyone does is
+        // relaunch, and relaunching is what deletes the evidence. It cost a
+        // real diagnosis on 2026-08-05.
+        //
+        // Rename rather than copy, and ignore every failure: the old file may
+        // not exist yet, or may still be held by a previous process, and
+        // neither is a reason to start the game without a log.
+        std::error_code rotateEc;
+        std::filesystem::rename(a_dir / logName, a_dir / prevLogName, rotateEc);
+        try {
+            return std::make_shared<spdlog::sinks::basic_file_sink_mt>(
+                (a_dir / logName).string(), true);
+        } catch (const std::exception&) {
+            return nullptr;
         }
     }
+
+    void SetupLog() {
+        // Where SKSE puts its own log, which is where anyone who has ever been
+        // asked for a log already knows to look. Nowhere else: see the note
+        // under kVersion on why the copy beside the DLL is gone.
+        const auto dir = SKSE::log::log_directory();
+        if (!dir) {
+            // Nothing else in the plugin needs a sink, so the mod still loads,
+            // quietly. There is nowhere left to say so.
+            return;
+        }
+        auto sink = OpenSink(*dir);
+        if (!sink) {
+            return;
+        }
+
+        auto logger = std::make_shared<spdlog::logger>("global", std::move(sink));
+        logger->set_level(spdlog::level::debug);
+        logger->flush_on(spdlog::level::debug);
+
+        spdlog::set_default_logger(std::move(logger));
+        spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+        // First line, every run: the folder and the session's date.
+        spdlog::info("log: '{}' (the SKSE log directory), session {}.", dir->string(),
+                     LocalNow());
+        // ⚠ AFTER THE SINK, NOT BEFORE IT. A handler that fires with no logger
+        // behind it writes into the void, which is the state this whole
+        // instrument exists to end.
+        InstallFaultHandlers();
+    }
+
+#ifdef FR_DIAG
+    // ---- the diagnostic build's face-side census ---------------------------
+    //
+    // ⚠⚠ FACE DISCOLORATION FIX SHIPS AS FaceGenFixes.dll. The mod is called
+    // "Face Discoloration Fix" on Nexus and NOTHING in the process carries that
+    // name, so a probe for FaceDiscolorationFix.dll reports it absent while it
+    // is loaded and hooked. Measured on the dev rig 2026-09-03, where SKSE
+    // logged `plugin FaceGenFixes.dll ... loaded correctly (handle 24)`.
+    //
+    // The build is named by the same TimeDateStamp + SizeOfImage pair FsmpBridge
+    // identifies an FSMP build by, read off the mapped image, so this needs no
+    // version.lib and no file read.
+    void SayFaceModuleCensus() {
+        struct Probe {
+            const wchar_t* wide;
+            const char*    file;
+            const char*    label;
+        };
+        static constexpr Probe kProbes[] = {
+            { L"FaceGenFixes.dll", "FaceGenFixes.dll", "Face Discoloration Fix" },
+            { L"skee64.dll", "skee64.dll", "RaceMenu (skee)" },
+            { L"OverlayFix.dll", "OverlayFix.dll", "OverlayFix" },
+            { L"hdtsmp64.dll", "hdtsmp64.dll", "Faster HDT-SMP" },
+        };
+        struct Known {
+            std::uint32_t stamp;
+            std::uint32_t size;
+            const char*   version;
+        };
+        // Fingerprinted from the file on the dev rig, 2026-09-03.
+        static constexpr Known kFdf[] = {
+            { 0x6A9191C0u, 0x000A1000u, "1.0.4" },
+        };
+
+        for (const auto& probe : kProbes) {
+            const HMODULE mod = ::GetModuleHandleW(probe.wide);
+            if (!mod) {
+                spdlog::info("FaceModuleCensus: {} is NOT in this process (no {}).",
+                             probe.label, probe.file);
+                continue;
+            }
+            const auto  base = reinterpret_cast<std::uintptr_t>(mod);
+            const auto* dos  = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+            const auto* nt =
+                reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+            const auto stamp = nt->FileHeader.TimeDateStamp;
+            const auto size  = nt->OptionalHeader.SizeOfImage;
+
+            std::string named;
+            if (std::string_view{ probe.file } == "FaceGenFixes.dll") {
+                for (const auto& k : kFdf) {
+                    if (k.stamp == stamp && k.size == size) {
+                        named = fmt::format(", which is version {}", k.version);
+                        break;
+                    }
+                }
+                if (named.empty()) {
+                    named = ", a build this table does not name";
+                }
+            }
+
+            wchar_t     path[MAX_PATH]{};
+            std::string where;
+            if (::GetModuleFileNameW(mod, path, MAX_PATH) != 0) {
+                where = std::filesystem::path(path).string();
+            }
+            spdlog::info("FaceModuleCensus: {} IS loaded at 0x{:X} (stamp 0x{:08X}, "
+                         "image 0x{:X}){}. From '{}'.",
+                         probe.label, base, stamp, size, named, where);
+        }
+    }
+
+    // The player's own cell edges, so a reporter's "it happened when I fast
+    // travelled" and our head-build lines are one story rather than two facts
+    // nobody can join up. Player only, and it says nothing about anyone else.
+    //
+    // ⚠⚠ BGSActorCellEvent FROM THE PLAYER'S OWN EVENT SOURCE. diag3 listened
+    // to TESCellAttachDetachEvent, which carries a reference's 3D attach and
+    // detach, and it never fired for the player once in 1,107 lines, not even
+    // at the player's own load (field 2026-09-09). The player's cell edges are
+    // this event, kEnter and kLeave with the cell's form id.
+    struct PlayerCellSink : RE::BSTEventSink<RE::BGSActorCellEvent> {
+        RE::BSEventNotifyControl ProcessEvent(
+            const RE::BGSActorCellEvent*               a_event,
+            RE::BSTEventSource<RE::BGSActorCellEvent>*) override {
+            // BSTEventSink contract: never throw into the engine.
+            try {
+                if (a_event) {
+                    auto* const cell =
+                        RE::TESForm::LookupByID<RE::TESObjectCELL>(a_event->cellID);
+                    const char* edid = cell ? cell->GetFormEditorID() : nullptr;
+                    const bool  enter =
+                        a_event->flags.get() == RE::BGSActorCellEvent::CellFlag::kEnter;
+                    spdlog::info("FR_DIAG player cell {}: '{}' ({:08X}, {}).",
+                                 enter ? "ENTER" : "LEAVE",
+                                 edid && *edid ? edid : "(no editor id)", a_event->cellID,
+                                 cell ? (cell->IsInteriorCell() ? "interior" : "exterior")
+                                      : "unresolved");
+                }
+            } catch (...) {
+                spdlog::error("FR_DIAG player cell sink threw.");
+            }
+            return RE::BSEventNotifyControl::kContinue;
+        }
+    };
+    PlayerCellSink g_playerCellSink;
+#endif
 
     // One promotion pass: gather the world, walk the palette, add what is now
     // earned. MAIN THREAD ONLY.
@@ -477,6 +607,9 @@ namespace {
             return;
         }
         const auto names = checked.rules.StatNames();
+        // The tracked stats worth a poke are exactly the ones asked for here,
+        // so the filter is set where the list is made and follows a reload.
+        OS::DyeTick::SetStatFilter(names);
         if (names.empty()) {
             // Nothing gates on a Skyrim counter, which is a legitimate state
             // for a third party rules pack and for a user who deleted ours. No
@@ -518,9 +651,19 @@ namespace {
                 //
                 // Sender-named registration only resolves from kPostLoad on,
                 // which is the same point AP registers its listener for us.
-                // Failing is normal and silent-ish: it just means AP is not
-                // installed, and the shim keeps its full behaviour.
-                if (auto* const messaging = SKSE::GetMessagingInterface()) {
+                //
+                // ⚠ THE PROCESS IS ASKED FIRST. The library's RegisterListener
+                // logs "Failed to register messaging listener for
+                // ApparelPreview" at ERROR when the sender is not loaded, which
+                // is every rig without Apparel Preview, and a tester reading
+                // the log for a crash starts at the red line (Iuko's 09-15 log
+                // opened with it). The DLL's absence is the same fact found the
+                // quiet way; a DLL that is present and still refuses keeps the
+                // info line below.
+                if (::GetModuleHandleW(L"ApparelPreview.dll") == nullptr) {
+                    spdlog::info("Apparel Preview not present - worn-mask shim stays fully "
+                                 "active. Normal unless you run both mods.");
+                } else if (auto* const messaging = SKSE::GetMessagingInterface()) {
                     const bool ok = messaging->RegisterListener(
                         "ApparelPreview", [](SKSE::MessagingInterface::Message* a_m) {
                             if (!a_m) {
@@ -562,6 +705,16 @@ namespace {
                 // done it, so this is when reading those entries answers
                 // who owns them rather than who got there early.
                 OS::SkeeHookCensus::Run();
+#ifdef FR_DIAG
+                // Here rather than at load: every other plugin has loaded
+                // by now, so an absent module is absent rather than early.
+                SayFaceModuleCensus();
+                if (auto* const pc = RE::PlayerCharacter::GetSingleton()) {
+                    pc->AsBGSActorCellEventSource()->AddEventSink(&g_playerCellSink);
+                    spdlog::info("FR_DIAG: the player cell sink is registered on the "
+                                 "player's own BGSActorCellEvent source.");
+                }
+#endif
                 // "Fitting Room" rename: move user data from the old OutfitSlots path
                 // before anything reads it (Settings INI, then the library below).
                 OS::Migration::RunOnce();
@@ -818,6 +971,10 @@ namespace {
                     RunDyePromotion();
                     RequestDyeStats();
                 });
+                // The engine events that poke that pass (2026-09-04): a quest
+                // stage, a tracked stat the rules name, a level, a skill. The
+                // tick stays as the fallback at its interval.
+                OS::DyeTick::InstallEventSinks();
                 // Mod-event bridge: OutfitSlots_Open/_Close/_Toggle (the SAM
                 // addon and any mod can open the editor via SendModEvent).
                 OS::SamCompat::Register();
@@ -1310,6 +1467,13 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
                  OS::BuildChannel::kBodyStudioDev ? "body-studio-dev" : "release",
                  OS::BuildChannel::kBodyStudio ? "on" : "off",
                  OS::BuildChannel::kBuildId);
+#ifdef FR_DIAG
+    // ⛔ DIAGNOSTIC BUILD, and it says so in the log rather than only in the
+    // version string, because this is also the literal make_fomod.sh greps
+    // the built DLL for before it will name an archive as a release.
+    spdlog::warn("DIAGNOSTIC BUILD. This is not a release: it forces the appearance "
+                 "watch on and prints the face-module census. Do not upload it.");
+#endif
 
     // ⚠⚠ WHICH FILE ON DISK IS THIS, and it is the second line of the log for a
     // measured reason. Under MO2 every branch of this mod sits in its own slot
@@ -1401,11 +1565,12 @@ SKSEPluginLoad(const SKSE::LoadInterface* a_skse) {
         return false;
     }
 
-    SKSE::Init(a_skse);
-    // 256 covered the biped and weapon hooks. The item-card charge spike adds
-    // up to six more displaced calls, so the pool is widened rather than left
-    // to run out silently partway through installing them.
-    SKSE::AllocTrampoline(512);
+    // 512: 256 covered the biped and weapon hooks, and the item-card charge
+    // spike adds up to six more displaced calls, so the pool is wide enough
+    // for all of them rather than left to run out silently partway through.
+    // ⚠ log stays false: with it on, the library replaces the logger that
+    // SetupLog built (file name, pattern, level).
+    SKSE::Init(a_skse, { .log = false, .trampoline = true, .trampolineSize = 512 });
 
     // Install the two biped-rebuild hooks. Trampoline must be allocated first.
     OS::BipedHooks::Install();

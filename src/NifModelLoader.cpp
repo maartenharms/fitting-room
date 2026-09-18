@@ -2,6 +2,8 @@
 
 #include "VersionCheck.h"  // IdOk - membership, not "REL gave me an address"
 
+#include "NifStreamTeardown.h"  // the teardown rule, pinned where tests read it
+
 #include <Windows.h>  // the SEH vocabulary; nothing else here includes it
 
 #include <algorithm>
@@ -118,6 +120,38 @@ namespace OS::NifModelLoader {
                         break;
                     }
                 }
+                // ⚠⚠ THE INPUT STREAM IS OURS, AND THE ENGINE'S DESTRUCTOR
+                // DELETES WHATEVER IT FINDS IN THAT SLOT. NiStream::Load1 (AE
+                // 70333) stores the NiBinaryStream it is handed in iStr
+                // (+0x298), calls LoadStream through the vtable, and clears
+                // the slot only after that call returns. NiStream::~NiStream
+                // (AE 70325, the crash frame of crash-2026-09-15-12-01-44.log)
+                // runs the deleting destructor on a non-null iStr. Every
+                // normal return, true or false, has already cleared it; a
+                // fault inside LoadStream unwinds past the clear, the slot
+                // keeps pointing at Load's stack BSResourceNiBinaryStream,
+                // and the teardown ran `call [rax]` on that dead stack object
+                // (rax 0 at 70325+0x3A, the UBE boot mesh still on the stack).
+                // Cleared on every path, because no path through this holder
+                // hands the engine a stream it owns. Read off the unpacked
+                // 1.6.1170 exe with capstone, see
+                // docs/evidence/2026-09-15-field-reports/70325-nistream-dtor.md.
+                stream_->iStr = nullptr;
+                stream_->oStr = nullptr;
+                // ⚠ A FAULTED PARSE IS ABANDONED, NOT DESTROYED. The exception
+                // left LoadStream somewhere inside a block: an object
+                // allocated and not yet constructed, a link table half
+                // filled, a group registered once. The engine's own loader
+                // never reaches its destructor in that state (a refused file
+                // returns false and is cleaned up on the way out), so the
+                // destructor has no reason to survive it. The buffer and
+                // whatever the parse allocated leak once per faulting mesh;
+                // the card keeps its placeholder and the session goes on.
+                if (NifStreamTeardown::For(parse_) ==
+                    NifStreamTeardown::Teardown::kAbandon) {
+                    static_cast<void>(storage_.release());
+                    return;
+                }
                 dtor_(stream_);
             }
 
@@ -126,17 +160,27 @@ namespace OS::NifModelLoader {
 
             [[nodiscard]] bool Valid() const { return valid_; }
 
-            [[nodiscard]] bool Load(const std::string& a_path, std::uint32_t& a_code) const {
+            [[nodiscard]] bool Load(const std::string& a_path, std::uint32_t& a_code) {
                 if (!valid_) {
                     return false;
                 }
                 // BSResourceNiBinaryStream, not a filesystem read, so a mesh
                 // packed in a BSA resolves exactly like a loose one.
+                //
+                // ⚠ A STACK OBJECT, AND THE ENGINE IS HANDED A POINTER TO IT.
+                // NiStream::Load1 keeps that pointer in iStr for the length
+                // of the parse; the destructor above is what makes sure it
+                // is gone again before the engine looks.
                 RE::BSResourceNiBinaryStream file(a_path.c_str());
                 if (!file.good()) {
+                    parse_ = NifStreamTeardown::Parse::kRefused;
                     return false;
                 }
-                return SafeLoad(stream_, &file, a_code);
+                const bool ok = SafeLoad(stream_, &file, a_code);
+                parse_ = a_code != 0 ? NifStreamTeardown::Parse::kFaulted
+                         : ok        ? NifStreamTeardown::Parse::kLoaded
+                                     : NifStreamTeardown::Parse::kRefused;
+                return ok;
             }
 
             [[nodiscard]] RE::NiNode* Root() const {
@@ -158,6 +202,7 @@ namespace OS::NifModelLoader {
             RE::NiStream*                   stream_{ nullptr };
             BSStreamDtor                    dtor_{ nullptr };
             bool                            valid_{ false };
+            NifStreamTeardown::Parse        parse_{ NifStreamTeardown::Parse::kNotRun };
         };
 
         // Backslashes, and a leading "data\\" removed. BSResource is rooted at
@@ -232,7 +277,12 @@ namespace OS::NifModelLoader {
         std::uint32_t code = 0;
         if (!stream.Load(path, code)) {
             if (code != 0) {
-                spdlog::warn("NifModelLoader: SEH 0x{:08X} loading '{}'.", code, path);
+                // The stream this warns about is abandoned by the holder's
+                // destructor rather than destroyed; the note there says why.
+                spdlog::warn("NifModelLoader: SEH 0x{:08X} loading '{}'; the engine's "
+                             "parser faulted mid-file, so the stream is abandoned "
+                             "rather than destroyed and the card keeps its placeholder.",
+                             code, path);
             } else {
                 spdlog::warn("NifModelLoader: could not load '{}'.", path);
             }

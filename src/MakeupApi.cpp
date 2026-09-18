@@ -237,6 +237,105 @@ namespace OS::MakeupApi {
             return tex;
         }
 
+        // ⚠⚠ THE ENGINE'S RETINT LEAVES THE PLAYER ON THE SHARED RENDER
+        // TARGET, READ 2026-09-09 IN GHIDRA (AE 0x954AE0, SE 0x8B40C0). 52396
+        // files the live tint list as a tint job with NO target texture, binds
+        // a new 'Player face tint' texture to the face, and gives that texture
+        // as renderer data a shader resource view straight onto render target
+        // 0xF (AE 0xE48560: no texture of its own, refcount 1). RT 0xF is where
+        // EVERY tint job in the game is drawn before being copied out (the
+        // drain, AE 0x4355B0), so the next NPC's runtime tint job leaves the
+        // player's face wearing that NPC's composite. Vanilla files no NPC jobs
+        // (preprocessed facegen); Face Discoloration Fix files one for every
+        // NPC head build, which is the black face on a cell change. A head
+        // build's own texture is a PRIVATE copy: RegenerateHead files the job
+        // WITH the texture and the drain copies RT 0xF into fresh renderer data
+        // for it. QueueTintJob does exactly that for the face after a retint,
+        // and for a face the chargen itself left on the alias.
+        //
+        // RELOCATION_ID(26454, 27040): the job filer, SE 0x3DB420, AE
+        // 0x435110; (list, texture) -> bool. The list is the engine's own live
+        // list, overlay if installed, else base: what 52396 drew.
+        void QueueTintJob(std::uintptr_t a_list, RE::NiSourceTexture* a_texture) {
+            using func_t = bool (*)(void*, RE::NiSourceTexture*);
+            static REL::Relocation<func_t> func{ REL::RelocationID(26454, 27040) };
+            func(reinterpret_cast<void*>(a_list), a_texture);
+        }
+
+        // The facegen head's tint texture, or null. The same walk as
+        // HeadTintTextureName further down, which sits in a later namespace.
+        [[nodiscard]] RE::NiSourceTexture* FaceTintTexture(RE::Actor* a_actor) {
+            auto* const face = a_actor ? a_actor->GetFaceNodeSkinned() : nullptr;
+            if (!face) {
+                return nullptr;
+            }
+            RE::NiSourceTexture* out = nullptr;
+            RE::BSVisit::TraverseScenegraphGeometries(
+                face, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
+                    auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
+                        a_geom->GetGeometryRuntimeData()
+                            .shaderProperty
+                            .get());
+                    if (!prop) {
+                        return RE::BSVisit::BSVisitControl::kContinue;
+                    }
+                    auto* const mat =
+                        static_cast<RE::BSLightingShaderMaterialBase*>(prop->material);
+                    if (!mat ||
+                        mat->GetFeature() != RE::BSShaderMaterial::Feature::kFaceGen) {
+                        return RE::BSVisit::BSVisitControl::kContinue;
+                    }
+                    out = static_cast<RE::BSLightingShaderMaterialFacegen*>(mat)
+                              ->tintTexture.get();
+                    return RE::BSVisit::BSVisitControl::kStop;
+                });
+            return out;
+        }
+
+        // What backs a tint texture: a copied D3D texture of its own (a head
+        // build's), or a view onto the tint render target with no texture of
+        // its own (the chargen retint's). NiTexture::RendererData is the
+        // 0x28-byte record both paths allocate, and texture is its first field.
+        // The verdict itself is MakeupPlan's, shared with the watch's label.
+        [[nodiscard]] bool TintTextureIsAlias(RE::NiSourceTexture* a_texture) {
+            auto* const rd = a_texture ? reinterpret_cast<RE::NiTexture::RendererData*>(
+                                             a_texture->rendererTexture)
+                                       : nullptr;
+            return MakeupPlan::JudgeTintBacking(rd != nullptr, rd && rd->texture != nullptr) ==
+                   MakeupPlan::TintBacking::kAlias;
+        }
+
+        // One private job for the face, its list drawn fresh. Not while the
+        // character editor owns the face: its sliders re-bind the alias on
+        // every drag and its own redraws (AE 40699) reach only the render
+        // target, so a private copy there would stop following them. Gated by
+        // [Debug] bPrivateFaceTint so a reporter can switch the repair off and
+        // watch the alias come back.
+        bool PrivatiseFaceTint(const char* a_why) {
+            if (!OS::Settings::GetSingleton().privateFaceTint) {
+                return false;
+            }
+            if (auto* const ui = RE::UI::GetSingleton();
+                ui && ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME)) {
+                return false;
+            }
+            auto* const player = RE::PlayerCharacter::GetSingleton();
+            if (!player) {
+                return false;
+            }
+            const auto  list = LiveList(player);
+            auto* const tex  = FaceTintTexture(player);
+            if (!list || !tex) {
+                return false;
+            }
+            QueueTintJob(list, tex);
+            spdlog::info("Makeup: a private copy was drawn for the face's tint texture "
+                         "0x{:X} '{}' ({}), so a tint job for somebody else cannot paint "
+                         "over it.",
+                         reinterpret_cast<std::uintptr_t>(tex), tex->name.c_str(), a_why);
+            return true;
+        }
+
         // ⚠⚠ THE RETINT IS A REBAKE. RELOCATION_ID(51521, 52396), SE 0x8B40C0
         // and AE 0x954AE0, found by the string "Player face tint" which it
         // assigns as the name of the texture it builds. Call it ONCE after a
@@ -252,6 +351,9 @@ namespace OS::MakeupApi {
             using func_t = void (*)();
             static REL::Relocation<func_t> func{ REL::RelocationID(51521, 52396) };
             func();
+            // The face now wears the alias; give it its own copy in the same
+            // drain, drawn from the same list.
+            PrivatiseFaceTint("after a retint");
         }
 
         // ⚠⚠ THE ENGINE'S OWN FORMULA, NOT A COPY OF THE RGB. MEASURED in
@@ -1113,7 +1215,7 @@ namespace OS::MakeupApi {
                 face, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
                     auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                         a_geom->GetGeometryRuntimeData()
-                            .properties[RE::BSGeometry::States::kEffect]
+                            .shaderProperty
                             .get());
                     if (!prop) {
                         return RE::BSVisit::BSVisitControl::kContinue;
@@ -2022,6 +2124,30 @@ namespace OS::MakeupApi {
         spdlog::info("Makeup: the face tint was rebaked after the load, from the tint "
                      "list this save restored. A baked face outlives the character it "
                      "was baked for, which is the cross-save bleed.");
+    }
+
+    // The chargen's own retints (at load, in the editor) leave the face on the
+    // alias with no Fitting Room line to follow. This looks once a second off
+    // the heartbeat and gives such a face its own copy. Silent while private.
+    void PrivatiseAliasedFace(RE::Actor* a_actor) {
+        static std::chrono::steady_clock::time_point s_next{};
+        const auto now = std::chrono::steady_clock::now();
+        if (now < s_next) {
+            return;
+        }
+        s_next = now + std::chrono::seconds(1);
+        auto* const player = RE::PlayerCharacter::GetSingleton();
+        if (!player || (a_actor && a_actor != static_cast<RE::Actor*>(player))) {
+            return;
+        }
+        if (!OS::Settings::GetSingleton().privateFaceTint) {
+            return;
+        }
+        auto* const tex = FaceTintTexture(player);
+        if (!tex || !TintTextureIsAlias(tex)) {
+            return;
+        }
+        PrivatiseFaceTint("the face wore the tint render target itself");
     }
 
     void RebakeFaceTint() {

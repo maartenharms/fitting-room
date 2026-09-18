@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 
 # "Fitting Room" (formerly Outfit Slots) - ESO-style transmog with saved outfit slots.
 # One DLL supports Skyrim SE 1.5.97 and next-gen AE 1.6.1130+.
-project(FittingRoom VERSION 1.1.8 LANGUAGES CXX)
+project(FittingRoom VERSION 1.2.0 LANGUAGES CXX)
 
 # ⚠ TWO OPTIONS, NOT ONE. FR_BODY_STUDIO compiles the authoring workbench in.
 # FR_BODY_STUDIO_DEV additionally moves the build onto an isolated data channel
@@ -26,6 +26,19 @@ project(FittingRoom VERSION 1.1.8 LANGUAGES CXX)
 # outfit ever written under 'OSLT'.
 option(FR_BODY_STUDIO "Compile the Body Studio authoring workbench into the plugin" ON)
 option(FR_BODY_STUDIO_DEV "Build the isolated Body Studio development channel" OFF)
+
+# ⚠⚠ A DIAGNOSTIC BUILD IS FOR ONE REPORTER AND NEVER FOR NEXUS. It writes a
+# SECOND copy of the log beside the DLL, which under MO2 is the Overwrite
+# folder, so it stops mattering which of the three possible Documents folders
+# a reporter looks in; it forces the appearance watch on whatever their INI
+# says; it stamps "-diag" into the version string so any log it produces
+# identifies itself on line 3; and it prints the face-module census and a cell
+# line. ⛔ tools/make_fomod.sh refuses to give a diagnostic DLL the release
+# name, the same way Menu Studio does.
+option(FR_DIAG "Diagnostic build: two log sinks, the face census, the appearance watch forced on" OFF)
+if(FR_DIAG)
+    message(STATUS "FittingRoom: DIAGNOSTIC build. Do not release this.")
+endif()
 set(FR_BUILD_ID "release" CACHE STRING "Build/channel identifier embedded in development artifacts")
 if(FR_BODY_STUDIO_DEV)
     if(FR_BUILD_ID STREQUAL "" OR FR_BUILD_ID STREQUAL "release")
@@ -39,7 +52,26 @@ else()
     set(FR_DATA_SUBDIR "FittingRoom")
 endif()
 
-find_package(CommonLibSSE CONFIG REQUIRED)
+# alandtse's CommonLibSSE-NG, branch ng, pinned as a submodule (see
+# .gitmodules). Consumed with add_subdirectory. Its own tests and their
+# Catch2 dependency stay out of this build, and the add_commonlibsse_plugin
+# helper is only pulled in by the library's prebuilt path, so the source
+# build includes it here. The version goes into the DLL for the self-check
+# line, read from the library's own project() rather than typed twice.
+# SE and AE only. Fitting Room has never run on VR, and the library's VR-aware
+# layouts hide the members and virtual functions past the point where VR
+# compatibility breaks (NiSkinData's bone count, the flat CrosshairPickData,
+# BSGeometry's update passes), all of which this mod reads.
+set(ENABLE_SKYRIM_VR OFF CACHE BOOL "Fitting Room supports SE and AE only" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "CommonLibSSE-NG tests are not built by this consumer" FORCE)
+add_subdirectory(extern/CommonLibSSE-NG EXCLUDE_FROM_ALL)
+# The preset's /we4062 (an enumerator left out of a switch) is this mod's rule
+# and not the library's: BSFaceGenKeyframeMultiple.cpp leaves Type::Undefined
+# out of one switch, and one refused library file means nothing links.
+target_compile_options(CommonLibSSE PRIVATE /wd4062)
+include("${CMAKE_CURRENT_SOURCE_DIR}/extern/CommonLibSSE-NG/cmake/CommonLibSSE.cmake")
+get_directory_property(FR_COMMONLIB_VERSION DIRECTORY extern/CommonLibSSE-NG DEFINITION CommonLibSSE_VERSION)
+message(STATUS "FittingRoom builds on CommonLibSSE-NG ${FR_COMMONLIB_VERSION}")
 # jsoncpp's exported config predates CMake 3.5's policy floor.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 find_package(jsoncpp CONFIG REQUIRED)
@@ -86,6 +118,11 @@ add_commonlibsse_plugin(${PROJECT_NAME}
         src/plugin.cpp
         src/VersionCheck.h
         src/VersionCheck.cpp
+        src/MenuHandlerVtable.h
+        src/MenuHandlerVtable.cpp
+        src/GpuAccess.h
+        src/RendererData.h
+        src/HitEffects.h
         src/VmCall.h
         src/VmCall.cpp
         src/REAugments.h
@@ -453,9 +490,11 @@ endif()
 target_compile_definitions(${PROJECT_NAME} PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
     FR_BUILD_ID="${FR_BUILD_ID}"
+    FR_COMMONLIB_VERSION="${FR_COMMONLIB_VERSION}"
     FR_DATA_SUBDIR="${FR_DATA_SUBDIR}"
     $<$<BOOL:${FR_BODY_STUDIO}>:FR_BODY_STUDIO=1>
-    $<$<BOOL:${FR_BODY_STUDIO_DEV}>:FR_BODY_STUDIO_DEV=1>)
+    $<$<BOOL:${FR_BODY_STUDIO_DEV}>:FR_BODY_STUDIO_DEV=1>
+    $<$<BOOL:${FR_DIAG}>:FR_DIAG=1>)
 
 # Ship debug symbols with the optimised build, so a crash address can be
 # turned into a function name.

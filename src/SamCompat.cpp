@@ -2,6 +2,7 @@
 
 #include "EditorGate.h"
 #include "EditorWindow.h"
+#include "MenuHandlerVtable.h"
 
 #include <string_view>
 
@@ -57,7 +58,7 @@ namespace OS::SamCompat {
         // path is modal over a hidden inventory. Doing the same here would
         // swallow the camera gesture this whole passthrough exists to deliver.
         // One key, and only under one condition.
-        struct EscapeGuard : RE::MenuEventHandler {
+        struct EscapeGuard : OS::MenuHandlerVtable::Impl {
             [[nodiscard]] static bool Claims(RE::InputEvent* a_event) {
                 const auto* btn = a_event ? a_event->AsButtonEvent() : nullptr;
                 if (!btn || btn->GetDevice() != RE::INPUT_DEVICE::kKeyboard ||
@@ -146,6 +147,12 @@ namespace OS::SamCompat {
         // Re-arming on every editor open puts us back at the front of whatever
         // has registered since. Removing first is what stops the list growing a
         // copy of us per open.
+        static bool s_layoutLogged = false;
+        const char* const layout = OS::MenuHandlerVtable::Install(&g_escapeGuard);
+        if (!s_layoutLogged) {
+            s_layoutLogged = true;
+            spdlog::info("SamCompat: Escape guard vtable: {}.", layout);
+        }
         controls->RemoveHandler(&g_escapeGuard);
         controls->AddHandler(&g_escapeGuard);
         spdlog::debug("SamCompat: Escape guard armed at the front of MenuControls.");

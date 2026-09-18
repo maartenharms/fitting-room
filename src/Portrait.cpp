@@ -1,4 +1,5 @@
 #include "PCH.h"
+#include "GpuAccess.h"
 
 #include "Portrait.h"
 
@@ -263,8 +264,8 @@ namespace OS::Portrait {
                 screenH = bd.Height;
             }
             ComPtr<ID3D11Texture2D> frame;
-            if (auto* const rm = RE::BSRenderManager::GetSingleton()) {
-                if (auto* const srv = rm->GetRuntimeData().resourceView) {
+            {
+                if (auto* const srv = OS::Gpu::FramebufferView()) {
                     ComPtr<ID3D11Resource> res;
                     srv->GetResource(&res);
                     if (res) {

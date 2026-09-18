@@ -36,6 +36,22 @@ fi
 
 [ -f "$DLL" ] || { echo "no DLL at $DLL - build first"; exit 1; }
 
+# ⚠⚠ A DIAGNOSTIC BUILD CAN NEVER WEAR THE RELEASE NAME. It writes a second
+# copy of every session's log for every player who installs it and forces the
+# appearance watch on, and the one way that reaches Nexus is a packaging run
+# against a build tree somebody left configured with FR_DIAG=ON. The DLL is
+# asked directly rather than the cache, because the cache is not what ships.
+# Same rule and same spelling as the missing-shots refusal above: rename the
+# artifact, do not refuse the build.
+#
+# ⚠ The pattern is version-free on purpose. Menu Studio's read "1.1.5-diag"
+# until 1.1.7 and would have waved a 1.1.6 diag build straight through.
+if grep -qa -- "-diag" "$DLL" 2>/dev/null ||
+   grep -qa "DIAGNOSTIC BUILD" "$DLL" 2>/dev/null; then
+    ZIP="${ZIP%.zip}-DIAG-do-not-upload.zip"
+    echo "*** the DLL is a DIAGNOSTIC build: naming the archive $(basename "$ZIP")"
+fi
+
 # The shipped unlock rules, and this build REFUSES TO PACKAGE WITHOUT THEM.
 #
 # dist/.../Dyes/eso.json carries a "rarity" on all 306 colours, and from Task 6
@@ -129,6 +145,12 @@ BANNER_SUM=""
 if [ -f "$ROOT/fomod/banner.png" ]; then
     BANNER_SUM="$(md5sum "$ROOT/fomod/banner.png" | cut -d' ' -f1)"
 fi
+# The pictures that ARE the banner on purpose, by name. The face page asks no
+# question (both answers install the same files and set no flag), so the
+# author decided on 2026-09-09 that its picture is the banner and not a
+# screenshot. A name here is a decision on record; a banner under any other
+# name is still the stand-in the check below refuses.
+BANNER_BY_DESIGN=("face-page.png")
 STAND_IN=()
 missing=0
 while IFS= read -r img; do
@@ -137,7 +159,15 @@ while IFS= read -r img; do
     if [ -f "$ROOT/fomod/images/$img" ]; then
         if [ -n "$BANNER_SUM" ] &&
            [ "$(md5sum "$ROOT/fomod/images/$img" | cut -d' ' -f1)" = "$BANNER_SUM" ]; then
-            if [ "${FR_ALLOW_MISSING_SHOTS:-0}" = "1" ]; then
+            by_design=0
+            for allowed in "${BANNER_BY_DESIGN[@]}"; do
+                if [ "$allowed" = "$img" ]; then
+                    by_design=1
+                fi
+            done
+            if [ "$by_design" = 1 ]; then
+                echo "fomod/images/$img is the banner by design (docs/release/fomod-shots.md)"
+            elif [ "${FR_ALLOW_MISSING_SHOTS:-0}" = "1" ]; then
                 echo "WARNING: fomod/images/$img IS the banner, not a screenshot (test zip only)"
             else
                 echo "fomod/images/$img is byte for byte fomod/banner.png, so it is the"

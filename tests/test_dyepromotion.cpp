@@ -558,7 +558,10 @@ int main() {
         // Skyrim's own things. Same reason the count is asserted rather than
         // ignored: a fifth file appearing, or one failing to load, is noticed
         // here.
-        CHECK(palReport.filesScanned == 4);
+        // ⚠ FIVE SINCE 2026-09-04: twotone.json, the envmask modes' own pack
+        // (metal, cloth and twotone dyes), its own file for the same reason
+        // pearl is: a different kind of thing, read by a different mechanism.
+        CHECK(palReport.filesScanned == 5);
         // ⚠ AND entriesRejected STAYS ZERO, WHICH IS WHAT PROVES THE FINISH KEYS
         // PARSE. pearl.json and skyrim.json both carry hex2, mode, gloss, sheen
         // and flake, and a malformed one of those is a REFUSED ENTRY rather than
@@ -577,7 +580,9 @@ int main() {
         // sum rather than a hope: skyrim.json's ids are all "skyrim:" prefixed,
         // so nothing in it can quietly displace an eso: or fr: colour and take
         // that colour's unlock rule with it.
-        CHECK(palette.size() == 458);  // 306 eso + 12 vanilla + 19 pearl + 121 skyrim
+        // 458 -> 470 on 2026-09-04: twotone.json's twelve, all "fr:" prefixed
+        // like pearl's, so the collision count above still stands guard.
+        CHECK(palette.size() == 470);  // 306 eso + 12 vanilla + 19 pearl + 121 skyrim + 12 twotone
 
         {   // ⚠ THE SHIPPED SPECIAL DYES ARE READ BACK THROUGH THE REAL LOADER,
             // which is the only place in the suite where the JSON on disk, the
@@ -603,12 +608,25 @@ int main() {
                 CHECK(pearl->colour.palette.glossSet);
                 CHECK(pearl->rarity == "Material");
             }
+            // ⚠ NO SHIPPED DYE DECLARES NACRE (user, 2026-09-15). The
+            // luminance-keyed sweep read as marbling on every piece it landed
+            // on, so the twenty-two dyes that declared it were re-declared
+            // iridescent, in pearl.json by hand and in skyrim.json through its
+            // TSV. Moonlit Nacre keeps its name, which is a colour, and this
+            // count is the tripwire against one coming back through either.
             const auto* nacre = find("fr:moonlit-nacre");
             CHECK(nacre != nullptr);
             if (nacre) {
-                CHECK(nacre->colour.mode == 1);  // nacre
+                CHECK(nacre->colour.mode == 2);  // iridescent
                 CHECK(nacre->colour.secondSet);
             }
+            int nacreDeclared = 0;
+            for (const auto& d : snap) {
+                if (d.colour.mode == 1) {
+                    ++nacreDeclared;
+                }
+            }
+            CHECK(nacreDeclared == 0);
             // ⚠ THE EARNED FINISHES, READ BACK THE SAME WAY. The premium
             // rewards in skyrim.json wear a pearlescent finish rather than a
             // brighter flat colour (user 2026-08-13), and the finish is what
@@ -758,6 +776,41 @@ int main() {
                 }
             }
         }
+    }
+
+    {  // ---- the economy switch gates the tick and the cards (2026-09-04) ---
+       // Field: bDyeUnlocks was false in every session read and the cards still
+       // fired. With every colour pickable a "Dye unlocked" card says nothing,
+       // and the 148-lookup gather every 30 s buys nothing either: the set
+       // keeps earning at load and on editor open, which is all "keep earning"
+       // ever promised.
+        CHECK(TickIntervalFor(/*unlocksOn*/ true, 30) == 30);
+        CHECK(TickIntervalFor(true, 0) == 0);       // parked by the INI
+        CHECK(TickIntervalFor(true, 1) == 5);       // floored: a hand-edited 1
+        CHECK(TickIntervalFor(true, 9999) == 600);  // clamped
+        CHECK(TickIntervalFor(false, 30) == 0);     // the economy is off: parked
+        CHECK(AnnouncesCards(true, true));
+        CHECK(!AnnouncesCards(false, true));   // off: nothing is "unlocked"
+        CHECK(!AnnouncesCards(true, false));   // the cards' own switch
+        CHECK(!AnnouncesCards(false, false));
+    }
+
+    {  // ---- a poke runs one pass soon, never before the baseline ------------
+       // The engine says a quest stage, a tracked stat, a level or a skill
+       // moved, or the editor bumped the deed; the tick would notice up to 30 s
+       // later. A poke asks for a pass about a second later instead, once per
+       // burst, never within the minimum gap of the last pass, and never
+       // before the tick has taken its baseline, because a pass that arms
+       // early announces what the save already owned.
+        constexpr double kGap = 5.0;
+        CHECK(PokeActionFor(/*now*/ 10.0, /*due*/ 0.0, /*lastRun*/ 0.0, true, kGap) ==
+              PokeAction::kWait);  // nothing pending
+        CHECK(PokeActionFor(10.0, 11.0, 0.0, true, kGap) == PokeAction::kWait);  // not due
+        CHECK(PokeActionFor(11.0, 11.0, 0.0, true, kGap) == PokeAction::kRun);   // due, clear
+        CHECK(PokeActionFor(11.0, 11.0, 8.0, true, kGap) == PokeAction::kWait);  // gap: 3 s ago
+        CHECK(PokeActionFor(13.0, 11.0, 8.0, true, kGap) == PokeAction::kRun);   // gap passed
+        CHECK(PokeActionFor(11.0, 11.0, 0.0, false, kGap) == PokeAction::kDrop);  // no baseline
+        CHECK(PokeActionFor(10.0, 11.0, 0.0, false, kGap) == PokeAction::kDrop);  // dropped early
     }
 
     if (g_failures == 0) {

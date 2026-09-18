@@ -106,7 +106,7 @@ namespace OS::OverlayReconcile {
                     }
                     if (auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                             a_geom->GetGeometryRuntimeData()
-                                .properties[RE::BSGeometry::States::kEffect]
+                                .shaderProperty
                                 .get())) {
                         if (auto* const mat = static_cast<RE::BSLightingShaderMaterialBase*>(
                                 prop->material)) {
@@ -176,7 +176,7 @@ namespace OS::OverlayReconcile {
                     }
                     auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                         a_geom->GetGeometryRuntimeData()
-                            .properties[RE::BSGeometry::States::kEffect]
+                            .shaderProperty
                             .get());
                     if (!prop) {
                         return RE::BSVisit::BSVisitControl::kContinue;
@@ -267,7 +267,7 @@ namespace OS::OverlayReconcile {
                     }
                     if (auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                             a_geom->GetGeometryRuntimeData()
-                                .properties[RE::BSGeometry::States::kEffect]
+                                .shaderProperty
                                 .get())) {
                         if (auto* const mat = static_cast<RE::BSLightingShaderMaterialBase*>(
                                 prop->material)) {
@@ -485,7 +485,7 @@ namespace OS::OverlayReconcile {
                     }
                     if (auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                             a_geom->GetGeometryRuntimeData()
-                                .properties[RE::BSGeometry::States::kEffect]
+                                .shaderProperty
                                 .get())) {
                         if (auto* const mat = static_cast<RE::BSLightingShaderMaterialBase*>(
                                 prop->material)) {

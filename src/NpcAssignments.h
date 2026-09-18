@@ -77,7 +77,7 @@ namespace OS {
     // bytes, and every follower's inner library would read as trailing garbage
     // and be dropped. Found by the suite the moment kCodecVersion moved, which
     // is what the four-step note below exists to make survivable.
-    inline constexpr std::uint32_t kNpcRecordVersion   = 24;
+    inline constexpr std::uint32_t kNpcRecordVersion   = 25;
     inline constexpr std::uint32_t kMaxNpcAssignments  = 512;  // guard vs corrupt count
 
     // Wire format (the record's own bytes; version is carried alongside by
@@ -152,6 +152,10 @@ namespace OS {
     //      v19 held the top spot for part of one afternoon, which is exactly as
     //      binding as v14's single day: the dev machine's saves carry it, so it
     //      freezes and goes into the accepted list like every other version.
+    //   v25 keeps it and declares LIBR v25 (a cut byte per dye channel, where
+    //      metal starts on the piece). v24 is what 1.1.8 writes, the version
+    //      live on Nexus, so it freezes below and goes into both accepted lists
+    //      as a literal, on the terms every version before it did.
     // The innerLen prefix lets decode skip a corrupt/unresolvable inner
     // library without losing sync with the outer stream.
     [[nodiscard]] inline std::vector<std::byte> EncodeNpcAssignments(const NpcAssignmentMap& a_map) {
@@ -268,6 +272,12 @@ namespace OS {
                // so every follower library in them runs off the end of its
                // last outfit and is dropped.
                : a_version == 23 ? 23u
+               // FROZEN: NPCO v24 is what 1.1.8 writes, the version live on
+               // Nexus, so every player's save carries it. Without the freeze
+               // the default arm answers 25 for records whose dye channels stop
+               // before the cut byte, so every dyed follower library in them
+               // runs off the end of a channel and is dropped.
+               : a_version == 24 ? 24u
                                 : kCodecVersion;
     }
 
@@ -295,6 +305,10 @@ namespace OS {
             a_version != 15 && a_version != 16 && a_version != 18 &&
             a_version != 19 && a_version != 20 && a_version != 21 &&
             a_version != 22 && a_version != 23 &&
+            // 24 WRITTEN DOWN THE DAY IT STOPPED BEING CURRENT: the version 1.1.8
+            // writes, live on Nexus, so every player carries it. The terms are
+            // the note above.
+            a_version != 24 &&
             a_version != kNpcRecordVersion) {
             return false;
         }

@@ -25,10 +25,10 @@ namespace OS {
         if (!a_armo) {
             return 0;
         }
-        auto coverage = static_cast<std::uint32_t>(a_armo->GetSlotMask());
+        auto coverage = a_armo->GetSlotMask().underlying();
         for (auto* arma : a_armo->armorAddons) {
             if (arma) {
-                coverage |= static_cast<std::uint32_t>(arma->GetSlotMask());
+                coverage |= arma->GetSlotMask().underlying();
             }
         }
         return coverage;

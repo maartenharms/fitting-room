@@ -213,7 +213,7 @@ namespace OS::EditorStyle {
                 return;
             }
             RE::BSSoundHandle handle;
-            am->BuildSoundDataFromEditorID(handle, a_editorID, 0x10);
+            am->GetSoundHandleByName(handle, a_editorID, 0x10);
             if (handle.IsValid()) {
                 handle.Play();
                 return;

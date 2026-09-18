@@ -177,6 +177,12 @@ namespace OS::MakeupApi {
     // the re-bind lands about a second after the edit that provoked it.
     void ArmDelayedFaceRebake();
 
+    // The game's own retint (chargen, load) binds the shared tint render target
+    // to the face; every NPC tint job is drawn into that target. Off the
+    // heartbeat, once a second: a face wearing the target itself is given its
+    // own copy. Silent while it already has one. [Debug] bPrivateFaceTint.
+    void PrivatiseAliasedFace(RE::Actor* a_actor);
+
     // The head-build edge, and it does NOT require a held tone. A build
     // discards the tint composite outright, and what it discarded was the
     // character's OWN face: rebuilding it from the live tint list is what a

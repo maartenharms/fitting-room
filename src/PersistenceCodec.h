@@ -10,7 +10,7 @@
 
 namespace OS {
 
-    inline constexpr std::uint32_t kCodecVersion = 24;
+    inline constexpr std::uint32_t kCodecVersion = 25;
 
     // How many dyed shapes ONE head-part slot may carry on the wire.
     //
@@ -91,6 +91,16 @@ namespace OS {
     // v16 -> v17: appended the per-outfit EYE colour, four bytes on hairTint's
     // v6 terms: a presence bit and an RGB whose cleared value is the
     // leave-her-own-eyes-alone answer.
+    //
+    // v24 -> v25: the per-channel bytes gained the CUT, where metal starts on
+    // the piece for the envmask dye modes, one byte appended after the v19
+    // blend. Written inside the channel like v13's strength and v19's blend,
+    // so the boundary is pinned on GetChannel directly, and a v24 channel
+    // decodes to 128: halfway up the class gap, which is where the automatic
+    // cut landed on every mask measured, so every existing dye paints as it
+    // did. ⚠ v24 IS THE VERSION 1.1.8 WRITES, the one live on Nexus, so the
+    // dyed v24 forge in test_persistence.cpp is the layout every player's
+    // save carries.
     //
     // v23 -> v24: the ARMOUR DYE block gained the GARMENT in its key. An entry
     // was a slot bit and its channels; it is a bit, a mod name, a form id and
@@ -369,6 +379,10 @@ namespace OS {
             // stopped, and inserting it at the flake would move eighteen bytes
             // that every already-saved channel has in the older places.
             PutU8(a_out, a_ch.blend);
+            // v25: the cut, appended after the blend for the reason the blend
+            // sits after the finish blocks: the wire order is history, and an
+            // appended byte is one a v24 reader stops before.
+            PutU8(a_out, a_ch.cut);
         }
 
         // Returns false only when the stream ran out.
@@ -443,6 +457,16 @@ namespace OS {
             // setting was the only answer that existed.
             if (a_version >= 19) {
                 a_out.blend = a_r.U8();
+                if (!a_r.ok) {
+                    return false;
+                }
+            }
+            // ⚠ v25 AND LATER ONLY. A v24 channel decodes with cut 128, halfway
+            // up the class gap, which is what every v24 build's automatic cut
+            // drew for it (Otsu landed at 0.49 to 0.51 of the gap on every mask
+            // measured), so nothing an existing save shows moves.
+            if (a_version >= 25) {
+                a_out.cut = a_r.U8();
                 if (!a_r.ok) {
                     return false;
                 }
@@ -802,6 +826,11 @@ namespace OS {
             // 2026-08-27 and 2026-08-28 builds write, INCLUDING the 1.1.1 zips
             // the playtesters are already carrying.
             a_version != 23 &&
+            // ⚠ 24 WRITTEN DOWN THE DAY IT STOPPED BEING CURRENT, which is what
+            // the note above says to do on every bump. It is the version 1.1.8
+            // writes, LIVE ON NEXUS since 2026-09-02, so every player's save
+            // carries it and refusing it would empty every library out there.
+            a_version != 24 &&
             a_version != kCodecVersion) {
             return false;
         }

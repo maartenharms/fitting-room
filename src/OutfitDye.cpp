@@ -10,6 +10,8 @@
 #include "PbrPearl.h"     // a pearl's writes on Community Shaders' PBR material
 #include "MaterialReading.h"  // Describe, for the eye pass's before-and-after
 #include "HeadPart.h"     // DiscoveredSlots: the slots a mod invented
+#include "NpcHair.h"      // AppliedTo, AttachedRootNames: a follower's hair worn through us
+#include "NpcHairNames.h" // EdidOfOwnRoot: the part behind one of our renamed roots
 #include "StyleRef.h"     // Make: a part becomes the key its colour is stored under
 #include "RequipDiff.h"      // RequipMayPaint, which shapes the flourish may light
 #include "RequipFlourish.h"  // kPeakEmissiveMult, the top of the requip ramp
@@ -238,7 +240,7 @@ namespace OS::OutfitDye {
         RE::BSLightingShaderProperty* LightingPropOf(RE::BSGeometry* a_geom) {
             return netimmerse_cast<RE::BSLightingShaderProperty*>(
                 a_geom->GetGeometryRuntimeData()
-                    .properties[RE::BSGeometry::States::kEffect]
+                    .shaderProperty
                     .get());
         }
 
@@ -895,6 +897,18 @@ namespace OS::OutfitDye {
             DyeTexture::Ramp resolved = a_ramp;
             resolved.mode             = static_cast<std::uint8_t>(effective);
 
+            // ---- the second stop as a colour, for the envmask modes ----------
+            //
+            // A twotone dye's metal colour is hex2, already strength-narrowed by
+            // the caller exactly as the ramp's stops are. A mask mode authored
+            // without hex2 paints its own colour on both sides, the same "a dye
+            // without hex2 is a dye whose hex2 equals hex" rule NarrowStop keeps
+            // for the ramps.
+            const RE::NiColor secondTint =
+                a_ramp.secondSet
+                    ? RE::NiColor{ a_ramp.r2 / 255.0f, a_ramp.g2 / 255.0f, a_ramp.b2 / 255.0f }
+                    : a_tint;
+
             // ---- a pearl whose sweep already rides the fuzz -----------------
             //
             // ⚠⚠ FIELD, 2026-08-30 ROUND THREE: flat dyes through multiply
@@ -914,19 +928,19 @@ namespace OS::OutfitDye {
             // albedo at full saturation, stop B on the grazing angle, one
             // writer each.
             //
-            // ⚠ GATED ON THE FUZZ WRITE ACTUALLY LANDING: the plan read above
-            // off the SOURCE material, and a mode that still ramps the diffuse
-            // (nacre, or iridescent on this carrier; a flat dye has no second
-            // stop). A PBR shape with a coloured coat and no fuzz keeps the
-            // nacre-recolour diffuse beside its coat write, as in 1.1.7. One
-            // with neither feature is kNone above, so an iridescent dye goes
-            // FLAT on it through sDyePbrBlend, where it used to take
+            // ⚠ GATED ON A PEARL WRITE ACTUALLY LANDING: the plan read above
+            // off the SOURCE material is what made the carrier kPbrPearl, and
+            // the mode still has to be one that ramps the diffuse (nacre, or
+            // iridescent on this carrier; a flat dye has no second stop).
+            // Through 1.1.9 only a fuzz piece was spared and a coat-only piece
+            // kept the nacre-recolour diffuse beside its coat write; since
+            // 2026-09-15 the coat spares the diffuse too, DyeRamp.h says why.
+            // A shape with neither feature is kNone above, so an iridescent
+            // dye goes FLAT on it through sDyePbrBlend, where it used to take
             // nacre-recolour on a flat albedo whose luminance key collapsed
             // and showed no ramp anyway; flat multiply is the more saturated
             // answer there.
-            const bool pearlRidesFuzz = carrier == DyeRamp::Carrier::kPbrPearl &&
-                                        pearlPlan.fuzz &&
-                                        DyeRamp::RampsDiffuse(effective);
+            const bool pearlRidesFuzz = DyeRamp::PearlRidesMaterial(carrier, effective);
 
             const DyeTexture::Ramp diffuseRamp =
                 (DyeRamp::RampsDiffuse(effective) && !pearlRidesFuzz)
@@ -973,6 +987,128 @@ namespace OS::OutfitDye {
                                      a_geom->name.c_str());
                     }
                 }
+
+                // ---- the METAL SPLIT, for the envmask dye modes (2026-09-04) --
+                //
+                // The shape's own reflection-strength map is the line between
+                // metal and cloth, read in the engine's own order: the
+                // environment mask where one is bound (its red), else the normal
+                // map's alpha. DyeRamp::DiffuseTakeFor says what this shape's
+                // diffuse gets and SplitFor which side of a split takes which
+                // colour; both are pure and tested, so nothing is decided here,
+                // only carried to the build as the two-sided request the eye
+                // path already knows how to make.
+                //
+                // ⚠ irisSet FALSE MEANS THE REQUEST'S TINT IS CANONICAL BLACK,
+                // the contract the eye path keeps: the tint is in the cache key
+                // even when the shader never reads it.
+                RE::NiColor         tintHere    = a_tint;
+                DyeTexture::MaskDye maskDyeHere = a_maskDye;
+                const char*         maskHint    = normalPath;
+                if (DyeRamp::IsMaskMode(effective)) {
+                    const auto modeWord = [](DyeRamp::Mode a_m) {
+                        return a_m == DyeRamp::Mode::kMetal   ? "metal"
+                               : a_m == DyeRamp::Mode::kCloth ? "cloth"
+                                                              : "twotone";
+                    };
+                    RE::NiSourceTexture* strength = nullptr;
+                    bool                 red      = false;
+                    if (reflective) {
+                        // ⚠ USABLE MEANS KEYABLE, the funnel's own test (field,
+                        // 2026-09-04): a texture with a real name, or a
+                        // nameless one whose texture set authors a path. The
+                        // vanilla iron war axe has NEITHER for its mask slot,
+                        // the engine's nameless default sits there, and a split
+                        // keyed on the pointer was refused six times while the
+                        // axe stayed undyed. Its normal map is nameless too but
+                        // authored, so that is the map, exactly as the engine
+                        // reads it with no mask bound.
+                        const auto usable = [](RE::NiSourceTexture* a_tex, const char* a_path) {
+                            if (!a_tex) {
+                                return false;
+                            }
+                            const char* const name = a_tex->name.c_str();
+                            if (DyeKey::IsEnginePlaceholder(name)) {
+                                return false;
+                            }
+                            return (name && *name) || (a_path && *a_path);
+                        };
+                        auto* const envMaskTex =
+                            static_cast<const RE::BSLightingShaderMaterialEnvmap*>(src)
+                                ->envMaskTexture.get();
+                        auto* const normalTex = src->normalTexture.get();
+                        switch (DyeRamp::MapSourceFor(usable(envMaskTex, envMaskPath),
+                                                      usable(normalTex, normalPath))) {
+                            case DyeRamp::MapSource::kEnvMask:
+                                strength = envMaskTex;
+                                red      = true;
+                                break;
+                            case DyeRamp::MapSource::kNormalAlpha:
+                                strength = normalTex;
+                                red      = false;
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+                    const auto take =
+                        DyeRamp::DiffuseTakeFor(effective, reflective, strength != nullptr);
+                    const auto colourOf = [&](DyeRamp::Take a_take) {
+                        return a_take == DyeRamp::Take::kSecond ? secondTint : a_tint;
+                    };
+                    const auto byteOf = [](float a_v) {
+                        return static_cast<std::uint8_t>(std::clamp(a_v * 255.0f + 0.5f, 0.0f, 255.0f));
+                    };
+                    switch (take) {
+                        case DyeRamp::Take::kUntouched:
+                            spdlog::info("MetalSplit: '{}' is {}, and a {} dye has nothing to "
+                                         "paint there, so it is left alone.",
+                                         a_geom->name.c_str(),
+                                         reflective ? "all metal" : "not reflective at all",
+                                         modeWord(effective));
+                            return false;
+                        case DyeRamp::Take::kPrimary:
+                        case DyeRamp::Take::kSecond:
+                            tintHere = colourOf(take);
+                            spdlog::info("MetalSplit: '{}' is {} with no map to split it, so "
+                                         "the {} dye paints it whole with its {} colour.",
+                                         a_geom->name.c_str(),
+                                         reflective ? "all metal" : "not reflective",
+                                         modeWord(effective),
+                                         take == DyeRamp::Take::kSecond ? "second" : "first");
+                            break;
+                        case DyeRamp::Take::kSplit: {
+                            const auto split = DyeRamp::SplitFor(effective);
+                            mask             = strength;
+                            maskHint         = red ? envMaskPath : normalPath;
+                            maskDyeHere      = DyeTexture::MaskDye{};
+                            maskDyeHere.region  = true;
+                            maskDyeHere.red     = red;
+                            maskDyeHere.cut     = a_ramp.cut;
+                            maskDyeHere.irisSet = split.inside != DyeRamp::Take::kUntouched;
+                            tintHere = maskDyeHere.irisSet ? colourOf(split.inside)
+                                                           : RE::NiColor{ 0.0f, 0.0f, 0.0f };
+                            maskDyeHere.scleraSet = split.outside != DyeRamp::Take::kUntouched;
+                            if (maskDyeHere.scleraSet) {
+                                const auto c  = colourOf(split.outside);
+                                maskDyeHere.r = byteOf(c.red);
+                                maskDyeHere.g = byteOf(c.green);
+                                maskDyeHere.b = byteOf(c.blue);
+                            }
+                            spdlog::info("MetalSplit: '{}' splits by its {} '{}' under a {} "
+                                         "dye: the metal {}, the rest {}.",
+                                         a_geom->name.c_str(),
+                                         red ? "environment mask" : "normal map's alpha",
+                                         (strength->name.c_str() && *strength->name.c_str())
+                                             ? strength->name.c_str()
+                                             : (maskHint ? maskHint : "(nameless)"),
+                                         modeWord(effective),
+                                         maskDyeHere.irisSet ? "takes colour" : "is left alone",
+                                         maskDyeHere.scleraSet ? "takes colour" : "is left alone");
+                            break;
+                        }
+                    }
+                }
                 // ⚠ THE BLEND IS THE CALLER'S FOR ONE SURFACE ONLY, and armour
                 // never passes it. The overlay is what makes a dyed garment look
                 // dyed rather than painted, and it is the WRONG arithmetic for
@@ -1016,13 +1152,17 @@ namespace OS::OutfitDye {
                 }
                 if (pearlRidesFuzz) {
                     spdlog::info(
-                        "PbrPearl: '{}' sends its ramp to the FUZZ, so the diffuse takes "
+                        "PbrPearl: '{}' sends its ramp to the {}, so the diffuse takes "
                         "the flat tint through blend '{}' like any flat dye.",
-                        a_geom->name.c_str(), DyeTexture::BlendName(a_diffuseBlend));
+                        a_geom->name.c_str(),
+                        pearlPlan.fuzz && pearlPlan.coat ? "FUZZ and COAT"
+                        : pearlPlan.fuzz                 ? "FUZZ"
+                                                         : "COAT",
+                        DyeTexture::BlendName(a_diffuseBlend));
                 }
-                tinted = DyeTexture::Acquire(shown, a_tint, a_waiter, diffuseBlendHere,
+                tinted = DyeTexture::Acquire(shown, tintHere, a_waiter, diffuseBlendHere,
                                              diffuseRamp, a_previewOnly, a_capPx, mask,
-                                             a_maskDye, diffusePath, normalPath);
+                                             maskDyeHere, diffusePath, maskHint);
                 if (!tinted) {
                     // Queued, or permanently refused. Either way this pass has
                     // nothing to swap in, and swapping in a clone with the
@@ -1111,7 +1251,12 @@ namespace OS::OutfitDye {
                         // dye is two-stop (already strength-narrowed by the
                         // caller), else the authored sheen. Either way it is
                         // the colour the dye wants the light to catch.
-                        const bool twoStop    = effective != DyeRamp::Mode::kFlat;
+                        // ⚠ A MASK MODE IS NOT A TWO-STOP RAMP. Its second
+                        // colour is the metal's, and on a True PBR piece there
+                        // is no metal map read yet, so the fuzz keeps its
+                        // authored sheen rather than taking hex2 (2026-09-04).
+                        const bool twoStop    = effective != DyeRamp::Mode::kFlat &&
+                                             !DyeRamp::IsMaskMode(effective);
                         const bool haveColour = twoStop || a_fin.sheenSet;
                         const std::uint8_t cr = twoStop ? a_ramp.r2 : a_fin.sheenR;
                         const std::uint8_t cg = twoStop ? a_ramp.g2 : a_fin.sheenG;
@@ -1313,14 +1458,25 @@ namespace OS::OutfitDye {
                     // most of the look on exactly the pieces that path exists
                     // for, so reading the [Debug] key here shipped a dyed
                     // diffuse under an undyed steel cubemap.
-                    if (cfg.TintsReflection()) {
+                    // ⚠ THE REFLECTION IS THE METAL (2026-09-04), so under the
+                    // envmask modes it takes the metal's colour: hex2 for a
+                    // twotone dye, nothing at all for a cloth dye, and the
+                    // request's own tint for every other mode, as always.
+                    const auto reflTake = DyeRamp::ReflectionTakeFor(effective);
+                    if (reflTake == DyeRamp::Take::kUntouched) {
+                        spdlog::info("MetalSplit: '{}' keeps its own reflection; a cloth "
+                                     "dye does not reach the metal.",
+                                     a_geom->name.c_str());
+                    } else if (cfg.TintsReflection()) {
+                        const RE::NiColor reflTint =
+                            reflTake == DyeRamp::Take::kSecond ? secondTint : a_tint;
                         auto* const cubemap = env->envTexture.get();
                         if (!cubemap) {
                             spdlog::info("DyeFinish: '{}' has NO envTexture, so it has no "
                                          "reflection colour to change.",
                                          a_geom->name.c_str());
                         } else if (auto* const tinted = DyeTexture::Acquire(
-                                       cubemap, a_tint, a_waiter,
+                                       cubemap, reflTint, a_waiter,
                                        DyeTexture::Blend::kRecolour, reflectionRamp,
                                        a_previewOnly, 0, nullptr, {}, envPath)) {
                             spdlog::info("DyeFinish: '{}' cubemap '{}' recoloured{}.",
@@ -1999,8 +2155,7 @@ namespace OS::OutfitDye {
         if (mat->materialAlpha > 0.0f) {
             return false;
         }
-        auto* const alpha = netimmerse_cast<RE::NiAlphaProperty*>(
-            a_geom->GetGeometryRuntimeData().properties[RE::BSGeometry::States::kProperty].get());
+        auto* const alpha = a_geom->GetGeometryRuntimeData().alphaProperty.get();
         return alpha && (alpha->GetAlphaBlending() || alpha->GetAlphaTesting());
     }
 
@@ -3149,6 +3304,7 @@ namespace OS::OutfitDye {
                     ramp.mode      = ch.mode;
                     ramp.secondSet = ch.secondSet;
                     ramp.gloss     = fin.glossSet ? fin.gloss : std::uint8_t{ 128 };
+                    ramp.cut       = ch.cut;  // where metal starts, the piece's own byte
                     if (ch.secondSet) {
                         ramp.r2 = ApplyDyeStrength(
                             DyeRamp::NarrowStopByte(ch.r, ch.r2, ch.strength), ch.strength);
@@ -3739,7 +3895,25 @@ namespace OS::OutfitDye {
         // through its emissive alone and its material is never touched). Two
         // painters over one geometry is the drift this whole comment is about, and
         // here it would be two painters that disagree by design.
-        if (a_actor->IsPlayerRef()) {
+        // ⚠⚠ EVERY ACTOR WITH A HEAD, NOT THE PLAYER ALONE (field 2026-09-04,
+        // "only 1 hair dye slot for npcs even if their hair is multi shaped").
+        // This walk is also the snapshot the grid draws its hair tile from, so
+        // gating it on IsPlayerRef gave a follower ONE stripe, her hair colour,
+        // however many ornaments her style carried. Her head is walked on the
+        // same terms as his, with one difference the names force:
+        //
+        // ⚠⚠ HER OWN PIECES WEAR ENGINE NAMES, OURS DO NOT. The engine stamps a
+        // head part's geometry with the part's editor id, hers and ours alike,
+        // which is why NpcHair renames every root it attaches to
+        // NpcHairNames::OwnRootName (OS-246, the bald follower). So a style she
+        // wears through us is found by the roots NpcHair recorded and walked
+        // WHOLE, one root per part, because the shapes under such a root keep
+        // the nif's own names and the exact-name filter would skip every one
+        // of them. Her own hair, and the invented slots, are walked by editor
+        // id exactly as the player's are. One key per part either way, so a
+        // follower's ornament stores under the same (slot, part) a player's
+        // does, and the codec has carried it since LIBR v22.
+        {
             auto* const npcBase = a_actor->GetActorBase();
             auto* const proc    = a_actor->GetActorRuntimeData().currentProcess;
             auto* const mid     = proc ? proc->middleHigh : nullptr;
@@ -3747,7 +3921,11 @@ namespace OS::OutfitDye {
             if (npcBase && faceNode) {
                 std::size_t headParts = 0;
                 std::size_t headDyed  = 0;
-                const auto  walkPart = [&](std::uint32_t a_slot, RE::BGSHeadPart* a_part) {
+                std::size_t ownRoots  = 0;
+                // a_root null: the engine-named geometry under the face node, by
+                // exact name. a_root set: one of OUR roots, walked whole.
+                const auto walkPart = [&](std::uint32_t a_slot, RE::BGSHeadPart* a_part,
+                                          RE::NiAVObject* a_root) {
                     if (!a_part) {
                         return;
                     }
@@ -3770,8 +3948,9 @@ namespace OS::OutfitDye {
                     key.target     = DyeTarget::kHeadPart;
                     key.headSlot   = a_slot;
                     key.headPart   = ref;
-                    key.nameFilter = edid;
-                    key.label      = fmt::format("head part {} '{}'", a_slot, edid);
+                    key.nameFilter = a_root ? std::string{} : std::string{ edid };
+                    key.label      = fmt::format("head part {} '{}'{}", a_slot, edid,
+                                                 a_root ? " (ours)" : "");
                     key.snapshot   = true;
                     // ⚠ AN EMPTY REF READS AS NO COLOUR RATHER THAN AS A LOOKUP,
                     // which HeadPartDyeFor already answers correctly: nothing is
@@ -3781,7 +3960,8 @@ namespace OS::OutfitDye {
                     if (dye.Any()) {
                         ++headDyed;
                     }
-                    paintNode(faceNode, dye, key);
+                    paintNode(a_root ? a_root : static_cast<RE::NiAVObject*>(faceNode), dye,
+                              key);
                 };
                 const auto walkSlot = [&](std::uint32_t a_slot) {
                     auto* const part = npcBase->GetCurrentHeadPartByType(
@@ -3789,7 +3969,7 @@ namespace OS::OutfitDye {
                     if (!part) {
                         return;
                     }
-                    walkPart(a_slot, part);
+                    walkPart(a_slot, part, nullptr);
                     // ⚠ THE EXTRA PARTS ARE THE FEATURE, not a completeness
                     // gesture. Measured 2026-08-17: the hair part itself carries
                     // model='' and contributes NO geometry, and every dyeable
@@ -3797,11 +3977,60 @@ namespace OS::OutfitDye {
                     // `GuanYinping2`, `24_bodyc_0.6_0_0`). A walk of parents alone
                     // would find nothing at all on the case that was asked for.
                     for (auto* const extra : part->extraParts) {
-                        walkPart(a_slot, extra);
+                        walkPart(a_slot, extra, nullptr);
                     }
                 };
-                walkSlot(static_cast<std::uint32_t>(
-                    RE::BGSHeadPart::HeadPartType::kHair));
+                const auto hairSlot =
+                    static_cast<std::uint32_t>(RE::BGSHeadPart::HeadPartType::kHair);
+                // The hair slot: OURS when NpcHair put a style on her, else the
+                // record's own. The player's hair is never ours (HairStyle.h
+                // writes his actor base and the engine builds the head), so his
+                // walk is the editor-id one, unchanged.
+                auto* const ours = a_actor->IsPlayerRef()
+                                       ? nullptr
+                                       : NpcHair::AppliedTo(a_actor, HeadPart::Kind::kHair);
+                if (ours) {
+                    const auto partNamed = [&](std::string_view a_edid) -> RE::BGSHeadPart* {
+                        const auto wears = [&](RE::BGSHeadPart* a_p) {
+                            const char* const id = a_p ? a_p->GetFormEditorID() : nullptr;
+                            return id && a_edid == id;
+                        };
+                        if (wears(ours)) {
+                            return ours;
+                        }
+                        for (auto* const extra : ours->extraParts) {
+                            if (wears(extra)) {
+                                return extra;
+                            }
+                        }
+                        return nullptr;
+                    };
+                    for (const auto& name :
+                         NpcHair::AttachedRootNames(a_actor, HeadPart::Kind::kHair)) {
+                        const auto  edid = NpcHairNames::EdidOfOwnRoot(name);
+                        auto* const part = edid ? partNamed(*edid) : nullptr;
+                        auto* const root =
+                            faceNode->GetObjectByName(RE::BSFixedString(name.c_str()));
+                        if (!part || !root) {
+                            // Recorded but not walkable: a root the engine named
+                            // by something other than a part of the style (a
+                            // reused root keeps its engine name, NpcHair says
+                            // so), or one no longer under her face node. Named,
+                            // so a follower whose ornament will not dye has a
+                            // line in the log.
+                            spdlog::debug("HeadDye: actor {:08X} recorded root '{}' is not "
+                                          "walked: {}.",
+                                          a_actor->GetFormID(), name,
+                                          !part ? "no part of the style wears that name"
+                                                : "it is not under her face node");
+                            continue;
+                        }
+                        ++ownRoots;
+                        walkPart(hairSlot, part, root);
+                    }
+                } else {
+                    walkSlot(hairSlot);
+                }
                 for (const auto& found : HeadPart::DiscoveredSlots()) {
                     walkSlot(found.type);
                 }
@@ -3809,10 +4038,16 @@ namespace OS::OutfitDye {
                 // for PaintEyeTint's own recorded reason: a pass that is silent
                 // on the path it takes most often leaves "I dyed a horn and
                 // nothing happened" with no line to separate "the walk never
-                // ran" from "it ran and refused".
-                spdlog::info("HeadDye: walked {} head part(s) on {} slot(s), {} of them "
-                             "carrying a colour this outfit set.",
-                             headParts, 1 + HeadPart::DiscoveredSlots().size(), headDyed);
+                // ran" from "it ran and refused". The actor is named now that
+                // there is more than one.
+                spdlog::info("HeadDye: actor {:08X} walked {} head part(s) on {} slot(s), {} "
+                             "of them carrying a colour this outfit set{}.",
+                             a_actor->GetFormID(), headParts,
+                             1 + HeadPart::DiscoveredSlots().size(), headDyed,
+                             ownRoots ? fmt::format(", {} through Fitting Room's own hair "
+                                                    "root(s)",
+                                                    ownRoots)
+                                      : std::string{});
             } else {
                 spdlog::debug("HeadDye: actor {:08X} has no face node or no base yet, so no "
                               "head part can be dyed this pass.",

@@ -1,4 +1,5 @@
 #include "PreviewCache.h"
+#include "GpuAccess.h"
 
 #include "DyeTexture.h"  // EnsurePresent, so the frame clock runs dye or no dye
 #include "FuckCompat.h"
@@ -78,9 +79,8 @@ namespace OS::PreviewCache {
         void BuildOne(Store& a_s, const std::string& a_key, Entry& a_entry) {
             const auto t0 = std::chrono::steady_clock::now();
 
-            auto* rm = RE::BSRenderManager::GetSingleton();
-            auto* device = rm ? rm->GetRuntimeData().forwarder : nullptr;
-            auto* ctx    = rm ? rm->GetRuntimeData().context : nullptr;
+            auto* device = OS::Gpu::Device();
+            auto* ctx    = OS::Gpu::Context();
             if (!device || !ctx) {
                 a_entry.meta.state = PreviewGrid::State::kFailed;
                 ++a_s.stats.failed;

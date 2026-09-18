@@ -71,6 +71,32 @@ namespace OS::FsmpBridge {
         // this rig loads.
         { 0x6A4A9ECCu, 0x40F000u, Coop::kSkinAllEntry,
           "Faster HDT-SMP 4.0.1 (AE, AVX-512)" },
+        // ⚠⚠ ITS THREE CPU SIBLINGS, READ 2026-09-03 AND ROWED HERE. They
+        // had been left out because this flavour's safety rests on "the hook
+        // never calls the engine original", which a fingerprint cannot say,
+        // and none of them had been disassembled. A Nexus report of the
+        // SMP-hair refusal paid for the read, and it cost nothing to run: the
+        // 4.0.1 archive already in MODS\downloads carries all four CPU builds
+        // WITH their PDBs.
+        //
+        // MEASURED per variant from its own shipped PDB, method and numbers in
+        // docs/re/fsmp-cooperative-hair.md. Across all ~10,500 functions of
+        // each build, every reference to _SkinAllGeometry_Orig and
+        // _SkinSingleGeometry is a STORE in BSFaceGenNiNodeHooks::Hook plus
+        // the lea handing the slot address to DetourAttach in
+        // InstallLowPriority. No call and no jmp through either slot exists in
+        // any of the four, which is the contract itself rather than a proxy
+        // for it. All four embed the same ids (vtable SE 252410 / AE 200333
+        // for the SkinAll entry detour, SE 26466 / AE 27061 for the
+        // SkinSingle call site) and the SkinSingle ENTRY ids 26406/26987
+        // appear in none of them, so all four carry the call-site-not-entry
+        // shape the AVX-512 build was verified to have.
+        { 0x6A4A9FDBu, 0x412000u, Coop::kSkinAllEntry,
+          "Faster HDT-SMP 4.0.1 (AE, SSE2)" },
+        { 0x6A4A9FD9u, 0x414000u, Coop::kSkinAllEntry,
+          "Faster HDT-SMP 4.0.1 (AE, AVX)" },
+        { 0x6A4A9FE0u, 0x412000u, Coop::kSkinAllEntry,
+          "Faster HDT-SMP 4.0.1 (AE, AVX2)" },
         // 4.1.1, ALL FOUR CPU builds, added 2026-08-29 after the user updated
         // to it and found physics had stopped in Menu Studio's menus. Same 4.x
         // line, so the same flavour.
@@ -102,17 +128,12 @@ namespace OS::FsmpBridge {
           "Faster HDT-SMP 4.1.1 (AE, AVX2)" },
         { 0x6A8F449Eu, 0x417000u, Coop::kSkinAllEntry,
           "Faster HDT-SMP 4.1.1 (AE, AVX-512)" },
-        // ⚠⚠ THE THREE CPU SIBLINGS STAY OUT UNTIL ONE OF THEM IS READ. Their
-        // fingerprints are known (Menu Studio's FsmpDrive rows them, verified
-        // there for a different purpose: driving the world). None is installed
-        // on this instance and none has had its head hooks disassembled, and
-        // this flavour's safety rests on "the hook never calls the engine
-        // original", which a fingerprint cannot say. Each is a one-line fix
-        // after a PDB-backed read:
-        //   { 0x6A4A9FDBu, 0x412000u, Coop::kSkinAllEntry, "... 4.0.1 (AE, SSE2)" },
-        //   { 0x6A4A9FD9u, 0x414000u, Coop::kSkinAllEntry, "... 4.0.1 (AE, AVX)" },
-        //   { 0x6A4A9FE0u, 0x412000u, Coop::kSkinAllEntry, "... 4.0.1 (AE, AVX2)" },
-        // ⚠ The 3.5 line stays out too: its head hooks have never been read.
+        // ⚠⚠ THE 3.x LINE STILL HAS NO ROW, AND THAT IS A LIVE REPORT RATHER
+        // THAN A GAP NOBODY HAS WALKED INTO. A user on 3.0.4 is refused with
+        // $FR_HairStyleSmpUnavailable, and the refusal is correct rather than a
+        // bug: no 3.x build has had its head hooks read, and none is on this
+        // rig to read. Rowing one needs its DLL and PDB in hand first, the
+        // same way the 4.0.1 siblings above were paid for.
     };
 
     // The engine entry whose detour a flavour depends on.

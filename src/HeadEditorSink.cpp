@@ -293,12 +293,12 @@ namespace OS::HeadEditorSink {
                          "{} baseline(s).",
                          cleanup, outcome.ReseededCount());
             if (cleanup == 1) {
-                RE::DebugNotification(
+                RE::SendHUDMessage::ShowHUDMessage(
                     ("Fitting Room let this character's default " + cleared +
                      " go, so the look you just made stays.")
                         .c_str());
             } else if (cleanup > 1) {
-                RE::DebugNotification(
+                RE::SendHUDMessage::ShowHUDMessage(
                     ("Fitting Room let " + std::to_string(cleanup) +
                      " of this character's defaults go, so the look you just made stays.")
                         .c_str());

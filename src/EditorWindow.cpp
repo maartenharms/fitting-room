@@ -208,7 +208,7 @@ namespace {
                 // the editor would hijack the scene camera/input.
                 if (OS::SceneGuard::Active()) {
                     open_.store(false, std::memory_order_relaxed);
-                    RE::DebugNotification("You can't edit outfits during a scene.");
+                    RE::SendHUDMessage::ShowHUDMessage("You can't edit outfits during a scene.");
                     return;
                 }
                 forceLayout_.store(true, std::memory_order_relaxed);  // OS-54: re-apply standardized geometry on the first Draw
@@ -338,7 +338,7 @@ namespace {
                 // rather than beside SAM.
                 if (!fromSam) {
                     if (auto* inv3d = RE::Inventory3DManager::GetSingleton()) {
-                        inv3d->Clear3D();
+                        inv3d->UnloadInventoryItem();
                     }
                 }
                 // ⚠⚠ THE POPULATION STEP IS THE OTHER HALF OF THE DRAW GUARD,
@@ -1202,7 +1202,7 @@ namespace {
                                     // the last entry AND drops the item's
                                     // ExtraDataList, which we must not
                                     // reimplement.
-                                    i3d->Clear3D();
+                                    i3d->UnloadInventoryItem();
                                     // Then whatever it left visible. ⚠ The raw
                                     // bit rather than SetAppCulled, because the
                                     // bit is exactly what Clear3D itself sets,

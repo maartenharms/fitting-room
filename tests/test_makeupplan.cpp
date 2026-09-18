@@ -277,6 +277,22 @@ int main() {
         CHECK(MayWear(Snapshot{}, 999));
     }
 
+    {  // ---- what backs the head's tint texture ----------------------------
+        //
+        // ⚠⚠ THE ALIAS IS THE BLACK FACE (field 2026-09-09, three logs). The
+        // chargen's retint backs the face with a view onto the shared tint
+        // render target and no texture of its own; a head build's texture owns
+        // a copy. The texture pointer decides, and nothing else may.
+        CHECK(JudgeTintBacking(false, false) == TintBacking::kNone);
+        CHECK(JudgeTintBacking(false, true) == TintBacking::kNone);
+        CHECK(JudgeTintBacking(true, false) == TintBacking::kAlias);
+        CHECK(JudgeTintBacking(true, true) == TintBacking::kPrivate);
+        CHECK(std::string{ TintBackingLabel(TintBacking::kAlias) } ==
+              "ALIAS of the tint render target");
+        CHECK(std::string{ TintBackingLabel(TintBacking::kPrivate) } == "private");
+        CHECK(std::string{ TintBackingLabel(TintBacking::kNone) } == "no backing");
+    }
+
     {  // ⚠⚠ THE TAXONOMY, WHICH IS THE THING THE RACE RECORD MEASURED. Every
         // structural type is one slot per character with a texture the race
         // fixes, so it takes a colour and nothing else. Only war paint and dirt

@@ -9,6 +9,7 @@
 // discarded while the browser looked healthy because modded parts filled it),
 // which is the whole reason the rule was pulled out here to be tested at all.
 #include "HeadPartPlan.h"
+#include "NpcHairNames.h"
 
 #include <cstdio>
 #include <string_view>
@@ -191,6 +192,25 @@ int main() {
         CHECK(std::string_view{ ReasonName(Reject::kExtraPart) } != "unknown");
         CHECK(std::string_view{ ReasonName(Reject::kWrongSex) } != "unknown");
         CHECK(std::string_view{ ReasonName(Reject::kWrongRace) } != "unknown");
+    }
+
+    {  // ⚠ THE ONE NAME CONTRACT NpcHair AND THE DYE WALK SHARE (2026-09-04).
+       // The engine names a head part's geometry by the part's editor id, ours
+       // and hers alike, so NpcHair renames every root it attaches out of that
+       // namespace; the head-part dye walk then finds OUR pieces by exactly
+       // that name, never hers, and reads the part back out of it. Two modules
+       // spelling one prefix each is how a follower's ornament goes undyed.
+        using namespace OS::NpcHairNames;
+        CHECK(OwnRootName("HairFemaleNord01") == "FR|HairFemaleNord01");
+        CHECK(OwnRootName("X") != "X");
+        const auto back = EdidOfOwnRoot("FR|HairFemaleNord01");
+        CHECK(back && *back == "HairFemaleNord01");
+        CHECK(!EdidOfOwnRoot("HairFemaleNord01"));  // hers: engine named
+        CHECK(!EdidOfOwnRoot("FR|"));               // a prefix over nothing is no part
+        CHECK(!EdidOfOwnRoot(""));
+        // Round trip, so a renamed root can always be read back.
+        const auto acc = EdidOfOwnRoot(OwnRootName("001ACC"));
+        CHECK(acc && *acc == "001ACC");
     }
 
     if (g_failures == 0) {

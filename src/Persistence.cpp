@@ -1119,10 +1119,18 @@ namespace OS::Persistence {
                                         layers += entries.size();
                                     }
                                     OverlayBaseline::Restore(*parsed.profile.overlays);
+                                    // ⚠ THE WORDING FOLLOWS OverlayBaseline::ReassertRecord,
+                                    // which has three verdicts, not the one this line
+                                    // used to claim: the 09-16 handoff read "only if
+                                    // skee holds none" off it and priced a design
+                                    // question the code had already answered.
                                     spdlog::info(
                                         "Persistence: restored the player's overlay art "
-                                        "({} layer(s)). It goes back on only if skee "
-                                        "comes up holding none of its own.",
+                                        "({} layer(s)). It is re-asserted once skee has "
+                                        "restored its own copy: a store holding none gets "
+                                        "it back, one holding a different set loses to it "
+                                        "and the extras come off, one that agrees is "
+                                        "pushed once anyway.",
                                         layers);
                                 }
                             }
@@ -1549,7 +1557,11 @@ namespace OS::Persistence {
                             std::size_t high    = 0;
                             std::size_t matched = 0;
                             processLists->ForEachHighActor(
-                                [&](RE::Actor& a_actor) -> RE::BSContainer::ForEachResult {
+                                [&](RE::Actor* a_actorPtr) -> RE::BSContainer::ForEachResult {
+                                    if (!a_actorPtr) {
+                                        return RE::BSContainer::ForEachResult::kContinue;
+                                    }
+                                    auto& a_actor = *a_actorPtr;
                                     ++high;
                                     if (const auto* base = a_actor.GetActorBase();
                                         base && npcSnapshot->contains(base->GetFormID())) {

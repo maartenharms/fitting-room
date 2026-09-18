@@ -335,7 +335,7 @@ namespace OS {
                     std::uint32_t skinCoverage = 0;
                     for (auto* arma : nakedSkin->armorAddons) {
                         if (arma) {
-                            skinCoverage |= static_cast<std::uint32_t>(arma->GetSlotMask());
+                            skinCoverage |= arma->GetSlotMask().underlying();
                         }
                     }
                     for (std::uint32_t bit = 0; bit < 32; ++bit) {
@@ -347,7 +347,7 @@ namespace OS {
                         for (std::uint32_t j = 0; j < bit && !seen; ++j) {
                             seen = a_real.armo[j] == armo;
                         }
-                        const auto mask = static_cast<std::uint32_t>(armo->GetSlotMask());
+                        const auto mask = armo->GetSlotMask().underlying();
                         if (seen || (mask & a_display.hideMask) != 0 || (mask & skinCoverage) == 0) {
                             continue;
                         }
@@ -416,7 +416,7 @@ namespace OS {
                              // previewing this actor
                 }
                 if (a_suppressedSlots &&
-                    (static_cast<std::uint32_t>(a_armo->GetSlotMask()) & a_suppressedSlots)) {
+                    (a_armo->GetSlotMask().underlying() & a_suppressedSlots)) {
                     spdlog::debug("  style bit {} '{}' skipped: something else owns this slot "
                                   "right now (Helmet Toggle, or an Apparel Preview "
                                   "of headgear).",
@@ -460,7 +460,7 @@ namespace OS {
                     spdlog::debug("  style bit {} '{}' staged 0x{:X} although ApplyArmorAddon "
                                   "returned false (declared 0x{:X}).",
                                   a_bit, a_armo->GetName(), staged,
-                                  static_cast<std::uint32_t>(a_armo->GetSlotMask()));
+                                  a_armo->GetSlotMask().underlying());
                 }
                 spdlog::debug("  style bit {} inject '{}' -> {} staged=0x{:X}", a_bit,
                               a_armo->GetName(), ok, staged);
@@ -712,7 +712,7 @@ namespace OS {
                 for (auto* wornArmo : a_real.armo) {
                     if (wornArmo) {
                         suppressedSlots |=
-                            static_cast<std::uint32_t>(wornArmo->GetSlotMask()) &
+                            wornArmo->GetSlotMask().underlying() &
                             kHT2HeadSlots;
                     }
                 }
@@ -741,8 +741,7 @@ namespace OS {
                     std::uint32_t skinCoverage = 0;
                     for (auto* arma : nakedSkin->armorAddons) {
                         if (arma) {
-                            skinCoverage |= static_cast<std::uint32_t>(
-                                arma->GetSlotMask());
+                            skinCoverage |= arma->GetSlotMask().underlying();
                         }
                     }
                     for (std::uint32_t bit = 0; bit < 32; ++bit) {
@@ -755,7 +754,7 @@ namespace OS {
                             seen = a_real.armo[j] == armo;
                         }
                         const auto mask =
-                            static_cast<std::uint32_t>(armo->GetSlotMask());
+                            armo->GetSlotMask().underlying();
                         if (seen || (mask & display.hideMask) != 0 ||
                             (mask & skinCoverage) == 0 ||
                             (mask & kFirstPersonArmorMask) == 0) {
@@ -934,7 +933,7 @@ namespace OS {
                         for (auto* wornArmo : real.armo) {
                             if (wornArmo) {
                                 suppressedSlots |=
-                                    static_cast<std::uint32_t>(wornArmo->GetSlotMask()) &
+                                    wornArmo->GetSlotMask().underlying() &
                                     kHT2HeadSlots;
                             }
                         }
@@ -1132,7 +1131,12 @@ namespace OS {
         // keeps its bit. See DropGhostHeadPartBits in SlotMask.h for why this
         // exists and which war it ends.
         std::uint32_t GhostHeadPartMask(RE::Actor* a_actor) noexcept {
-            auto* const biped = a_actor ? a_actor->GetCurrentBiped().get() : nullptr;
+            // ⚠ GetBiped1(false), not GetCurrentBiped(): in first person the latter is
+            // the first-person biped, which stages no head geometry, so every helmet
+            // and hood on it would read as a ghost here (BipedPost.cpp's sweep, the
+            // 2026-09-14 reading). The engine's two hide bits act on the third-person
+            // head, so the third-person biped is the one that answers.
+            auto* const biped = a_actor ? a_actor->GetBiped1(false).get() : nullptr;
             if (!biped) {
                 return 0;
             }

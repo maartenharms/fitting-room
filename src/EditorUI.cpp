@@ -30,6 +30,7 @@
 #include "DyeSchemes.h"
 #include "DyeStatDeed.h"  // "stat:" tells a Skyrim counter from one of ours
 #include "DyeStrength.h"  // the strength slider's byte <-> per cent conversion
+#include "DyeTick.h"      // Poke: the deed just moved, so a pass runs as the editor closes
 #include "DyeUnlocks.h"   // the "channelsDyed" deed, bumped on Apply
 #include "DyeWorld.h"     // the tooltip's "yours is N" readings, gathered at open
 #include "EditTargetLabel.h"
@@ -5578,7 +5579,11 @@ namespace OS::EditorUI {
         const bool includeOthers = OS::Settings::GetSingleton().editOtherNpcs;
         if (auto* processLists = RE::ProcessLists::GetSingleton()) {
             processLists->ForEachHighActor(
-                [&](RE::Actor& a_actor) -> RE::BSContainer::ForEachResult {
+                [&](RE::Actor* a_actorPtr) -> RE::BSContainer::ForEachResult {
+                    if (!a_actorPtr) {
+                        return RE::BSContainer::ForEachResult::kContinue;
+                    }
+                    auto& a_actor = *a_actorPtr;
                     if (a_actor.IsDead()) {
                         return RE::BSContainer::ForEachResult::kContinue;
                     }
@@ -9403,7 +9408,8 @@ namespace OS::EditorUI {
         // Icons::kAll and adding a codepoint the atlas does not carry renders
         // as tofu (OS-35), and a tooltip is the one place a stray "?" reads as
         // the mod having lost the plot.
-        [[nodiscard]] std::string DyeClauseLine(const DyeClause& a_clause) {
+        [[nodiscard]] std::string DyeClauseLine(const DyeClause& a_clause,
+                                                bool             a_marker = true) {
             std::string body;
             switch (a_clause.kind) {
             // ⚠ THE REQUIREMENT ONLY, NEVER THE PLAYER'S OWN VALUE. These three
@@ -9479,7 +9485,10 @@ namespace OS::EditorUI {
                 // line under a colour nobody can pick.
                 return {};
             }
-            return (a_clause.met ? "[x] " : "[ ] ") + body;
+            // ⚠ NO MARKER ON AN UNLOCKED SWATCH. A colour stays earned when a
+            // skill it was gated on is later drained, and "[ ]" beside a colour
+            // the player can pick would say otherwise.
+            return a_marker ? (a_clause.met ? "[x] " : "[ ] ") + body : body;
         }
 
         // The whole tooltip for one palette swatch.
@@ -9500,7 +9509,40 @@ namespace OS::EditorUI {
             // nothing mentions is a gesture nobody finds. A menu answers that
             // better than a hint does, because the menu names its own actions
             // when it opens, so the disclosure moved rather than being dropped.
+            //
+            // ⚠ WHAT EARNED IT, ON THE UNLOCKED SWATCH TOO (user 2026-09-04: "see
+            // the achievement for dyes we already unlocked"). The card says "Dye
+            // unlocked" and goes, and the deed that opens a tier is a counter
+            // nobody sees, so a colour arriving mid-session reads as random.
+            // This is where the player finds out why: the same clauses a locked
+            // swatch recites, headed differently and without the met markers.
+            // A free colour, and any colour under a rule set the loader
+            // refused, keeps the bare name: there is nothing honest to add.
             if (!a_locked) {
+                if (!g_dyeRulesHealthy) {
+                    return tip;
+                }
+                const auto earned = DescribeDyeRequirements(
+                    g_dyeRules.For(a_dye.id, a_dye.rarity), g_dyeWorld);
+                if (earned.unreadable || earned.clauses.empty()) {
+                    return tip;
+                }
+                tip += "\n";
+                tip += "$FR_Dye_EarnedHeader"_T;
+                constexpr std::size_t kMaxEarnedShown = 10;
+                for (std::size_t i = 0; i < earned.clauses.size() && i < kMaxEarnedShown;
+                     ++i) {
+                    const auto line = DyeClauseLine(earned.clauses[i], false);
+                    if (!line.empty()) {
+                        tip += "\n" + line;
+                    }
+                }
+                if (earned.clauses.size() > kMaxEarnedShown) {
+                    tip += "\n" + OS::ui::FormatF(
+                                      "$FR_Dye_ReqMore"_T,
+                                      static_cast<unsigned>(earned.clauses.size() -
+                                                            kMaxEarnedShown));
+                }
                 return tip;
             }
 
@@ -11536,18 +11578,49 @@ namespace OS::EditorUI {
                     // detected by comparing the enum, since the helper
                     // reports nothing.
                     if (!eyeTile) {
+                        // ⚠⚠ kBlank6 BESIDE SIX KEYS. The stepper wraps modulo
+                        // the blanks vector, so the pair has to grow together:
+                        // three blanks under six keys would cap the cycle at
+                        // the ramps and the envmask modes could never be
+                        // reached (2026-09-04, the blend row's own trap).
                         static const std::vector<std::string> kModeKeys{
-                            "$FR_Dye_ModeFlat", "$FR_Dye_ModeNacre",
-                            "$FR_Dye_ModeIridescent"
+                            "$FR_Dye_ModeFlat",  "$FR_Dye_ModeNacre",
+                            "$FR_Dye_ModeIridescent", "$FR_Dye_ModeMetal",
+                            "$FR_Dye_ModeCloth", "$FR_Dye_ModeTwoTone"
                         };
                         auto       mode     = OS::DyeRamp::ModeFromByte(ch.mode);
                         const auto prevMode = mode;
-                        DrawEnumStepperRow("$FR_Dye_Mode"_T, &mode, kModeKeys, kBlank3,
+                        DrawEnumStepperRow("$FR_Dye_Mode"_T, &mode, kModeKeys, kBlank6,
                                            "$FR_Dye_ModeTip"_T, false);
                         if (mode != prevMode) {
                             SetStagedDyeChannel(
                                 g_dyeSel, WithDyeMode(ch, static_cast<std::uint8_t>(mode)));
                             Push();
+                        }
+                    }
+
+                    // Where metal starts, the envmask modes' own slider
+                    // (2026-09-04): the cut is t of the way up the mask's class
+                    // gap and lives on the channel, per piece, because no one
+                    // rule fits every map (the cloak wants a fifth, vanilla iron
+                    // half). The flake slider's exact latch: the handle moves
+                    // live, the byte lands on release, because every distinct
+                    // byte is a texture build.
+                    if (!eyeTile && OS::DyeRamp::IsMaskMode(OS::DyeRamp::ModeFromByte(ch.mode))) {
+                        static int s_cutEdit = -1;
+                        int pct = s_cutEdit >= 0 ? s_cutEdit : DyeStrengthToPercent(ch.cut);
+                        FUCK::SetNextItemWidth(FUCK::GetContentRegionAvail().x);
+                        if (FUCK::SliderInt("##dyecut", &pct, 0, 100, "$FR_Dye_Cut"_T)) {
+                            s_cutEdit = std::clamp(pct, 0, 100);
+                        }
+                        if (s_cutEdit >= 0 && !FUCK::IsItemActive()) {
+                            SetStagedDyeChannel(
+                                g_dyeSel, WithDyeCut(ch, DyeStrengthFromPercent(s_cutEdit)));
+                            Push();
+                            s_cutEdit = -1;
+                        }
+                        if (FUCK::IsItemHovered()) {
+                            FUCK::SetTooltip("$FR_Dye_CutTip"_T);
                         }
                     }
 
@@ -14941,7 +15014,7 @@ namespace OS::EditorUI {
 
         [[nodiscard]] RE::ThirdPersonState* MenuThirdPersonState(RE::PlayerCamera* a_camera) {
             return a_camera ? static_cast<RE::ThirdPersonState*>(
-                                  a_camera->cameraStates[RE::CameraState::kThirdPerson].get())
+                                  a_camera->GetRuntimeData().cameraStates[RE::CameraState::kThirdPerson].get())
                             : nullptr;
         }
 
@@ -21200,7 +21273,7 @@ namespace OS::EditorUI {
             if (a_item->fitReason == FitReason::kCrashed) {
                 // Empirically crashes the skinning pass - block the
                 // re-preview (delete crashed_styles.txt to re-enable).
-                RE::DebugNotification(
+                RE::SendHUDMessage::ShowHUDMessage(
                     "This style crashed the preview before and is blocked.");
                 EditorStyle::PlayUISound("UIMenuCancel");
                 return;
@@ -22084,6 +22157,11 @@ namespace OS::EditorUI {
                         DyeUnlocks::With([painted](DyeUnlockSet& a_set) {
                             a_set.BumpDeed(kDeedChannelsDyed, painted);
                         });
+                        // ⚠ POKE THE TICK (2026-09-04): the deed just moved,
+                        // so a colour it earns should arrive as the editor
+                        // closes rather than up to 30 s later. The poke waits
+                        // out the open editor by itself.
+                        DyeTick::Poke("the channels you just dyed");
                         // ⚠ OUTSIDE the With above. Both are plain,
                         // non-reentrant mutexes, and nesting them would
                         // establish a lock order nothing else in the

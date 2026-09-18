@@ -1059,6 +1059,35 @@ int main() {
         CHECK(OS::DyeBlend::ChoiceFromByte(got18.blend) == OS::DyeBlend::Choice::kDefault);
     }
 
+    {  // v25 round trip, the CHANNEL half: the per-piece "Metal starts" cut
+       // survives, and the v24 boundary holds inside the channel.
+       //
+       // ⚠ FORGED THROUGH GetChannel DIRECTLY, the way v19's is: the byte is
+       // written INSIDE every channel, so a dyed library's v24 bytes are not a
+       // prefix of its v25 bytes and no resize() of a whole record reaches it.
+        DyeChannel tuned{ true, 10, 20, 30 };
+        tuned.mode = 5;
+        tuned.cut  = 51;
+
+        std::vector<std::byte> buf;
+        detail::PutChannel(buf, tuned);
+
+        detail::Reader r25{ buf };
+        DyeChannel     got25;
+        CHECK(detail::GetChannel(r25, kCodecVersion, got25));
+        CHECK(got25.cut == 51);
+        CHECK(got25 == tuned);
+
+        // The same bytes minus the trailing cut ARE a v24 channel, and it
+        // decodes to 128: halfway, the one picture every v24 build drew.
+        buf.resize(buf.size() - 1);
+        detail::Reader r24{ buf };
+        DyeChannel     got24;
+        CHECK(detail::GetChannel(r24, 24u, got24));
+        CHECK(got24.r == 10 && got24.mode == 5);
+        CHECK(got24.cut == 128);
+    }
+
     {  // v18 round trip: both eye colours survive encode/decode, and the v17
        // boundary holds: a v17 payload is the current encode minus its last
        // five bytes, and it decodes with the sclera left alone.
@@ -1632,6 +1661,12 @@ int main() {
         // so every follower library written by a v23 build runs off the end of
         // its last outfit and is dropped.
         CHECK(NpcoInnerLibrVersion(23) == 23u);
+        // The branch THIS bump freezes. NPCO v24 is what 1.1.8 writes, the
+        // version LIVE ON NEXUS, so every player's save carries it. Without
+        // the freeze the default arm answers 25 for records whose dye channels
+        // stop before the cut byte, so every dyed follower library in them
+        // runs off the end of a channel and is dropped.
+        CHECK(NpcoInnerLibrVersion(24) == 24u);
         // ⚠ This trailing pair proves NOTHING about the freeze: it passes for
         // any two constants, by construction of the default arm. It is here to
         // catch a bump that forgets to move BOTH, not to stand in for the
@@ -1640,8 +1675,8 @@ int main() {
 
         // And the current version is genuinely new, so the line above is not
         // accidentally comparing a version against itself.
-        CHECK(kNpcRecordVersion == 24u);
-        CHECK(kCodecVersion == 24u);
+        CHECK(kNpcRecordVersion == 25u);
+        CHECK(kCodecVersion == 25u);
     }
 
     {  // ⚠ THE OUTGOING NPCO v22, END TO END, step 3 of the four the bump note
@@ -1706,6 +1741,126 @@ int main() {
         NpcAssignmentMap map;
         CHECK(DecodeNpcAssignments(outer, 23u, map));  // NPCO v23, outgoing outer
         CHECK(map.size() == 1);
+    }
+
+    {  // ⚠⚠ THE OUTGOING NPCO v24, END TO END, step 3 of the four the bump note
+       // lists, and THE LAYOUT 1.1.8 WRITES: v24 is the version live on Nexus,
+       // so every player's save carries it. v25 appends one byte INSIDE every
+       // dye channel (the per-piece "Metal starts" cut), so a dyed v24 record
+       // is not a prefix of its v25 encode and Encode() cannot forge it. Hand
+       // built on the v23 forge above plus the garment key v24 put in the
+       // entry, with the twenty-four byte channel v24 wrote.
+        const auto putChannel24 = [](std::vector<std::byte>& a_out, bool a_set,
+                                     std::uint8_t a_r, std::uint8_t a_g,
+                                     std::uint8_t a_b, std::uint8_t a_mode) {
+            a_out.push_back(std::byte{ a_set ? std::uint8_t{ 1 } : std::uint8_t{ 0 } });
+            a_out.push_back(static_cast<std::byte>(a_r));
+            a_out.push_back(static_cast<std::byte>(a_g));
+            a_out.push_back(static_cast<std::byte>(a_b));
+            a_out.push_back(std::byte{ 255 });                // strength (v13)
+            a_out.push_back(static_cast<std::byte>(a_mode));  // mode (v14)
+            for (int i = 0; i < 5; ++i) {
+                a_out.push_back(std::byte{ 0 });  // second*, flake (v14/v15)
+            }
+            for (int fb = 0; fb < 2; ++fb) {      // palette then player (v15)
+                for (int i = 0; i < 5; ++i) {
+                    a_out.push_back(std::byte{ 0 });
+                }
+                a_out.push_back(std::byte{ 128 });  // gloss
+            }
+            a_out.push_back(std::byte{ 0 });      // blend: defer (v19)
+            // and STOPS: no cut (v25)
+        };
+
+        std::vector<std::byte> buf;
+        PutLE32(buf, 1);                     // outfit count
+        PutLE32(buf, 1);                     // active
+        PutStrV1(buf, "Worn24");
+        buf.push_back(std::byte{ 0 });       // favorite
+        PutLE32(buf, 1);                     // armor slot count = 1
+        PutLE32(buf, 2);                     // bit 2
+        buf.push_back(static_cast<std::byte>(SlotEntry::Kind::kStyle));
+        PutStrV1(buf, "Armors.esp");
+        PutLE32(buf, 0x800);
+        PutLE32(buf, 0);                     // weapon entry count
+        PutLE32(buf, 0);                     // empty preset name (v3)
+        buf.push_back(std::byte{ 0 });       // ORefitMode::kDefault (v3)
+        PutLE32(buf, 0);                     // no per-hand overrides (v4)
+        buf.push_back(std::byte{ 0 });       // HairMode::kAuto (v5)
+        for (int i = 0; i < 4; ++i) {
+            buf.push_back(std::byte{ 0 });   // hairTint (v6)
+        }
+        PutLE32(buf, 0);                     // hairStyle modName (v7)
+        PutLE32(buf, 0);                     // hairStyle localFormID (v7)
+
+        PutLE32(buf, 1);                     // ONE dye entry
+        PutLE32(buf, 2);                     // on bit 2
+        PutStrV1(buf, "Armors.esp");         // and its garment: this is v24
+        PutLE32(buf, 0x800);
+        PutLE32(buf, static_cast<std::uint32_t>(kDyeChannelCount));
+        putChannel24(buf, true, 10, 20, 30, 5);  // a twotone dye, no cut byte
+        for (std::size_t c = 1; c < kDyeChannelCount; ++c) {
+            putChannel24(buf, false, 0, 0, 0, 0);
+        }
+
+        PutLE32(buf, 0);                     // weapon dyes (v10)
+        PutStrV1(buf, "");                   // body preset id (v11)
+        PutStrV1(buf, "");                   // eyes: modName (v12)
+        PutLE32(buf, 0);                     // eyes: localFormID (v12)
+        PutStrV1(buf, "");                   // brows: modName (v16)
+        PutLE32(buf, 0);                     // brows: localFormID (v16)
+        PutStrV1(buf, "");                   // facial hair: modName (v16)
+        PutLE32(buf, 0);                     // facial hair: localFormID (v16)
+        for (int i = 0; i < 4; ++i) {
+            buf.push_back(std::byte{ 0 });   // eye tint (v17)
+        }
+        for (int i = 0; i < 4; ++i) {
+            buf.push_back(std::byte{ 0 });   // sclera tint (v18)
+        }
+        buf.push_back(std::byte{ 0 });       // eye blend (v19)
+        for (int i = 0; i < 4; ++i) {
+            buf.push_back(std::byte{ 0 });   // eye tint 2 (v20)
+        }
+        PutLE32(buf, 0);                     // invented head-part slots (v21)
+        PutLE32(buf, 0);                     // head-part dyes (v22)
+        buf.push_back(std::byte{ 0 });       // push-up (v23)
+
+        OutfitLibrary back;
+        CHECK(Decode(buf, 24u, back));       // LIBR v24, the outgoing inner version
+        const auto* o = back.At(0);
+        CHECK(o != nullptr);
+        if (o) {
+            // The dye lands on its garment with the cut at 128: halfway, the
+            // one picture every v24 build drew.
+            CHECK(o->DyeFor(2).channels[0].set);
+            CHECK(o->DyeFor(2).channels[0].r == 10);
+            CHECK(o->DyeFor(2).channels[0].mode == 5);
+            CHECK(o->DyeFor(2).channels[0].cut == 128);
+        }
+
+        std::vector<std::byte> outer;
+        PutLE32(outer, 1);
+        PutStrV1(outer, "Skyrim.esm");
+        PutLE32(outer, 0x1A6C3u);
+        PutLE32(outer, static_cast<std::uint32_t>(buf.size()));
+        outer.insert(outer.end(), buf.begin(), buf.end());
+        PutLE32(outer, 0);
+        PutStrV1(outer, "");
+        PutLE32(outer, 0);
+        PutStrV1(outer, "");
+        PutLE32(outer, 0);
+
+        NpcAssignmentMap map;
+        CHECK(DecodeNpcAssignments(outer, 24u, map));  // NPCO v24, outgoing outer
+        CHECK(map.size() == 1);
+        if (map.size() == 1) {
+            const auto* f = map.begin()->second.library.At(0);
+            CHECK(f != nullptr);
+            if (f) {
+                CHECK(f->DyeFor(2).channels[0].r == 10);
+                CHECK(f->DyeFor(2).channels[0].cut == 128);
+            }
+        }
     }
 
     {  // ⚠⚠ THE v23 MIGRATION: A SLOT COLOUR BECOMES THAT PIECE'S COLOUR.
@@ -2471,12 +2626,13 @@ int main() {
         in.palette.gloss    = 210;
         in.player.glossSet  = true;
         in.player.gloss     = 90;
+        in.cut              = 51;
 
         std::vector<std::byte> bytes;
         detail::PutChannel(bytes, in);
         // set..b2 (10) + flake (1) + palette block (6) + player block (6)
-        // + the v19 blend (1)
-        CHECK(bytes.size() == 24);
+        // + the v19 blend (1) + the v25 cut (1)
+        CHECK(bytes.size() == 25);
 
         detail::Reader rd{ std::span<const std::byte>{ bytes } };
         DyeChannel     out{};
@@ -2804,7 +2960,8 @@ int main() {
         tail.push_back(static_cast<std::byte>(WeaponHand::Both));
         PutLE32(tail, static_cast<std::uint32_t>(kDyeChannelCount));
         for (std::size_t c = 0; c < kDyeChannelCount; ++c) {
-            // TWENTY-THREE bytes since v15, and the fifth is 255 on EVERY
+            // TWENTY-FIVE bytes since v25 (twenty-three at v15, the blend at
+            // v19, the cut at v25), and the fifth is 255 on EVERY
             // channel including the off ones: strength defaults to full on the
             // struct, and PutChannel writes the member rather than branching on
             // `set`.
@@ -2815,7 +2972,7 @@ int main() {
             // zeros AND the 128s is the assertion that shipping flake and the
             // finish blocks did not change one byte of what an ORDINARY dye
             // encodes to beyond appending its defaults.
-            const std::uint8_t ch[24] = { c == 0 ? std::uint8_t{ 1 } : std::uint8_t{ 0 },
+            const std::uint8_t ch[25] = { c == 0 ? std::uint8_t{ 1 } : std::uint8_t{ 0 },
                                           c == 0 ? std::uint8_t{ 1 } : std::uint8_t{ 0 },
                                           c == 0 ? std::uint8_t{ 2 } : std::uint8_t{ 0 },
                                           c == 0 ? std::uint8_t{ 3 } : std::uint8_t{ 0 },
@@ -2838,7 +2995,8 @@ int main() {
                                           std::uint8_t{ 0 },    // v15 plr.sheenB
                                           std::uint8_t{ 0 },    // v15 plr.glossSet
                                           std::uint8_t{ 128 },  // v15 plr.gloss
-                                          std::uint8_t{ 0 } };  // v19 blend: defer
+                                          std::uint8_t{ 0 },    // v19 blend: defer
+                                          std::uint8_t{ 128 } };  // v25 cut: halfway
             for (const auto b : ch) {
                 tail.push_back(static_cast<std::byte>(b));
             }
@@ -2848,7 +3006,7 @@ int main() {
         tail.push_back(static_cast<std::byte>(WeaponHand::Right));
         PutLE32(tail, static_cast<std::uint32_t>(kDyeChannelCount));
         for (std::size_t c = 0; c < kDyeChannelCount; ++c) {
-            const std::uint8_t ch[24] = { c == 0 ? std::uint8_t{ 1 } : std::uint8_t{ 0 },
+            const std::uint8_t ch[25] = { c == 0 ? std::uint8_t{ 1 } : std::uint8_t{ 0 },
                                           c == 0 ? std::uint8_t{ 9 } : std::uint8_t{ 0 },
                                           c == 0 ? std::uint8_t{ 8 } : std::uint8_t{ 0 },
                                           c == 0 ? std::uint8_t{ 7 } : std::uint8_t{ 0 },
@@ -2871,7 +3029,8 @@ int main() {
                                           std::uint8_t{ 0 },    // v15 plr.sheenB
                                           std::uint8_t{ 0 },    // v15 plr.glossSet
                                           std::uint8_t{ 128 },  // v15 plr.gloss
-                                          std::uint8_t{ 0 } };  // v19 blend: defer
+                                          std::uint8_t{ 0 },    // v19 blend: defer
+                                          std::uint8_t{ 128 } };  // v25 cut: halfway
             for (const auto b : ch) {
                 tail.push_back(static_cast<std::byte>(b));
             }
@@ -3567,6 +3726,7 @@ int main() {
                 buf.push_back(std::byte{ 128 });  // gloss
             }
             buf.push_back(std::byte{ 0 });    // blend: defer (v19)
+            buf.push_back(std::byte{ 128 });  // cut: halfway (v25)
         }
         // entry 1: a valid primary dye on bit 2. The garment key is EMPTY, and
         // it has to be: this forge writes an armor slot count of 0, so bit 2
@@ -3595,6 +3755,7 @@ int main() {
             buf.push_back(std::byte{ 128 });
         }
         buf.push_back(std::byte{ 0 });       // blend: defer (v19)
+        buf.push_back(std::byte{ 128 });     // cut: halfway (v25)
         for (std::size_t c = 1; c < kDyeChannelCount; ++c) {   // the rest off
             buf.push_back(std::byte{ 0 });
             buf.push_back(std::byte{ 0 });
@@ -3616,6 +3777,7 @@ int main() {
                 buf.push_back(std::byte{ 128 });
             }
             buf.push_back(std::byte{ 0 });    // blend: defer (v19)
+            buf.push_back(std::byte{ 128 });  // cut: halfway (v25)
         }
         PutLE32(buf, 0);                     // weapon dye: none (v10)
         PutLE32(buf, 0);                     // custom body ID: empty (v11)

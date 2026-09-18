@@ -178,6 +178,32 @@ int main() {
         CHECK(MaskDyeSuffix(true, true, 0x01, 0x11, 0x01) !=
               MaskDyeSuffix(true, true, 0x11, 0x01, 0x11));
     }
+    {  // ⚠ AN ENVMASK BUILD IS NEVER AN EYE BUILD (2026-09-04). The metal
+        // modes read a shape's environment mask through its RED channel with
+        // an absolute window, where the eye path reads a normal map's alpha
+        // against its own mean. Same mask name, same tint, different picture,
+        // so the suffix is never empty, and the window is inside it because an
+        // INI edit to the window changes the picture too.
+        CHECK(!EnvMaskSuffix(0.15f, 0.45f).empty());
+        CHECK(EnvMaskSuffix(0.15f, 0.45f) != EnvMaskSuffix(0.16f, 0.45f));
+        CHECK(EnvMaskSuffix(0.15f, 0.45f) != EnvMaskSuffix(0.15f, 0.46f));
+        // Fixed width, the RampSuffix collision rule.
+        CHECK(EnvMaskSuffix(0.01f, 0.11f) != EnvMaskSuffix(0.11f, 0.01f));
+        // ⚠ THE CHANNEL IS IN IT. A shape with no environment mask falls back
+        // to its normal map's alpha, the channel the engine reads for its
+        // reflection strength when no mask is bound. The same texture read
+        // through red and through alpha is two pictures, so two keys.
+        CHECK(EnvMaskSuffix(0.5f, 0.12f, true) != EnvMaskSuffix(0.5f, 0.12f, false));
+        CHECK(EnvMaskSuffix(0.5f, 0.12f) == EnvMaskSuffix(0.5f, 0.12f, false));
+        // ⚠ AND THE CUT (2026-09-04), the per-piece "Metal starts" byte. Two
+        // cuts on one map are two pictures, and the default spelled out is
+        // the same key as the default left unsaid, so no entry built before
+        // the byte existed moves.
+        CHECK(EnvMaskSuffix(0.5f, 0.12f, true, 51) != EnvMaskSuffix(0.5f, 0.12f, true, 128));
+        CHECK(EnvMaskSuffix(0.5f, 0.12f, true) == EnvMaskSuffix(0.5f, 0.12f, true, 128));
+        CHECK(EnvMaskSuffix(0.5f, 0.12f, false, 51) != EnvMaskSuffix(0.5f, 0.12f, true, 51));
+        CHECK(EnvMaskSuffix(0.5f, 0.12f, false, 0) != EnvMaskSuffix(0.5f, 0.12f, false, 255));
+    }
 
     std::printf("DyeKeyTests: all passed\n");
     return 0;

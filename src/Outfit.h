@@ -208,6 +208,23 @@ namespace OS {
         // What the PLAYER set. Honoured only while bDyeFinishOverride is on,
         // and never cleared when it is off.
         DyeMaterial  player{};
+        // Where metal starts on THIS piece, for the envmask modes (2026-09-04):
+        // 0 puts the cut at the mask's dark class mean (everything above the
+        // cloth is metal), 255 at the bright class mean, 128 halfway, which is
+        // where Otsu landed on every mask measured, so the default is the
+        // picture every build before this byte drew. DyeRamp::CutFor turns it
+        // into a threshold in the map's own units.
+        //
+        // ⚠ THE PIECE'S, NOT THE DYE'S. The Imperial Dragon cloak wants a fifth
+        // of the class gap and vanilla iron half (STATUS 2026-09-04 07:50), so
+        // no dye can know it: ApplyPaletteDye keeps the staged byte unless the
+        // dye declares one, and SameDyeColour cannot see it, like strength.
+        //
+        // ⚠ LAST, AFTER BOTH MATERIAL BLOCKS, for the reason strength and mode
+        // record above: 124 positional initialisations pass four elements and
+        // must keep meaning what they mean. Codec v25 appends it after the
+        // blend, so a v24 channel decodes to 128 and paints as it did.
+        std::uint8_t cut{ 128 };
         friend bool operator==(const DyeChannel&, const DyeChannel&) = default;
     };
 
@@ -263,6 +280,10 @@ namespace OS {
         // The player's, preserved.
         out.strength = a_staged.strength;
         out.player   = a_staged.player;
+        // The cut is the piece's too, unless the dye says where its metal
+        // starts: 128 is "nothing said" (and every shipped dye), so the byte a
+        // player tuned on a piece survives every swatch they compare.
+        out.cut = a_dye.cut != 128 ? a_dye.cut : a_staged.cut;
         // The dye's, in full.
         out.set       = true;
         out.r         = a_dye.r;
@@ -375,6 +396,12 @@ namespace OS {
 
     [[nodiscard]] inline constexpr DyeChannel WithDyeFlake(DyeChannel a_ch, std::uint8_t a_flake) {
         a_ch.flake = a_flake;
+        return a_ch;
+    }
+
+    // Where metal starts on the piece, the envmask modes' one slider.
+    [[nodiscard]] inline constexpr DyeChannel WithDyeCut(DyeChannel a_ch, std::uint8_t a_cut) {
+        a_ch.cut = a_cut;
         return a_ch;
     }
 

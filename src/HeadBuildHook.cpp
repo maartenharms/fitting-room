@@ -112,7 +112,7 @@ namespace {
             face, [&](RE::BSGeometry* a_geom) -> RE::BSVisit::BSVisitControl {
                 auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                     a_geom->GetGeometryRuntimeData()
-                        .properties[RE::BSGeometry::States::kEffect]
+                        .shaderProperty
                         .get());
                 if (!prop || !prop->material ||
                     prop->material->GetFeature() !=
@@ -186,6 +186,30 @@ namespace {
     // lock or a scenegraph walk lives HERE and not in the detour.
     void RepaintNow() {
         g_queued.store(false, std::memory_order_release);
+
+#ifdef FR_DIAG
+        // ⚠ WHERE, AND UNDER WHICH FLAGS. A reporter says "it happened at the
+        // Whiterun gate"; the log says a head build finished. Without this
+        // line those are two facts nobody can join up, and the flavour flags
+        // decide which of the writes below are even allowed to run, so a log
+        // that omits them cannot be read against the code.
+        //
+        // Safe here and NOT in the detour: this is the queued task, on the
+        // main thread, after the whole build.
+        if (auto* const pc = RE::PlayerCharacter::GetSingleton()) {
+            const auto& s    = OS::Settings::GetSingleton();
+            auto* const cell = pc->GetParentCell();
+            const char* edid = cell ? cell->GetFormEditorID() : nullptr;
+            spdlog::info("FR_DIAG head build settled in '{}' ({:08X}, {}); flags "
+                         "bReassertAppearance={} bKeepColoursAfterRebuild={} "
+                         "bLooksRaceMenu={} bLooks={}.",
+                         edid && *edid ? edid : "(no editor id)",
+                         cell ? cell->GetFormID() : 0u,
+                         cell && cell->IsInteriorCell() ? "interior" : "exterior",
+                         s.reassertAppearance, s.keepColoursAfterRebuild,
+                         s.looksRaceMenu, s.pages.looks);
+        }
+#endif
 
         // ---- the FSMP publish for a settling switched head ------------------
         //
@@ -801,6 +825,19 @@ namespace {
             return;
         }
         auto* const player = RE::PlayerCharacter::GetSingleton();
+#ifdef FR_DIAG
+        // FR_DIAG: an NPC's FACE part built is one runtime tint job under Face
+        // Discoloration Fix, drawn into the player tint render target before
+        // it is copied out. A burst of these on a cell change beside a face on
+        // the alias is the black face's whole story. Capped, not silenced.
+        if (face && !(player && player->GetActorBase() == a_npc)) {
+            static std::atomic<int> s_npcFaceLogged{ 0 };
+            if (s_npcFaceLogged.fetch_add(1, std::memory_order_relaxed) < 600) {
+                spdlog::info("FR_DIAG npc face part built for npc {:08X}.",
+                             a_npc->GetFormID());
+            }
+        }
+#endif
         // ⚠ EVERY HAIR BUILD IS NAMED FOR THE FIRST FEW, MATCH OR NOT. "The
         // painter ran for somebody else" and "the painter ran for the player
         // and the base pointer did not compare equal" are different faults and

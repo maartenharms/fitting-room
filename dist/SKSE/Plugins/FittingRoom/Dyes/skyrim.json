@@ -14,11 +14,11 @@
 // freely; rename nothing.
 {
   "dyes": [
-    { "id": "skyrim:alchemists-jade", "name": "Alchemist's Jade", "hex": "2FA37A", "hex2": "7FE8C0", "mode": "nacre", "gloss": 210, "sheen": "C0FFE0", "rarity": "Uncommon" },  // achievement
-    { "id": "skyrim:auriels-dawn", "name": "Auriel's Dawn", "hex": "E8A86B", "hex2": "FFE8B0", "mode": "nacre", "gloss": 235, "sheen": "FFFFE8", "flake": 180, "rarity": "Rare" },  // achievement
+    { "id": "skyrim:alchemists-jade", "name": "Alchemist's Jade", "hex": "2FA37A", "hex2": "7FE8C0", "mode": "iridescent", "gloss": 210, "sheen": "C0FFE0", "rarity": "Uncommon" },  // achievement
+    { "id": "skyrim:auriels-dawn", "name": "Auriel's Dawn", "hex": "E8A86B", "hex2": "FFE8B0", "mode": "iridescent", "gloss": 235, "sheen": "FFFFE8", "flake": 180, "rarity": "Rare" },  // achievement
     { "id": "skyrim:beast-eye-gold", "name": "Beast Eye Gold", "hex": "C9A81A", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:bunny-slayer-blush", "name": "Bunny Slayer Blush", "hex": "EE7A9E", "rarity": "Common" },  // achievement
-    { "id": "skyrim:clear-skies-blue", "name": "Clear Skies Blue", "hex": "6FB8E8", "hex2": "D8F0FF", "mode": "nacre", "gloss": 220, "sheen": "FFFFFF", "rarity": "Rare" },  // achievement
+    { "id": "skyrim:clear-skies-blue", "name": "Clear Skies Blue", "hex": "6FB8E8", "hex2": "D8F0FF", "mode": "iridescent", "gloss": 220, "sheen": "FFFFFF", "rarity": "Rare" },  // achievement
     { "id": "skyrim:crimson-nirnroot", "name": "Crimson Nirnroot", "hex": "B01048", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:cutpurse-plum", "name": "Cutpurse Plum", "hex": "7A1B62", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:dragonsoul-amber", "name": "Dragonsoul Amber", "hex": "F5B033", "hex2": "FFC820", "mode": "iridescent", "gloss": 235, "sheen": "FFE890", "flake": 200, "rarity": "Rare" },  // achievement
@@ -28,16 +28,16 @@
     { "id": "skyrim:hearthfire-ember", "name": "Hearthfire Ember", "hex": "EE8F4A", "rarity": "Common" },  // achievement
     { "id": "skyrim:honed-edge", "name": "Honed Edge", "hex": "8DBCD2", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:ill-gotten-emerald", "name": "Ill-Gotten Emerald", "hex": "0E7A55", "rarity": "Uncommon" },  // achievement
-    { "id": "skyrim:jagged-crown-ivory", "name": "Jagged Crown Ivory", "hex": "E3CE7E", "hex2": "E8DCB0", "mode": "nacre", "gloss": 225, "sheen": "FFF8D0", "rarity": "Uncommon" },  // achievement
+    { "id": "skyrim:jagged-crown-ivory", "name": "Jagged Crown Ivory", "hex": "E3CE7E", "hex2": "E8DCB0", "mode": "iridescent", "gloss": 225, "sheen": "FFF8D0", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:oblivion-bloom", "name": "Oblivion Bloom", "hex": "7FBF1F", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:oblivion-gate-ember", "name": "Oblivion Gate Ember", "hex": "B34A0A", "hex2": "FF8000", "mode": "iridescent", "gloss": 235, "sheen": "FFC060", "flake": 210, "rarity": "Rare" },  // achievement
     { "id": "skyrim:raven-rock-rust", "name": "Raven Rock Rust", "hex": "8A5F4C", "rarity": "Uncommon" },  // achievement
-    { "id": "skyrim:saga-told-sapphire", "name": "Saga-Told Sapphire", "hex": "2E3AA8", "hex2": "7FB8FF", "mode": "nacre", "gloss": 235, "sheen": "D0E8FF", "flake": 190, "rarity": "Rare" },  // achievement
+    { "id": "skyrim:saga-told-sapphire", "name": "Saga-Told Sapphire", "hex": "2E3AA8", "hex2": "7FB8FF", "mode": "iridescent", "gloss": 235, "sheen": "D0E8FF", "flake": 190, "rarity": "Rare" },  // achievement
     { "id": "skyrim:sanguinare-pallor", "name": "Sanguinare Pallor", "hex": "C2CFD6", "rarity": "Uncommon" },  // achievement
-    { "id": "skyrim:shadowmark-grey", "name": "Shadowmark Grey", "hex": "0E2226", "hex2": "5A7A80", "mode": "nacre", "gloss": 215, "sheen": "A0C0C8", "rarity": "Rare" },  // achievement
-    { "id": "skyrim:skaal-hide-blue", "name": "Skaal Hide Blue", "hex": "35597A", "hex2": "A0D8E8", "mode": "nacre", "gloss": 200, "sheen": "D8F0F8", "rarity": "Rare" },  // achievement
+    { "id": "skyrim:shadowmark-grey", "name": "Shadowmark Grey", "hex": "0E2226", "hex2": "5A7A80", "mode": "iridescent", "gloss": 215, "sheen": "A0C0C8", "rarity": "Rare" },  // achievement
+    { "id": "skyrim:skaal-hide-blue", "name": "Skaal Hide Blue", "hex": "35597A", "hex2": "A0D8E8", "mode": "iridescent", "gloss": 200, "sheen": "D8F0F8", "rarity": "Rare" },  // achievement
     { "id": "skyrim:skeleton-key-patina", "name": "Skeleton Key Patina", "hex": "0F3B3A", "rarity": "Uncommon" },  // achievement
-    { "id": "skyrim:skyforge-steel", "name": "Skyforge Steel", "hex": "5F7383", "hex2": "E0E8F0", "mode": "nacre", "gloss": 225, "sheen": "FFFFFF", "rarity": "Rare" },  // achievement
+    { "id": "skyrim:skyforge-steel", "name": "Skyforge Steel", "hex": "5F7383", "hex2": "E0E8F0", "mode": "iridescent", "gloss": 225, "sheen": "FFFFFF", "rarity": "Rare" },  // achievement
     { "id": "skyrim:soulsnare-indigo", "name": "Soulsnare Indigo", "hex": "5D4BA8", "rarity": "Uncommon" },  // achievement
     { "id": "skyrim:void-shroud", "name": "Void Shroud", "hex": "33253D", "hex2": "6A4F80", "mode": "iridescent", "gloss": 220, "sheen": "A080C0", "rarity": "Rare" },  // achievement
     { "id": "skyrim:volkihar-crimson", "name": "Volkihar Crimson", "hex": "7C0836", "rarity": "Rare" },  // achievement
@@ -59,17 +59,17 @@
     { "id": "skyrim:apocrypha-ink", "name": "Apocrypha Ink", "hex": "0E2A26", "hex2": "4FBFA0", "mode": "iridescent", "gloss": 220, "sheen": "6FE8C0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:azuras-twilight", "name": "Azura's Twilight", "hex": "7B5CA6", "hex2": "E8A8D8", "mode": "iridescent", "gloss": 225, "sheen": "F0C8FF", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:bloodmoon-rust", "name": "Bloodmoon Rust", "hex": "8E2B14", "hex2": "D8863A", "mode": "iridescent", "gloss": 210, "sheen": "F0B070", "rarity": "Rare" },  // daedric prince
-    { "id": "skyrim:clavicus-gold", "name": "Clavicus Gold", "hex": "A67C1A", "hex2": "F0D77A", "mode": "nacre", "gloss": 235, "sheen": "FFF0B0", "rarity": "Rare" },  // daedric prince
+    { "id": "skyrim:clavicus-gold", "name": "Clavicus Gold", "hex": "A67C1A", "hex2": "F0D77A", "mode": "iridescent", "gloss": 235, "sheen": "FFF0B0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:coldharbour-blue", "name": "Coldharbour Blue", "hex": "0F3550", "hex2": "3A8FC0", "mode": "iridescent", "gloss": 220, "sheen": "7FD0F0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:dagons-ember", "name": "Dagon's Ember", "hex": "D23F05", "hex2": "FFB000", "mode": "iridescent", "gloss": 235, "sheen": "FFD060", "flake": 200, "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:jyggalag-crystal", "name": "Jyggalag Crystal", "hex": "4C7E96", "hex2": "D8ECF7", "mode": "iridescent", "gloss": 235, "sheen": "FFFFFF", "flake": 180, "rarity": "Rare" },  // daedric prince
-    { "id": "skyrim:malacaths-ash", "name": "Malacath's Ash", "hex": "5C4A3C", "hex2": "9A8470", "mode": "nacre", "gloss": 195, "sheen": "C8B8A0", "rarity": "Rare" },  // daedric prince
+    { "id": "skyrim:malacaths-ash", "name": "Malacath's Ash", "hex": "5C4A3C", "hex2": "9A8470", "mode": "iridescent", "gloss": 195, "sheen": "C8B8A0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:mephalas-web", "name": "Mephala's Web", "hex": "291B3A", "hex2": "6A3F8A", "mode": "iridescent", "gloss": 215, "sheen": "9A6FC0", "rarity": "Rare" },  // daedric prince
-    { "id": "skyrim:meridias-radiance", "name": "Meridia's Radiance", "hex": "F7E8B0", "hex2": "FFFFFF", "mode": "nacre", "gloss": 240, "sheen": "FFFFE0", "flake": 255, "rarity": "Rare" },  // daedric prince
+    { "id": "skyrim:meridias-radiance", "name": "Meridia's Radiance", "hex": "F7E8B0", "hex2": "FFFFFF", "mode": "iridescent", "gloss": 240, "sheen": "FFFFE0", "flake": 255, "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:namiras-pallor", "name": "Namira's Pallor", "hex": "9A8AA6", "hex2": "5A4A50", "mode": "iridescent", "gloss": 200, "sheen": "C0B0B8", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:nightcaller-violet", "name": "Nightcaller Violet", "hex": "5B1A6B", "hex2": "9A3FD0", "mode": "iridescent", "gloss": 220, "sheen": "C070F0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:peryites-blight", "name": "Peryite's Blight", "hex": "6F8C1F", "hex2": "C8E020", "mode": "iridescent", "gloss": 215, "sheen": "E0F060", "rarity": "Rare" },  // daedric prince
-    { "id": "skyrim:sanguine-rose", "name": "Sanguine Rose", "hex": "8E2350", "hex2": "D8508A", "mode": "nacre", "gloss": 220, "sheen": "FFA0C0", "rarity": "Rare" },  // daedric prince
+    { "id": "skyrim:sanguine-rose", "name": "Sanguine Rose", "hex": "8E2350", "hex2": "D8508A", "mode": "iridescent", "gloss": 220, "sheen": "FFA0C0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:traitors-ebony", "name": "Traitor's Ebony", "hex": "142B1E", "hex2": "3A7A4A", "mode": "iridescent", "gloss": 235, "sheen": "5FCF8A", "flake": 120, "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:wabbajack-violet", "name": "Wabbajack Violet", "hex": "8B27C9", "hex2": "20C97A", "mode": "iridescent", "gloss": 240, "sheen": "FFD000", "flake": 255, "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:ciceros-motley", "name": "Cicero's Motley", "hex": "E43042", "rarity": "Uncommon" },  // dark brotherhood
@@ -116,7 +116,7 @@
     { "id": "skyrim:high-hrothgar-slate", "name": "High Hrothgar Slate", "hex": "52708C", "rarity": "Uncommon" },  // main quest
     { "id": "skyrim:paarthurnaxs-frost", "name": "Paarthurnax's Frost", "hex": "D0C8FC", "rarity": "Uncommon" },  // main quest
     { "id": "skyrim:sovngarde-mist", "name": "Sovngarde Mist", "hex": "5AE8C4", "rarity": "Uncommon" },  // main quest
-    { "id": "skyrim:world-eaters-end", "name": "World-Eater's End", "hex": "FCF0A4", "hex2": "FFD000", "mode": "nacre", "gloss": 240, "sheen": "FFFFC0", "flake": 220, "rarity": "Rare" },  // main quest
+    { "id": "skyrim:world-eaters-end", "name": "World-Eater's End", "hex": "FCF0A4", "hex2": "FFD000", "mode": "iridescent", "gloss": 240, "sheen": "FFFFC0", "flake": 220, "rarity": "Rare" },  // main quest
     { "id": "skyrim:eldergleam-sap", "name": "Eldergleam Sap", "hex": "7FC93A", "rarity": "Uncommon" },  // quest
     { "id": "skyrim:lovers-knot", "name": "Lovers' Knot", "hex": "E8698A", "rarity": "Common" },  // quest
     { "id": "skyrim:maras-blessing", "name": "Mara's Blessing", "hex": "2E8B8B", "rarity": "Uncommon" },  // quest
@@ -128,11 +128,11 @@
     { "id": "skyrim:glenmoril-moss", "name": "Glenmoril Moss", "hex": "5A8020", "rarity": "Uncommon" },  // the companions
     { "id": "skyrim:jorrvaskr-mead", "name": "Jorrvaskr Mead", "hex": "AE6C0A", "rarity": "Common" },  // the companions
     { "id": "skyrim:silver-hand-steel", "name": "Silver Hand Steel", "hex": "D2DCE8", "rarity": "Uncommon" },  // the companions
-    { "id": "skyrim:skyforge-ember", "name": "Skyforge Ember", "hex": "C05018", "hex2": "F0A030", "mode": "nacre", "gloss": 230, "sheen": "FFD080", "flake": 150, "rarity": "Rare" },  // the companions
+    { "id": "skyrim:skyforge-ember", "name": "Skyforge Ember", "hex": "C05018", "hex2": "F0A030", "mode": "iridescent", "gloss": 230, "sheen": "FFD080", "flake": 150, "rarity": "Rare" },  // the companions
     { "id": "skyrim:cistern-verdigris", "name": "Cistern Verdigris", "hex": "147A6E", "rarity": "Common" },  // thieves guild
     { "id": "skyrim:falmer-eye-sapphire", "name": "Falmer Eye Sapphire", "hex": "2A62D8", "rarity": "Uncommon" },  // thieves guild
     { "id": "skyrim:goldenglow-honey", "name": "Goldenglow Honey", "hex": "F2B85A", "rarity": "Uncommon" },  // thieves guild
-    { "id": "skyrim:guild-masters-plum", "name": "Guild Master's Plum", "hex": "6E0A58", "hex2": "C070B0", "mode": "nacre", "gloss": 225, "sheen": "E8A0D8", "rarity": "Rare" },  // thieves guild
+    { "id": "skyrim:guild-masters-plum", "name": "Guild Master's Plum", "hex": "6E0A58", "hex2": "C070B0", "mode": "iridescent", "gloss": 225, "sheen": "E8A0D8", "rarity": "Rare" },  // thieves guild
     { "id": "skyrim:nightingale-shadow", "name": "Nightingale Shadow", "hex": "0E2E38", "hex2": "2A8FA0", "mode": "iridescent", "gloss": 230, "sheen": "4FD0E0", "rarity": "Rare" },  // daedric prince
     { "id": "skyrim:nightingale-wing", "name": "Nightingale Wing", "hex": "101070", "rarity": "Uncommon" }   // thieves guild
   ]

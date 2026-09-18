@@ -1,6 +1,7 @@
 #include "Requip.h"
 
 #include "OutfitDye.h"
+#include "HitEffects.h"  // the two hit-effect bodies the library declares and does not define
 #include "RequipFlourish.h"
 #include "Settings.h"
 
@@ -80,7 +81,7 @@ namespace OS::Requip {
                 return;
             }
             RE::BSSoundHandle handle;
-            am->BuildSoundDataFromEditorID(handle, a_editorID.c_str(), 0x10);
+            am->GetSoundHandleByName(handle, a_editorID.c_str(), 0x10);
             if (!handle.IsValid()) {
                 static std::set<std::string> reported;
                 if (reported.insert(a_editorID).second) {
@@ -214,10 +215,10 @@ namespace OS::Requip {
             // what it names cannot be used to rule anything out.
             if (settings.requipAura) {
                 if (g_shader) {
-                    a_actor->InstantiateHitShader(g_shader, dur);
+                    OS::HitFx::InstantiateHitShader(a_actor, g_shader, dur);
                 }
                 for (auto* const art : g_art) {
-                    a_actor->InstantiateHitArt(art, dur, nullptr, false, false);
+                    OS::HitFx::InstantiateHitArt(a_actor, art, dur, nullptr, false, false);
                 }
             }
 
@@ -233,7 +234,7 @@ namespace OS::Requip {
             const auto nodes = OutfitDye::RequipSlotNodes(a_actor, a_slotMask);
             for (auto* const node : nodes) {
                 for (auto* const art : g_slotArt) {
-                    a_actor->InstantiateHitArt(art, dur, nullptr, false, false, node);
+                    OS::HitFx::InstantiateHitArt(a_actor, art, dur, nullptr, false, false, node);
                 }
             }
             spdlog::debug("Requip: aura on {} actor art, {} garment node(s) x {} art (OS-206).",

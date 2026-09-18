@@ -482,9 +482,9 @@ namespace OS::WorldWatch {
             // malformed (cyclic) parentLoc chain cannot spin forever.
             RE::BGSLocation* loc = player->GetCurrentLocation();
             for (int hops = 0; loc != nullptr && hops < 32; ++hops, loc = loc->parentLoc) {
-                loc->ForEachKeyword([&](RE::BGSKeyword& a_kw) {
+                loc->ForEachKeyword([&](RE::BGSKeyword* a_kw) {
                     Rules::FormKey key;
-                    if (MakeFormKey(&a_kw, key)) {
+                    if (a_kw && MakeFormKey(a_kw, key)) {
                         snap.locationKeywords.push_back(std::move(key));
                     }
                     return RE::BSContainer::ForEachResult::kContinue;
@@ -1002,7 +1002,7 @@ namespace OS::WorldWatch {
                     // ⚠ THE PLAYER ONLY. Every NPC in earshot casts, and this
                     // sink runs for all of them; without the filter a town
                     // guard's candlelight would restyle the player.
-                    if (!a_event || !player || a_event->object != player) {
+                    if (!a_event || !player || a_event->object.get() != player) {
                         return;
                     }
                     // The spell first: CastingHeld's live read is keyed on it,
@@ -1163,6 +1163,10 @@ namespace OS::WorldWatch {
             // with nothing saying why. Field 2026-08-26. Silent and free unless
             // something armed it; see ArmDelayedFaceRebake.
             MakeupApi::RunDelayedFaceRebake(player);
+            // A face the game's own retint left on the shared tint render
+            // target gets its own copy, once a second at most and silent while
+            // it already has one. See MakeupApi::PrivatiseAliasedFace.
+            MakeupApi::PrivatiseAliasedFace(player);
             // ⚠ DIAGNOSTIC, AND SILENT UNLESS A PUSH-UP WRITE ARMED IT. Same
             // heartbeat for the same reason: the answer only exists after OBody's
             // rebuild has landed, which is later than any call site of ours can

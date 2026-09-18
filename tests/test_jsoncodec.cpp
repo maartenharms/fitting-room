@@ -359,6 +359,26 @@ int main() {
         CHECK(JsonCodec::JsonToOutfit(JsonCodec::OutfitToJson(wide), wideBack));
         CHECK(wideBack.DyeFor(BitForEditorSlot(37)).channels[5] ==
               (DyeChannel{ true, 11, 22, 33 }));
+
+        // The per-piece cut (2026-09-04) rides the object form the way the
+        // flake does: a channel at the default 128 stays the bare string every
+        // pre-cut file wrote, and any other byte round trips.
+        Outfit     tuned;
+        DyeChannel low{ true, 5, 6, 7 };
+        low.mode = 5;
+        low.cut  = 51;
+        tuned.SetDye(BitForEditorSlot(32), DyeChannelId::kPrimary, low);
+        const auto tunedJson = JsonCodec::OutfitToJson(tuned);
+        CHECK(tunedJson["dyes"][0]["colours"][0].isObject());
+        CHECK(tunedJson["dyes"][0]["colours"][0]["cut"].asUInt() == 51u);
+        Outfit tunedBack;
+        CHECK(JsonCodec::JsonToOutfit(tunedJson, tunedBack));
+        CHECK(tunedBack.DyeFor(BitForEditorSlot(32)).channels[0].cut == 51);
+        CHECK(tunedBack.DyeFor(BitForEditorSlot(32)).channels[0] == low);
+        Outfit atDefault;
+        atDefault.SetDye(BitForEditorSlot(32), DyeChannelId::kPrimary,
+                         DyeChannel{ true, 5, 6, 7 });
+        CHECK(JsonCodec::OutfitToJson(atDefault)["dyes"][0]["colours"][0].isString());
     }
 
     {  // A preset written before the widening used primary/secondary/accent as

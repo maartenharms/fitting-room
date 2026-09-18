@@ -147,7 +147,7 @@ namespace OS::CameraProbe {
             spdlog::info(
                 "[probe/cam] {} f={} camera: state={} fov={:.2f} root=({:.1f},{:.1f},{:.1f}) "
                 "camTarget='{}' 0x{:08X} player=({:.1f},{:.1f},{:.1f}) camDistPlayer={:.1f}",
-                a_when, a_frame, state, cam->worldFOV, camPos.x, camPos.y, camPos.z, targetName,
+                a_when, a_frame, state, cam->GetRuntimeData2().worldFOV, camPos.x, camPos.y, camPos.z, targetName,
                 targetPtr ? targetPtr->GetFormID() : 0u, playerPos.x, playerPos.y, playerPos.z,
                 camPos.GetDistance(playerPos));
 
@@ -206,10 +206,10 @@ namespace OS::CameraProbe {
                 a_when, a_frame, npcPtr->GetName(), npcPtr->GetFormID(),
                 Yn(n3d->GetAppCulled()), culledAbove, npcPos.x, npcPos.y, npcPos.z,
                 npcPos.GetDistance(playerPos), npcPos.GetDistance(camPos), sep,
-                cam->worldFOV, onHer ? "her" : "the player",
+                cam->GetRuntimeData2().worldFOV, onHer ? "her" : "the player",
                 sep < 0.0f                        ? "UNMEASURABLE"
                 : onHer                           ? "SHE IS THE SUBJECT"
-                : sep <= cam->worldFOV * 0.5f     ? "BOTH IN FRAME"
+                : sep <= cam->GetRuntimeData2().worldFOV * 0.5f ? "BOTH IN FRAME"
                                                   : "SHE IS OUT OF FRAME");
 
             // ── The shot, on the axis nobody was measuring ────────────────────

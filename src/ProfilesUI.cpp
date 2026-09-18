@@ -23,6 +23,8 @@
 
 #include <imgui.h>
 
+#include <fmt/ranges.h>  // fmt::join
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>       // clock_cast, for the preset pane's saved-on stamp

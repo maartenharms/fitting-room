@@ -51,7 +51,7 @@ namespace OS {
             if (!armo) {
                 continue;
             }
-            const auto mask = static_cast<std::uint32_t>(armo->GetSlotMask());
+            const auto mask = armo->GetSlotMask().underlying();
             r.coverage |= mask;
             for (std::uint32_t bit = 0; bit < 32; ++bit) {
                 if (((mask >> bit) & 1u) && !r.armo[bit]) {

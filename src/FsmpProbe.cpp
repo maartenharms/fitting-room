@@ -172,7 +172,7 @@ namespace OS::FsmpProbe {
             }
             bool freeze = false;
             if (auto* main = RE::Main::GetSingleton()) {
-                freeze = main->freezeTime;
+                freeze = main->GetRuntimeData().freezeTime;
             }
 
             auto* player = RE::PlayerCharacter::GetSingleton();

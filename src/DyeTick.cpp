@@ -1,5 +1,6 @@
 #include "DyeTick.h"
 
+#include "DyePromotion.h"  // TickIntervalFor, PokeActionFor: the pure decisions
 #include "DyeUnlockCard.h"
 #include "EditorWindow.h"
 #include "Settings.h"
@@ -28,6 +29,63 @@ namespace OS::DyeTick {
         std::atomic<bool>   g_inFlight{ false };
         std::atomic<double> g_lastRun{ 0.0 };
         std::atomic<int>    g_passesThisLoad{ 0 };
+
+        // ---- pokes (2026-09-04): one pass soon, on an engine event ----------
+        //
+        // g_pokeDue is the steady-clock second a poked pass becomes due, 0 when
+        // nothing is pending. Leading edge: the first poke of a burst sets it
+        // and later pokes leave it, so a questline's ten stat ticks cost one
+        // pass. The pure verdict is DyePromotion.h's PokeActionFor, and the
+        // loop below is its only reader.
+        std::atomic<double> g_pokeDue{ 0.0 };
+        constexpr double    kPokeDelaySec  = 1.5;
+        constexpr double    kPokeMinGapSec = 5.0;
+        // Which tracked stats are worth a poke: the ones the rules name, set
+        // beside the stats request so it follows a rules reload.
+        std::mutex                         g_filterLock;
+        std::set<std::string, std::less<>> g_statFilter;
+
+        // The engine events a rule can turn on, each a poke. They arrive on
+        // the game thread; Poke is atomics only, so the thread does not matter.
+        struct PokeSink final : RE::BSTEventSink<RE::TESQuestStageEvent>,
+                                RE::BSTEventSink<RE::TESTrackedStatsEvent>,
+                                RE::BSTEventSink<RE::LevelIncrease::Event>,
+                                RE::BSTEventSink<RE::SkillIncrease::Event> {
+            RE::BSEventNotifyControl ProcessEvent(
+                const RE::TESQuestStageEvent*,
+                RE::BSTEventSource<RE::TESQuestStageEvent>*) override {
+                Poke("a quest stage");
+                return RE::BSEventNotifyControl::kContinue;
+            }
+            RE::BSEventNotifyControl ProcessEvent(
+                const RE::TESTrackedStatsEvent* a_event,
+                RE::BSTEventSource<RE::TESTrackedStatsEvent>*) override {
+                if (a_event && a_event->stat.c_str() && *a_event->stat.c_str()) {
+                    bool named = false;
+                    {
+                        std::scoped_lock lk(g_filterLock);
+                        named = g_statFilter.contains(std::string_view{ a_event->stat.c_str() });
+                    }
+                    if (named) {
+                        Poke("a tracked stat the rules name");
+                    }
+                }
+                return RE::BSEventNotifyControl::kContinue;
+            }
+            RE::BSEventNotifyControl ProcessEvent(
+                const RE::LevelIncrease::Event*,
+                RE::BSTEventSource<RE::LevelIncrease::Event>*) override {
+                Poke("a level");
+                return RE::BSEventNotifyControl::kContinue;
+            }
+            RE::BSEventNotifyControl ProcessEvent(
+                const RE::SkillIncrease::Event*,
+                RE::BSTEventSource<RE::SkillIncrease::Event>*) override {
+                Poke("a skill");
+                return RE::BSEventNotifyControl::kContinue;
+            }
+        };
+        PokeSink g_pokeSink;
 
         // The first tick of a session comes early and is DELIBERATELY silent.
         //
@@ -126,6 +184,26 @@ namespace OS::DyeTick {
                 }
                 const double now  = NowSeconds();
                 const double last = g_lastRun.load(std::memory_order_relaxed);
+                // A poke first: one pass soon, on the pure verdict. It waits
+                // out an open editor exactly as the tick does, and a poke
+                // before the baseline is dropped rather than queued, because
+                // the first ticks own that window (see kFirstTickSec).
+                switch (PokeActionFor(now, g_pokeDue.load(std::memory_order_relaxed), last,
+                                      OS::DyeUnlockCard::Armed(), kPokeMinGapSec)) {
+                    case PokeAction::kRun:
+                        if (MayRunNow()) {
+                            g_pokeDue.store(0.0, std::memory_order_relaxed);
+                            g_lastRun.store(now, std::memory_order_relaxed);
+                            RunOnGameThread();
+                            continue;
+                        }
+                        break;  // the editor is up: the poke keeps waiting
+                    case PokeAction::kDrop:
+                        g_pokeDue.store(0.0, std::memory_order_relaxed);
+                        break;
+                    case PokeAction::kWait:
+                        break;
+                }
                 const double due =
                     g_passesThisLoad.load(std::memory_order_relaxed) == 0
                         ? kFirstTickSec
@@ -173,10 +251,56 @@ namespace OS::DyeTick {
     }
 
     void ApplySettings() {
-        const int secs = std::clamp(OS::Settings::GetSingleton().dyeTickSeconds, 0, 600);
-        // 0 parks the tick; anything else is floored at 5 so a hand-edited 1
-        // cannot ask for a 148-lookup gather every second.
-        g_intervalSec.store(secs == 0 ? 0 : std::max(5, secs), std::memory_order_relaxed);
+        const auto& cfg = OS::Settings::GetSingleton();
+        // ⚠ THE ECONOMY SWITCH PARKS THE TICK (2026-09-04): with bDyeUnlocks
+        // off there is nothing to announce and nothing the gather could change
+        // before the next load or editor open. The pure rule, with the floor
+        // at 5 and the cap at ten minutes, is TickIntervalFor.
+        g_intervalSec.store(TickIntervalFor(cfg.dyeUnlocks, cfg.dyeTickSeconds),
+                            std::memory_order_relaxed);
+        // Switched on mid-session with the thread never built, because the
+        // economy was off when the save loaded: build it now, so the cards do
+        // not wait for the next load. StartThreadOnce is idempotent.
+        if (g_running.load(std::memory_order_acquire) &&
+            g_intervalSec.load(std::memory_order_relaxed) > 0) {
+            StartThreadOnce();
+        }
+    }
+
+    void Poke(const char* a_why) {
+        if (!g_running.load(std::memory_order_acquire)) {
+            return;
+        }
+        double       expected = 0.0;
+        const double due      = NowSeconds() + kPokeDelaySec;
+        if (g_pokeDue.compare_exchange_strong(expected, due, std::memory_order_acq_rel)) {
+            spdlog::debug("Dye unlocks: poked by {}, so a pass runs in about {:.1f} s "
+                          "rather than at the next tick.",
+                          a_why ? a_why : "an event", kPokeDelaySec);
+        }
+    }
+
+    void InstallEventSinks() {
+        if (auto* const holder = RE::ScriptEventSourceHolder::GetSingleton()) {
+            holder->AddEventSink<RE::TESQuestStageEvent>(&g_pokeSink);
+            holder->AddEventSink<RE::TESTrackedStatsEvent>(&g_pokeSink);
+        }
+        if (auto* const src = RE::LevelIncrease::GetEventSource()) {
+            src->AddEventSink(
+                static_cast<RE::BSTEventSink<RE::LevelIncrease::Event>*>(&g_pokeSink));
+        }
+        if (auto* const src = RE::SkillIncrease::GetEventSource()) {
+            src->AddEventSink(
+                static_cast<RE::BSTEventSink<RE::SkillIncrease::Event>*>(&g_pokeSink));
+        }
+        spdlog::info("Dye unlocks: a quest stage, a tracked stat the rules name, a level "
+                     "or a skill pokes a pass, so a colour earned by what you just did "
+                     "arrives within seconds rather than at the next tick.");
+    }
+
+    void SetStatFilter(std::set<std::string, std::less<>> a_names) {
+        std::scoped_lock lk(g_filterLock);
+        g_statFilter = std::move(a_names);
     }
 
     void Start() {

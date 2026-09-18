@@ -49,9 +49,21 @@ namespace OS::MyDyes {
             o["mode"] = "nacre";
         } else if (a_dye.colour.mode == 2) {
             o["mode"] = "iridescent";
+        } else if (a_dye.colour.mode == 3) {
+            o["mode"] = "metal";
+        } else if (a_dye.colour.mode == 4) {
+            o["mode"] = "cloth";
+        } else if (a_dye.colour.mode == 5) {
+            o["mode"] = "twotone";
         }
         if (a_dye.colour.flake > 0) {
             o["flake"] = a_dye.colour.flake;
+        }
+        // The cut, only when the dye says one: 128 is "nothing said" and the
+        // default picture, so a dye that says nothing looks on disk exactly
+        // like one authored before the byte existed.
+        if (a_dye.colour.cut != 128) {
+            o["cut"] = a_dye.colour.cut;
         }
         // ⚠ OMITTED WHEN THE DYE DEFERS, which is what the empty spelling says
         // and why NameForChoice has one. A dye that names no blend must look on

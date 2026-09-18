@@ -43,14 +43,39 @@ int main() {
     CHECK(smp401 != nullptr);
     CHECK(CoopOf(smp401) == Coop::kSkinAllEntry);
 
-    // ⚠ THE THREE CPU SIBLINGS MUST STILL MISS. Their fingerprints are known
-    // but none has had its head hooks read, and this flavour's safety rests on
-    // "the hook never calls the engine original", which a fingerprint cannot
-    // say. Asserted rather than implied, so uncommenting a row in the table
-    // without reading that DLL fails here first.
-    CHECK(MatchBuild(0x6A4A9FDBu, 0x412000u) == nullptr);  // SSE2
-    CHECK(MatchBuild(0x6A4A9FD9u, 0x414000u) == nullptr);  // AVX
-    CHECK(MatchBuild(0x6A4A9FE0u, 0x412000u) == nullptr);  // AVX2
+    // ⚠ THE SECOND INVERSION, 2026-09-03, and it obeyed the rule the first one
+    // set rather than waiving it: read the DLL, then move the assertion. This
+    // guard is what made that the only way in, and it fired on the first build
+    // after the rows went in. All three siblings ship inside the 4.0.1 archive
+    // with their own PDBs, and a sweep of every named function in each found
+    // the two stored originals written once in BSFaceGenNiNodeHooks::Hook and
+    // handed to DetourAttach in InstallLowPriority, with no call and no jmp
+    // through either slot anywhere in the image. That is the flavour's whole
+    // promise. docs/re/fsmp-cooperative-hair.md carries the per-variant
+    // offsets and the method.
+    const auto* smp401sse2 = MatchBuild(0x6A4A9FDBu, 0x412000u);
+    const auto* smp401avx  = MatchBuild(0x6A4A9FD9u, 0x414000u);
+    const auto* smp401avx2 = MatchBuild(0x6A4A9FE0u, 0x412000u);
+    CHECK(smp401sse2 != nullptr);
+    CHECK(smp401avx != nullptr);
+    CHECK(smp401avx2 != nullptr);
+    CHECK(CoopOf(smp401sse2) == Coop::kSkinAllEntry);
+    CHECK(CoopOf(smp401avx) == Coop::kSkinAllEntry);
+    CHECK(CoopOf(smp401avx2) == Coop::kSkinAllEntry);
+
+    // ⚠⚠ SSE2 AND AVX2 SHARE A SizeOfImage AND DIFFER ONLY IN THE STAMP
+    // (0x412000 both, 0x6A4A9FDB against 0x6A4A9FE0). The pair is the
+    // identity and neither field alone will do, which a table keyed on one of
+    // them would get silently wrong rather than loudly.
+    CHECK(smp401sse2 != smp401avx2);
+
+    // ⚠ THE 3.x LINE IS STILL ABSENT AND A USER ON IT IS REFUSED ON PURPOSE.
+    // This is 3.5.0 SSE2, whose fingerprint Menu Studio's FsmpDrive already
+    // carries for driving the world. Knowing a fingerprint is not knowing what
+    // its head hooks do, which is the whole reason the siblings above needed a
+    // read, so a row must never be copied across from that table. Encoded here
+    // because copying one is exactly the shortcut this file exists to catch.
+    CHECK(MatchBuild(0x6A46CEC4u, 0x3CD000u) == nullptr);
 
     // Same stamp, wrong size: not a match. Unknown entirely: not a match.
     CHECK(MatchBuild(0x6813A7EDu, 0x400000u) == nullptr);

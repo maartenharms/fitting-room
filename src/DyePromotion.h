@@ -5,6 +5,7 @@
 #include "DyeUnlocks.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <string_view>
@@ -132,6 +133,59 @@ namespace OS {
     [[nodiscard]] inline constexpr bool ShowsNewDyeMark(bool a_unlocksOn, bool a_locked,
                                                         bool a_acknowledged) {
         return a_unlocksOn && !a_locked && !a_acknowledged;
+    }
+
+    // ---- the economy switch, the tick and the cards (2026-09-04) ----------
+    //
+    // ⚠⚠ [General] bDyeUnlocks OFF MEANS NO TICK AND NO CARD, and the field is
+    // what said so: the switch was off in every session read and the cards
+    // still fired, because the only thing that ever read it was the pane's
+    // padlock. With every colour pickable a "Dye unlocked" card announces
+    // nothing, and the gather the tick runs every 30 s (148 form lookups and
+    // a stats request) buys nothing either. The set still earns at load and
+    // on editor open, which is all "Either way you keep earning" promised.
+    [[nodiscard]] inline constexpr int TickIntervalFor(bool a_unlocksOn, int a_iniSeconds) {
+        if (!a_unlocksOn || a_iniSeconds <= 0) {
+            return 0;  // parked
+        }
+        // Floored at 5 so a hand-edited 1 cannot ask for the gather every
+        // second; capped at ten minutes.
+        const int capped = a_iniSeconds > 600 ? 600 : a_iniSeconds;
+        return capped < 5 ? 5 : capped;
+    }
+
+    [[nodiscard]] inline constexpr bool AnnouncesCards(bool a_unlocksOn, bool a_cardsOn) {
+        return a_unlocksOn && a_cardsOn;
+    }
+
+    // ---- a poke: one pass soon, on an engine event ----------------------------
+    //
+    // The tick alone made an earned colour arrive up to 30 s after the thing
+    // that earned it. The engine announces a quest stage, a tracked stat, a
+    // level and a skill the moment they move, and the editor knows the moment
+    // it bumps the deed, so each of those pokes the tick: one pass about a
+    // second later, coalesced across a burst, never within a_minGapSec of the
+    // last pass, and never before the tick has armed the announcer, because a
+    // pass that armed early would announce what the save already owned.
+    enum class PokeAction : std::uint8_t {
+        kWait = 0,  // nothing pending, not due yet, or inside the gap
+        kRun,       // run the pass now
+        kDrop,      // before the baseline: the first ticks own that window
+    };
+
+    [[nodiscard]] inline constexpr PokeAction PokeActionFor(double a_now, double a_due,
+                                                            double a_lastRun, bool a_armed,
+                                                            double a_minGapSec) {
+        if (a_due <= 0.0) {
+            return PokeAction::kWait;
+        }
+        if (!a_armed) {
+            return PokeAction::kDrop;
+        }
+        if (a_now < a_due || a_now - a_lastRun < a_minGapSec) {
+            return PokeAction::kWait;
+        }
+        return PokeAction::kRun;
     }
 
 }  // namespace OS

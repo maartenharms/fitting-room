@@ -1,10 +1,12 @@
 #include "ImGuiOverlay.h"
+#include "GpuAccess.h"
 
 #include "ApparelPreviewSignal.h"
 #include "EditorStyle.h"
 #include "EditorUI.h"
 #include "HostGuard.h"  // the one list of menus the editor may be hosted by
 #include "KeyboardArbiter.h"
+#include "MenuHandlerVtable.h"
 #include "LoreModule.h"  // the Seamstone gate, asked here as well as at the hotkey
 #include "SamCompat.h"
 #include "SceneGuard.h"
@@ -136,7 +138,7 @@ namespace OS {
         // hidden (ShowMenus(false)) and must not react to stray keys - and
         // close on the cancel event. Raw-device sinks (our InputListener feed)
         // sit UPSTREAM of MenuControls, so ImGui input is unaffected.
-        struct EditorMenuGuard : RE::MenuEventHandler {
+        struct EditorMenuGuard : OS::MenuHandlerVtable::Impl {
             static void QueueClose() {
                 if (auto* task = SKSE::GetTaskInterface()) {
                     task->AddTask([] {
@@ -369,8 +371,9 @@ namespace OS {
 
     void ImGuiOverlay::RegisterMenuGuard() {
         if (auto* controls = RE::MenuControls::GetSingleton()) {
+            const char* const layout = OS::MenuHandlerVtable::Install(&g_menuGuard);
             controls->AddHandler(&g_menuGuard);
-            spdlog::info("ImGuiOverlay: modal menu guard registered.");
+            spdlog::info("ImGuiOverlay: modal menu guard registered ({}).", layout);
         }
     }
 
@@ -382,14 +385,12 @@ namespace OS {
         a_swapChain->GetDesc(&desc);
         hwnd_ = desc.OutputWindow;
 
-        auto* rm = RE::BSRenderManager::GetSingleton();
-        if (!rm) {
-            spdlog::error("ImGuiOverlay: no BSRenderManager.");
+        device_  = OS::Gpu::Device();
+        context_ = OS::Gpu::Context();
+        if (!device_ || !context_) {
+            spdlog::error("ImGuiOverlay: the renderer has no device or context yet.");
             return;
         }
-        auto& data = rm->GetRuntimeData();
-        device_    = data.forwarder;  // the device member is named 'forwarder'
-        context_   = data.context;
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -646,14 +647,13 @@ namespace OS {
 
     void ImGuiOverlay::Toggle() {
         if (!initialized_) {
-            auto* rm = RE::BSRenderManager::GetSingleton();
-            if (!rm) {
+            auto* const chain = OS::Gpu::SwapChain();
+            if (!chain) {
                 return;
             }
-            auto& data = rm->GetRuntimeData();
-            EnsureInit(data.swapChain);
+            EnsureInit(chain);
             if (initialized_ && !g_origPresent) {
-                PatchVtable<Present_t>(data.swapChain, 8, &PresentThunk, &g_origPresent);
+                PatchVtable<Present_t>(chain, 8, &PresentThunk, &g_origPresent);
                 spdlog::info("ImGuiOverlay: Present hook installed (vtable[8]).");
             }
             if (!initialized_) {
@@ -665,7 +665,7 @@ namespace OS {
             // third person, hides the menus and grabs input - it would hijack
             // the scene. (Transmog is already suspended by SceneGuard.)
             if (SceneGuard::Active()) {
-                RE::DebugNotification("You can't edit outfits during a scene.");
+                RE::SendHUDMessage::ShowHUDMessage("You can't edit outfits during a scene.");
                 return;
             }
             // About to open: re-evaluate style fit if the player's race
@@ -728,7 +728,7 @@ namespace OS {
             }
         }
         if (auto* cm = RE::ControlMap::GetSingleton()) {
-            cm->ToggleControls(BlockedControls(), false);
+            cm->ToggleControls(BlockedControls(), false, true);
             cm->ignoreKeyboardMouse = true;
         }
         // Hide the game's UI (inventory, HUD, game cursor) so only the world -
@@ -751,7 +751,7 @@ namespace OS {
         }
         ImGui::GetIO().MouseDrawCursor = false;
         if (auto* cm = RE::ControlMap::GetSingleton()) {
-            cm->ToggleControls(BlockedControls(), true);
+            cm->ToggleControls(BlockedControls(), true, true);
             cm->ignoreKeyboardMouse = false;
         }
         // Undo the free-rotation mode the camera drag may have enabled - but

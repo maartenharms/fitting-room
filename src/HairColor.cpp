@@ -223,7 +223,7 @@ namespace OS::HairColor {
                     // indirection exists to hide.
                     auto* const prop = netimmerse_cast<RE::BSLightingShaderProperty*>(
                         a_geom->GetGeometryRuntimeData()
-                            .properties[RE::BSGeometry::States::kEffect]
+                            .shaderProperty
                             .get());
                     if (!prop || !prop->material) {
                         return RE::BSVisit::BSVisitControl::kContinue;

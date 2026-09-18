@@ -224,4 +224,44 @@ namespace OS::DyeKey {
         return out;
     }
 
+    // The envmask window, in the key for the reason IrisDiscSuffix is: it
+    // changes the PICTURE while the mask, the tint and the blend all stay
+    // identical, so a key without it would serve the old split forever after
+    // an INI edit.
+    //
+    // ⚠ NEVER EMPTY, unlike every suffix above, and that is the point rather
+    // than an oversight. An envmask build (2026-09-04) reads the mask's RED
+    // channel against an absolute window; the eye path reads a normal map's
+    // ALPHA against its own mean. Same mask name, same tint, different picture,
+    // and the feature is new, so there is no cached key to preserve by staying
+    // silent at the defaults.
+    //
+    // ⚠ FIXED WIDTH AND NO MODULO, RampSuffix's collision rule: a scalar of
+    // exactly 1.0 must not spell the same as 0.0. Thousandths, clamped. The
+    // two scalars are the feather and the one-material floor; the cut itself
+    // is derived from the mask and needs no place here.
+    //
+    // ⚠ AND THE CHANNEL. A shape with no environment mask bound is read
+    // through its normal map's alpha, the channel the engine falls back to for
+    // its reflection strength. One texture read through red and through alpha
+    // is two pictures, so ":r" marks the red read.
+    //
+    // ⚠ AND THE CUT (2026-09-04), where metal starts on the piece, spelled
+    // ALWAYS and fixed width: two cuts on one map are two pictures. Spelled at
+    // the default too, because this suffix is never empty by design and the
+    // envmask cache is VRAM only, so every existing envmask key moving once
+    // costs nothing; the default left unsaid is the same key as 128 said.
+    [[nodiscard]] inline std::string EnvMaskSuffix(float a_feather, float a_gap,
+                                                   bool a_red = false,
+                                                   std::uint8_t a_cut = 128) {
+        const auto mil = [](float a_v) {
+            const int v = static_cast<int>(a_v * 1000.0f + 0.5f);
+            return v < 0 ? 0 : (v > 9999 ? 9999 : v);
+        };
+        char buf[24]{};
+        std::snprintf(buf, sizeof buf, "|m%04d%04d%s:c%02X", mil(a_feather), mil(a_gap),
+                      a_red ? ":r" : "", static_cast<unsigned>(a_cut));
+        return buf;
+    }
+
 }  // namespace OS::DyeKey

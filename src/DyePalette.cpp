@@ -145,7 +145,14 @@ namespace OS::DyePalette {
         std::uint8_t mode = 0;
         if (a_json["mode"].isString()) {
             const auto m = a_json["mode"].asString();
-            mode         = m == "nacre" ? 1u : (m == "iridescent" ? 2u : 0u);
+            // The bytes are DyeRamp::Mode's; MyDyes::DyeToJson spells them back
+            // and the MyDyes round-trip test is what keeps the two lists one.
+            mode = m == "nacre"        ? 1u
+                   : m == "iridescent" ? 2u
+                   : m == "metal"      ? 3u
+                   : m == "cloth"      ? 4u
+                   : m == "twotone"    ? 5u
+                                       : 0u;
         }
         // ⚠ AND THE BLEND ON EXACTLY THE MODE'S TERMS. An unknown or wrong-typed
         // spelling DEFERS to the install's setting, which is what all 318
@@ -188,6 +195,14 @@ namespace OS::DyePalette {
         if (a_json["flake"].isIntegral()) {
             a_out.colour.flake =
                 static_cast<std::uint8_t>(std::clamp(a_json["flake"].asInt(), 0, 255));
+        }
+        // Where metal starts, for the envmask modes (2026-09-04). 128 is "the
+        // dye says nothing", which is also the halfway cut every mask measured
+        // wanted, so a pack that omits it moves no piece; a pack that names
+        // one brings it, clamped like the flake.
+        if (a_json["cut"].isIntegral()) {
+            a_out.colour.cut =
+                static_cast<std::uint8_t>(std::clamp(a_json["cut"].asInt(), 0, 255));
         }
         if (a_json["gloss"].isIntegral()) {
             a_out.colour.palette.glossSet = true;

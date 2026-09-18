@@ -78,7 +78,7 @@ namespace OS::Overlay1P {
             }
             return netimmerse_cast<RE::BSLightingShaderProperty*>(
                 a_geometry->GetGeometryRuntimeData()
-                    .properties[RE::BSGeometry::States::kEffect]
+                    .shaderProperty
                     .get());
         }
 
@@ -114,8 +114,8 @@ namespace OS::Overlay1P {
 
         // What one clone takes off skee's template.
         struct TemplateProps {
-            RE::NiPointer<RE::NiProperty> shader;
-            RE::NiPointer<RE::NiProperty> alpha;
+            RE::NiPointer<RE::BSShaderProperty> shader;
+            RE::NiPointer<RE::NiAlphaProperty>  alpha;
         };
 
         // ⚠⚠ A FRESH LOAD PER CLONE, NEVER ONE CACHED PAIR FOR A WHOLE LOCATION.
@@ -137,11 +137,14 @@ namespace OS::Overlay1P {
                 if (!legacy) {
                     continue;
                 }
-                out.shader = RE::NiPointer<RE::NiProperty>{
-                    LegacyGeometry::ShaderProperty(legacy)
+                // The geometry's runtime data types its two properties now, so the
+                // template's are read through their RTTI rather than held as the
+                // NiProperty base.
+                out.shader = RE::NiPointer<RE::BSShaderProperty>{
+                    netimmerse_cast<RE::BSShaderProperty*>(LegacyGeometry::ShaderProperty(legacy))
                 };
-                out.alpha = RE::NiPointer<RE::NiProperty>{
-                    LegacyGeometry::AlphaProperty(legacy)
+                out.alpha = RE::NiPointer<RE::NiAlphaProperty>{
+                    netimmerse_cast<RE::NiAlphaProperty*>(LegacyGeometry::AlphaProperty(legacy))
                 };
                 break;
             }
@@ -183,7 +186,7 @@ namespace OS::Overlay1P {
             // SHARES its shader property and its material with what it was cloned
             // from, so a clone that kept them would hand skee the player's own
             // SKIN material to write the overlay art onto.
-            runtime.properties[RE::BSGeometry::States::kEffect] = props.shader;
+            runtime.shaderProperty = props.shader;
             // ⚠ ONLY WHEN THE TEMPLATE HAS ONE, which is skee's own guard. This
             // rig's template does carry a NiAlphaProperty of 0x12ED with a
             // threshold of 0, and those are exactly the iAlphaFlags and
@@ -191,7 +194,7 @@ namespace OS::Overlay1P {
             // taking the override's value. A template without one must leave the
             // clone's alone rather than clear it.
             if (props.alpha) {
-                runtime.properties[RE::BSGeometry::States::kProperty] = props.alpha;
+                runtime.alphaProperty = props.alpha;
             }
 
             // ⚠⚠ ONE SKIN, SHARED, EXACTLY AS skee SHARES IT. A skinned
