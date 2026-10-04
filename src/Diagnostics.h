@@ -7,5 +7,7 @@ namespace OS::Diagnostics {
     // the whole transmog family; the spec requires surfacing them at startup.
     // Call at kDataLoaded, after StyleCatalog::Build().
     void WarnOnConflicts();
+    
+    bool IsReadableAddress(std::uintptr_t a_address, std::size_t a_size);
 
 }  // namespace OS::Diagnostics

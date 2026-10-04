@@ -39,6 +39,9 @@ namespace RE {
 // carries a tint index and a preset and no texture at all.
 namespace OS::MakeupApi {
 
+    // Sample the current tint list state once and store it.
+    void RefreshTintListState(RE::PlayerCharacter* a_player);
+
     // Why the page cannot work, so it can say something true. Same shape
     // OverlayApi::Status uses.
     enum class Status : std::uint8_t {

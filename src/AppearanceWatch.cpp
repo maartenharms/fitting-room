@@ -143,6 +143,9 @@ namespace OS::AppearanceWatch {
             if (!pc) {
                 return s;
             }
+
+            MakeupApi::RefreshTintListState(pc);
+
             auto* const base = pc->GetActorBase();
             if (!base) {
                 return s;

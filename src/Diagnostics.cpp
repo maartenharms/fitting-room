@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <Windows.h>
+
 namespace OS::Diagnostics {
 
     void WarnOnConflicts() {
@@ -87,5 +89,48 @@ namespace OS::Diagnostics {
                                 "\n\nBoth change how worn armor is rendered. Please use only one.";
         RE::DebugMessageBox(msg.c_str());
     }
-
+    
+    [[nodiscard]] bool IsReadableAddress(std::uintptr_t a_address, std::size_t a_size)
+	{
+    	if (!a_address || !a_size) {
+        	return false;
+    	}
+	
+    	MEMORY_BASIC_INFORMATION mbi{};
+    	if (VirtualQuery(
+            	reinterpret_cast<const void*>(a_address),
+            	&mbi,
+            	sizeof(mbi)) != sizeof(mbi)) {
+        	return false;
+    	}
+	
+    	if (mbi.State != MEM_COMMIT) {
+        	return false;
+    	}
+	
+    	if (mbi.Protect & PAGE_NOACCESS) {
+        	return false;
+    	}
+	
+    	if (mbi.Protect & PAGE_GUARD) {
+        	return false;
+    	}
+	
+    	const auto regionBegin =
+        	reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
+	
+    	const auto regionEnd =
+        	regionBegin + mbi.RegionSize;
+	
+    	if (a_address < regionBegin) {
+        	return false;
+    	}
+	
+    	if (a_address > regionEnd) {
+        	return false;
+    	}
+	
+    	return a_size <= regionEnd - a_address;
+	}
+	
 }  // namespace OS::Diagnostics

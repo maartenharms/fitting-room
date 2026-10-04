@@ -7,6 +7,7 @@
 #include "OverlayBake.h"   // OS-209 on makeup: Ensure and ReadSidecar are source agnostic
 #include "RaceTint.h"
 #include "Settings.h"
+#include "Diagnostics.h"
 
 #include <atomic>
 #include <chrono>
@@ -58,19 +59,12 @@ namespace OS::MakeupApi {
         // See the note on the header. Returns 0 for a runtime whose offset has
         // not been measured, which is a page that says it cannot work rather
         // than a page that reads a neighbouring field as an array pointer.
-        [[nodiscard]] std::uintptr_t ListRoot(RE::PlayerCharacter* a_player) {
-            if (!a_player) {
-                return 0;
-            }
-            // ⚠ VR IS REFUSED RATHER THAN GUESSED. Its PlayerCharacter layout
-            // diverges long before this offset and nothing here has been
-            // measured against it. [[version-floor-must-not-key-on-header-current]]
-            // is the rule: same declaration does not mean same layout.
-            if (REL::Module::IsVR()) {
-                return 0;
-            }
-            const auto base = reinterpret_cast<std::uintptr_t>(a_player);
-            return base + (REL::Module::IsAE() ? 0xB18u : 0xB10u);
+
+        namespace {
+            constexpr std::uintptr_t kTintMasksOffsetSE = 0xB10;
+            constexpr std::uintptr_t kTintMasksOffsetAE = 0xB18;
+            constexpr std::uintptr_t kOverlayTintMasksOffset = 0x18;
+            constexpr std::uintptr_t kBSTArraySizeOffset = 0x10;
         }
 
         // BSTArray is data at +0x00, capacity at +0x08 and size at +0x10. Both
@@ -79,8 +73,20 @@ namespace OS::MakeupApi {
             return a_base ? *reinterpret_cast<TintMask***>(a_base) : nullptr;
         }
 
-        [[nodiscard]] std::uint32_t ListSize(std::uintptr_t a_base) {
-            return a_base ? *reinterpret_cast<std::uint32_t*>(a_base + 0x10) : 0u;
+        [[nodiscard]] std::uint32_t ListSize(std::uintptr_t a_base)
+        {
+            return a_base ? *reinterpret_cast<std::uint32_t*>(a_base + kBSTArraySizeOffset) : 0u;
+        }
+
+        [[nodiscard]] std::uintptr_t ListRoot(RE::PlayerCharacter* a_player)
+        {
+            if (!a_player || REL::Module::IsVR()) {
+                return 0;
+            }
+
+            const auto base = reinterpret_cast<std::uintptr_t>(a_player);
+            return base + (REL::Module::IsAE() ? kTintMasksOffsetAE
+                                               : kTintMasksOffsetSE);
         }
 
         // ⚠⚠ AND THE PLAYER CARRIES TWO OF THESE LISTS, WHICH IS THE BUG THIS
@@ -114,54 +120,30 @@ namespace OS::MakeupApi {
         // the body sync that rides them, went to the stale base list. GetTintMask
         // reads the base too, which is why RaceMenu's own skin tone slot showed a
         // Nord's white beside a dark elf face.
-        [[nodiscard]] std::uintptr_t OverlayList(std::uintptr_t a_root) {
-            return a_root ? *reinterpret_cast<std::uintptr_t*>(a_root + 0x18) : 0u;
+        [[nodiscard]] std::uintptr_t OverlayList(std::uintptr_t a_root)
+        {
+            return a_root
+                       ? *reinterpret_cast<std::uintptr_t*>(a_root + kOverlayTintMasksOffset)
+                       : 0u;
         }
 
-        // Whether the last look found the overlay gone. Said on the EDGE only:
-        // LiveList is called from the face watch, so a line per call would be a
-        // line per frame. Starts false, so a session that begins already on the
-        // base still announces itself on its first look.
-        bool g_onBaseListSaid{ false };
+        using TintMaskData = decltype(ListData(std::uintptr_t{}));
 
-        // The list the ENGINE would use. Every read and every write in this file
-        // goes through here; nothing reaches past it to the base.
-        //
-        // ⚠⚠ THE FALLBACK TO THE BASE IS THE ONE THAT SHOWS ON A FACE, AND IT
-        // WAS SILENT UNTIL 2026-09-01. When the overlay is gone this returns the
-        // STALE BASE LIST and every read and write in this file lands there,
-        // which is the state the note above measured as "a Nord's white beside a
-        // dark elf face". The field reports of a head turning WHITE on a cell
-        // change, sometimes wearing a vanilla war paint the player never set,
-        // are that symptom exactly, and the fallback said nothing while it
-        // happened. It says so now.
-        //
-        // ⚠ THIS LINE IS AN INSTRUMENT, NOT A FIX. It does not change which
-        // list is used. Whether falling back is even wrong here is the open
-        // question: the base is the right answer when no overlay was ever
-        // installed, and the wrong one when the overlay was destroyed under us.
-        // The log is what tells those apart on a reporter's machine.
-        [[nodiscard]] std::uintptr_t LiveList(RE::PlayerCharacter* a_player) {
-            const auto root    = ListRoot(a_player);
-            const auto overlay = OverlayList(root);
-            if (root) {
-                const bool onBase = overlay == 0u;
-                if (onBase != g_onBaseListSaid) {
-                    g_onBaseListSaid = onBase;
-                    if (onBase) {
-                        spdlog::warn(
-                            "Makeup: the tint OVERLAY list is gone, so every face read and "
-                            "write now lands on the character's BASE list. That list is the "
-                            "one measured as a Nord's white beside a dark elf face, and a "
-                            "vanilla war paint the player never chose can come back with it. "
-                            "If a head just turned white or grew a war paint, this line is why.");
-                    } else {
-                        spdlog::info("Makeup: the tint overlay list is back, so face reads and "
-                                     "writes are on the character's own layers again.");
-                    }
-                }
-            }
-            return overlay ? overlay : root;
+        // Cached State of Tint List
+        struct TintListState
+        {
+            std::uintptr_t list{ 0 };
+            TintMaskData data{ nullptr };
+            std::uint32_t size{ 0 };
+            bool usable{ false };
+            bool overlay{ false };
+        };
+
+        TintListState g_tintListState;
+
+        [[nodiscard]] const TintListState& TintList()
+        {
+            return g_tintListState;
         }
 
         [[nodiscard]] RE::PlayerCharacter* PlayerFor(RE::Actor* a_actor) {
@@ -173,10 +155,17 @@ namespace OS::MakeupApi {
         }
 
         [[nodiscard]] TintMask* MaskAt(RE::Actor* a_actor, std::size_t a_index) {
-            auto* const player = PlayerFor(a_actor);
-            const auto  base   = LiveList(player);
-            auto* const data   = ListData(base);
-            if (!data || a_index >= ListSize(base)) {
+            if (!PlayerFor(a_actor)) {
+                return nullptr;
+            }
+
+            const auto& tint = TintList();
+            if (!tint.usable) {
+                return nullptr;
+            }
+
+            auto* const data   = ListData(tint.list);
+            if (!data || a_index >= tint.size) {
                 return nullptr;
             }
             return data[a_index];
@@ -311,28 +300,37 @@ namespace OS::MakeupApi {
         // target, so a private copy there would stop following them. Gated by
         // [Debug] bPrivateFaceTint so a reporter can switch the repair off and
         // watch the alias come back.
-        bool PrivatiseFaceTint(const char* a_why) {
+        bool PrivatiseFaceTint(const char* a_why)
+        {
             if (!OS::Settings::GetSingleton().privateFaceTint) {
                 return false;
             }
+
             if (auto* const ui = RE::UI::GetSingleton();
                 ui && ui->IsMenuOpen(RE::RaceSexMenu::MENU_NAME)) {
                 return false;
             }
-            auto* const player = RE::PlayerCharacter::GetSingleton();
-            if (!player) {
+
+            auto* const tex = FaceTintTexture(RE::PlayerCharacter::GetSingleton());
+            if (!tex) {
                 return false;
             }
-            const auto  list = LiveList(player);
-            auto* const tex  = FaceTintTexture(player);
-            if (!list || !tex) {
+
+            const auto& tint = TintList();
+
+            if (!tint.usable) {
                 return false;
             }
-            QueueTintJob(list, tex);
-            spdlog::info("Makeup: a private copy was drawn for the face's tint texture "
-                         "0x{:X} '{}' ({}), so a tint job for somebody else cannot paint "
-                         "over it.",
-                         reinterpret_cast<std::uintptr_t>(tex), tex->name.c_str(), a_why);
+
+            QueueTintJob(tint.list, tex);
+
+            spdlog::info(
+                "Makeup: a private copy was drawn for the face's tint texture "
+                "0x{:X} '{}' ({}), so a tint job for somebody else cannot paint over it.",
+                reinterpret_cast<std::uintptr_t>(tex),
+                tex->name.c_str(),
+                a_why);
+
             return true;
         }
 
@@ -402,9 +400,13 @@ namespace OS::MakeupApi {
         // zero is Freckles.
         [[nodiscard]] TintMask* SkinToneMaskIn(RE::Actor* a_actor) {
             auto* const player = PlayerFor(a_actor);
-            const auto  live   = LiveList(player);
-            auto* const data   = ListData(live);
-            const auto  size   = ListSize(live);
+            const auto& tint = TintList();
+            if (!tint.usable) {
+                return nullptr;
+            }
+
+            auto* const data   = ListData(tint.list);
+            const auto  size   = tint.size;
             if (!data || size == 0) {
                 return nullptr;
             }
@@ -440,20 +442,22 @@ namespace OS::MakeupApi {
         // round can act on. See the note on OverlayList: the two disagreeing is
         // the whole of the race switch bug, so the length of each belongs in the
         // record whenever something reports on this list.
-        [[nodiscard]] std::string OriginPhrase(RE::Actor* a_actor) {
-            auto* const player = PlayerFor(a_actor);
-            const auto  root   = ListRoot(player);
-            if (!root) {
-                return "no tint list (this runtime's offset is not measured)";
+        [[nodiscard]] std::string OriginPhrase(RE::Actor* a_actor)
+        {
+            if (!PlayerFor(a_actor)) {
+                return "not the player";
             }
-            const auto overlay = OverlayList(root);
-            if (!overlay) {
-                return fmt::format("the base tint list, {} layer(s), no overlay installed",
-                                   ListSize(root));
+
+            const auto& tint = TintList();
+
+            if (!tint.usable) {
+                return "the tint list is temporarily unavailable";
             }
+
             return fmt::format(
-                "the OVERLAY tint list, {} layer(s), over a base of {}", ListSize(overlay),
-                ListSize(root));
+                "the {} tint list, {} layer(s)",
+                tint.overlay ? "OVERLAY" : "BASE",
+                tint.size);
         }
 
         // ⚠ A CENSUS, ONCE PER SESSION, AND IT ANSWERS A REAL WRITE HAZARD. The
@@ -526,19 +530,26 @@ namespace OS::MakeupApi {
                     : "");
         }
 
-        [[nodiscard]] std::vector<TintMask*> CollectMasks(RE::Actor* a_actor) {
+        [[nodiscard]] std::vector<TintMask*> CollectMasks(RE::Actor* a_actor)
+        {
             std::vector<TintMask*> out;
-            auto* const            player = PlayerFor(a_actor);
-            const auto             base   = LiveList(player);
-            auto* const            data   = ListData(base);
-            const auto             size   = ListSize(base);
-            if (!data) {
+
+            if (!PlayerFor(a_actor)) {
                 return out;
             }
-            out.reserve(size);
-            for (std::uint32_t i = 0; i < size; ++i) {
-                out.push_back(data[i]);
+
+            const auto& tint = TintList();
+
+            if (!tint.usable) {
+                return out;
             }
+
+            out.reserve(tint.size);
+
+            for (std::uint32_t i = 0; i < tint.size; ++i) {
+                out.push_back(tint.data[i]);
+            }
+
             return out;
         }
 
@@ -546,6 +557,98 @@ namespace OS::MakeupApi {
 
     bool IsPlayer(RE::Actor* a_actor) { return PlayerFor(a_actor) != nullptr; }
 
+    // Sample the current tint list state once and store it.
+    void RefreshTintListState(RE::PlayerCharacter* a_player)
+    {
+        TintListState next{};
+
+        if (!a_player || REL::Module::IsVR()) {
+            g_tintListState = next;
+            return;
+        }
+
+        const auto base = ListRoot(a_player);
+        if (!base ||
+            !Diagnostics::IsReadableAddress(base, sizeof(std::uintptr_t) + sizeof(std::uint32_t))) {
+            g_tintListState = next;
+            return;
+        }
+
+        const auto overlay = OverlayList(base);
+
+        // Skyrim's effective tint list is the overlay when one exists.
+        // During head construction/rebuild the overlay field can temporarily
+        // contain a non-null but invalid value. Do not dereference it as a
+        // BSTArray until the address has been verified.
+        const auto liveAddress = overlay ? overlay : base;
+
+        if (!Diagnostics::IsReadableAddress(
+                liveAddress,
+                sizeof(std::uintptr_t) * 2 + sizeof(std::uint32_t))) {
+
+            if (g_tintListState.usable ||
+                g_tintListState.list != liveAddress) {
+
+                spdlog::debug(
+                    "Makeup: effective tint list temporarily unavailable "
+                    "(base=0x{:X}, overlay=0x{:X}, selected=0x{:X})",
+                    base,
+                    overlay,
+                    liveAddress);
+            }
+
+            g_tintListState = next;
+            return;
+        }
+
+        const auto liveSize = ListSize(liveAddress);
+        auto* const liveData = ListData(liveAddress);
+
+        if (liveSize > 256u ||
+            (liveSize != 0u && !liveData)) {
+
+            if (g_tintListState.usable ||
+                g_tintListState.list != liveAddress ||
+                g_tintListState.size != liveSize) {
+
+                spdlog::debug(
+                    "Makeup: tint list temporarily unavailable "
+                    "(base=0x{:X}, overlay=0x{:X}, list=0x{:X}, "
+                    "data=0x{:X}, size={})",
+                    base,
+                    overlay,
+                    liveAddress,
+                    reinterpret_cast<std::uintptr_t>(liveData),
+                    liveSize);
+            }
+
+            g_tintListState = next;
+            return;
+        }
+
+        next.list = liveAddress;
+        next.data = liveData;
+        next.size = static_cast<std::uint32_t>(liveSize);
+        next.usable = true;
+        next.overlay = overlay != 0u;
+
+        if (!g_tintListState.usable ||
+            g_tintListState.list != next.list ||
+            g_tintListState.data != next.data ||
+            g_tintListState.size != next.size ||
+            g_tintListState.overlay != next.overlay) {
+
+            spdlog::info(
+                "Makeup: tint list is now usable: {} list 0x{:X}, "
+                "data=0x{:X}, size={}",
+                next.overlay ? "OVERLAY" : "BASE",
+                next.list,
+                reinterpret_cast<std::uintptr_t>(next.data),
+                next.size);
+        }
+
+        g_tintListState = next;
+    }
     Status GetStatus(RE::Actor* a_actor) {
         auto* const player = RE::PlayerCharacter::GetSingleton();
         if (!player) {
@@ -554,7 +657,13 @@ namespace OS::MakeupApi {
         if (!IsPlayer(a_actor)) {
             return Status::kNotThePlayer;
         }
-        return ListSize(LiveList(player)) == 0 ? Status::kEmptyList : Status::kReady;
+
+        const auto& tint = TintList();
+        if (!tint.usable || tint.size == 0) {
+            return Status::kEmptyList;
+        }
+
+        return Status::kReady;
     }
 
     std::vector<MakeupPlan::Layer> Layers(RE::Actor* a_actor) {
@@ -697,8 +806,10 @@ namespace OS::MakeupApi {
             // default", and the per-slot type the body sync below needs on a
             // list whose own types a reload zeroes.
             const auto raceSlots = RaceTint::Slots(actor);
+            const auto& tint = TintList();
+
             const bool raceAuthoritative =
-                !raceSlots.empty() && raceSlots.size() == ListSize(LiveList(PlayerFor(actor)));
+                !raceSlots.empty() && raceSlots.size() == tint.size;
             bool      wrote    = false;
             TintMask* skinMask = nullptr;
             // The colour that layer is being SET to, kept beside the mask
@@ -1015,7 +1126,9 @@ namespace OS::MakeupApi {
             // which is no worse, and the caller with a captured skin tone should
             // be using PaintBodyFromTint instead.
             const auto raceSlots = RaceTint::Slots(actor);
-            const auto liveSize  = ListSize(LiveList(PlayerFor(actor)));
+            const auto& tint = TintList();
+
+            const auto liveSize  = tint.size;
             if (!raceSlots.empty() && raceSlots.size() != liveSize) {
                 spdlog::warn(
                     "Makeup: the body sync STOOD ASIDE. {} and this race's "
@@ -1619,9 +1732,10 @@ namespace OS::MakeupApi {
 
         [[nodiscard]] WornReading ReadWornSet(RE::PlayerCharacter* a_player) {
             WornReading out;
-            const auto  live = LiveList(a_player);
-            auto* const data = ListData(live);
-            out.size         = ListSize(live);
+            const auto& tint = TintList();
+
+            auto* const data = ListData(tint.list);
+            out.size         = tint.size;
             out.set.size     = out.size;
             if (data) {
                 for (std::uint32_t i = 0; i < out.size; ++i) {
@@ -1654,7 +1768,7 @@ namespace OS::MakeupApi {
                     out.set.slots.push_back(std::move(slot));
                 }
             }
-            out.signature += fmt::format("|{}|{}", out.size, live == 0 ? "none" : "list");
+            out.signature += fmt::format("|{}|{}", out.size, tint.usable ? "list" : "none");
             return out;
         }
 
@@ -1981,9 +2095,12 @@ namespace OS::MakeupApi {
         if (!face || !face->tintMasks) {
             return;
         }
-        const auto  live = LiveList(player);
-        auto* const data = ListData(live);
-        const auto  size = ListSize(live);
+        const auto& tint = TintList();
+        if (!tint.usable) {
+            return;
+        }
+        auto* const data = ListData(tint.list);
+        const auto  size = tint.size;
         if (!data || size == 0) {
             return;
         }
@@ -2115,15 +2232,25 @@ namespace OS::MakeupApi {
         return std::chrono::steady_clock::now() < g_rebakeWindowUntil;
     }
 
-    void RunOwedFaceRebake() {
+    void RunOwedFaceRebake()
+    {
         if (!g_rebakeOwed) {
             return;
         }
+
+        const auto& tint = TintList();
+
+        if (!tint.usable) {
+            return;
+        }
+
         g_rebakeOwed = false;
+
         RebakeFaceTint();
-        spdlog::info("Makeup: the face tint was rebaked after the load, from the tint "
-                     "list this save restored. A baked face outlives the character it "
-                     "was baked for, which is the cross-save bleed.");
+
+        spdlog::info(
+            "Makeup: the deferred face tint rebake was submitted "
+            "after the live tint list became usable.");
     }
 
     // The chargen's own retints (at load, in the editor) leave the face on the
@@ -2172,9 +2299,9 @@ namespace OS::MakeupApi {
 
     std::uint64_t Fingerprint(RE::Actor* a_actor) {
         auto* const player = PlayerFor(a_actor);
-        const auto  base   = LiveList(player);
-        auto* const data   = ListData(base);
-        const auto  size   = ListSize(base);
+        const auto& tint = TintList();
+        auto* const data   = ListData(tint.list);
+        const auto  size   = tint.size;
         // FNV-1a over the size and the mask pointers. The POINTERS and not the
         // contents, deliberately: our own writes change contents, and a
         // fingerprint that moved under our own writes would re-read the page
